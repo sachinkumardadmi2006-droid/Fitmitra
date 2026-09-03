@@ -1,0 +1,247 @@
+{
+  "users": {
+    "sachin@fitmitra.com": {
+      "password": "password123",
+      "profile": {
+        "name": "Sachin",
+        "email": "sachin@fitmitra.com",
+        "age": 24,
+        "height": 175,
+        "weight": 72,
+        "gender": "Male",
+        "activityLevel": "Moderately Active",
+        "fitnessGoal": "Muscle Gain",
+        "experienceLevel": "Intermediate",
+        "targetCal": 2200,
+        "targetProtein": 140,
+        "targetCarbs": 260,
+        "targetFats": 70,
+        "currentWeight": 72,
+        "startingWeight": 78,
+        "goalWeight": 68,
+        "streak": 4,
+        "completedWorkoutsCount": 14,
+        "isPremium": true,
+        "activeProgramId": "muscle-gain-12",
+        "activeProgramWeek": 1,
+        "phone": "9999999999"
+      },
+      "workoutHistory": [
+        {
+          "date": "2026-08-17",
+          "id": "core-cardio",
+          "name": "Core Crusher & Cardio",
+          "duration": 30,
+          "calories": 220,
+          "completed": true
+        },
+        {
+          "date": "2026-08-19",
+          "id": "back-biceps",
+          "name": "Back & Biceps Hypertrophy",
+          "duration": 48,
+          "calories": 290,
+          "completed": true
+        },
+        {
+          "date": "2026-08-21",
+          "id": "leg-destroyer",
+          "name": "Leg Destroyer Routine",
+          "duration": 55,
+          "calories": 420,
+          "completed": true
+        }
+      ],
+      "nutritionLogs": [
+        {
+          "id": "1",
+          "date": "2026-08-24",
+          "mealType": "Breakfast",
+          "name": "Power Protein Oats",
+          "calories": 450,
+          "protein": 25,
+          "carbs": 60,
+          "fats": 10
+        },
+        {
+          "id": "2",
+          "date": "2026-08-24",
+          "mealType": "Lunch",
+          "name": "High-Protein Grilled Chicken & Rice",
+          "calories": 650,
+          "protein": 45,
+          "carbs": 70,
+          "fats": 12
+        },
+        {
+          "id": "3",
+          "date": "2026-08-24",
+          "mealType": "Snacks",
+          "name": "Berry Blast Whey Shake",
+          "calories": 250,
+          "protein": 30,
+          "carbs": 22,
+          "fats": 3
+        },
+        {
+          "id": "1787550890430",
+          "date": "2026-08-24",
+          "mealType": "Snacks",
+          "name": "Banana",
+          "calories": 100,
+          "protein": 1,
+          "carbs": 0,
+          "fats": 0
+        },
+        {
+          "id": "1787551271078",
+          "date": "2026-08-24",
+          "mealType": "Snacks",
+          "name": "banana",
+          "calories": 100,
+          "protein": 1,
+          "carbs": 0,
+          "fats": 0
+        },
+        {
+          "id": "1787555534258",
+          "date": "2026-08-24",
+          "mealType": "Breakfast",
+          "name": "Scrambled Eggs & Avocado Toast",
+          "calories": 380,
+          "protein": 20,
+          "carbs": 30,
+          "fats": 18
+        }
+      ],
+      "weightHistory": [
+        {
+          "date": "2026-08-16",
+          "weight": 75.2
+        },
+        {
+          "date": "2026-08-17",
+          "weight": 74.8
+        },
+        {
+          "date": "2026-08-18",
+          "weight": 74.3
+        },
+        {
+          "date": "2026-08-19",
+          "weight": 73.6
+        },
+        {
+          "date": "2026-08-20",
+          "weight": 73.1
+        },
+        {
+          "date": "2026-08-21",
+          "weight": 72.5
+        },
+        {
+          "date": "2026-08-22",
+          "weight": 72
+        }
+      ]
+    },
+    "alex@fitmitra.com": {
+      "password": "password123",
+      "profile": {
+        "name": "Alex",
+        "email": "alex@fitmitra.com",
+        "age": 25,
+        "height": 170,
+        "weight": 70,
+        "currentWeight": 70,
+        "startingWeight": 70,
+        "goalWeight": 68,
+        "gender": "Male",
+        "activityLevel": "Active",
+        "fitnessGoal": "General Fitness",
+        "experienceLevel": "Beginner",
+        "targetCal": 2000,
+        "targetProtein": 120,
+        "targetCarbs": 220,
+        "targetFats": 60,
+        "streak": 0,
+        "completedWorkoutsCount": 0,
+        "isPremium": false,
+        "activeProgramId": null,
+        "activeProgramWeek": 1
+      },
+      "workoutHistory": [],
+      "nutritionLogs": [],
+      "weightHistory": []
+    },
+    "sachinkumardadmi2006@gmail.com": {
+      "password": "sachin@2006",
+      "profile": {
+        "name": "Sachinkumar",
+        "email": "sachinkumardadmi2006@gmail.com",
+        "age": 24,
+        "height": 175,
+        "weight": 72,
+        "currentWeight": 72,
+        "startingWeight": 72,
+        "goalWeight": 78,
+        "gender": "Male",
+        "activityLevel": "Moderately Active",
+        "fitnessGoal": "Muscle Gain",
+        "experienceLevel": "Beginner",
+        "targetCal": 2728,
+        "targetProtein": 144,
+        "targetCarbs": 367,
+        "targetFats": 76,
+        "streak": 0,
+        "completedWorkoutsCount": 0,
+        "isPremium": false,
+        "activeProgramId": null,
+        "activeProgramWeek": 1,
+        "phone": "9482705834"
+      },
+      "workoutHistory": [],
+      "nutritionLogs": [],
+      "weightHistory": [
+        {
+          "date": "2026-08-24",
+          "weight": 72
+        }
+      ]
+    },
+    "adffddddddddddddddsdfgh@gmail.com": {
+      "password": "807373",
+      "profile": {
+        "name": "sujith",
+        "email": "adffddddddddddddddsdfgh@gmail.com",
+        "age": 24,
+        "height": 175,
+        "weight": 72,
+        "currentWeight": 72,
+        "startingWeight": 72,
+        "goalWeight": 78,
+        "gender": "Male",
+        "activityLevel": "Moderately Active",
+        "fitnessGoal": "Muscle Gain",
+        "experienceLevel": "Intermediate",
+        "targetCal": 2728,
+        "targetProtein": 144,
+        "targetCarbs": 367,
+        "targetFats": 76,
+        "streak": 0,
+        "completedWorkoutsCount": 0,
+        "isPremium": false,
+        "activeProgramId": null,
+        "activeProgramWeek": 1
+      },
+      "workoutHistory": [],
+      "nutritionLogs": [],
+      "weightHistory": [
+        {
+          "date": "2026-08-24",
+          "weight": 72
+        }
+      ]
+    }
+  }
+}
