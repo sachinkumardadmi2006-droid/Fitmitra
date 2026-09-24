@@ -5,6 +5,7 @@ import Layout from './layouts/Layout';
 
 // Pages import
 import Home from './pages/Home';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Onboarding from './pages/Onboarding';
@@ -15,6 +16,7 @@ import Nutrition from './pages/Nutrition';
 import Programs from './pages/Programs';
 import Progress from './pages/Progress';
 import Profile from './pages/Profile';
+import Premium from './pages/Premium';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -70,8 +72,8 @@ function App() {
     <Router>
       <Layout user={user} onLogout={handleLogout}>
         <Routes>
-          {/* Public Landing Page - Redirect to login page first */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          {/* Public Landing Page */}
+          <Route path="/" element={<Landing />} />
 
           {/* Authentication Routes */}
           <Route 
@@ -157,6 +159,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile onLogout={handleLogout} />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Premium Subscription */}
+          <Route 
+            path="/premium" 
+            element={
+              <ProtectedRoute>
+                <Premium />
               </ProtectedRoute>
             } 
           />

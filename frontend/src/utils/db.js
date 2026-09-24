@@ -7,7 +7,39 @@ const KEYS = {
   WEIGHT_HISTORY: 'fitmitra_weight_history',
 };
 
-const API_URL = 'http://localhost:5000/api';
+// Candidate API bases (try in order). You can override with Vite env `VITE_API_URL`.
+const DEV_TUNNEL = 'https://cw2z3q77-5000.inc1.devtunnels.ms';
+const CANDIDATE_BASES = [
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || null,
+  `${DEV_TUNNEL}/api`,
+  'http://localhost:5000/api',
+].filter(Boolean);
+
+let resolvedApiBase = null;
+
+const timeoutFetch = (url, ms = 2000) => {
+  return Promise.race([
+    fetch(url, { method: 'GET', mode: 'cors' }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+  ]);
+};
+
+const resolveApiBase = async () => {
+  if (resolvedApiBase) return resolvedApiBase;
+  for (const base of CANDIDATE_BASES) {
+    try {
+      // Try a simple GET to the base URL (any HTTP response means the host is reachable)
+      await timeoutFetch(base, 2000);
+      resolvedApiBase = base.replace(/\/$/, '');
+      break;
+    } catch (e) {
+      // try next candidate
+    }
+  }
+  // fallback to first candidate if none responded quickly
+  if (!resolvedApiBase) resolvedApiBase = CANDIDATE_BASES[0];
+  return resolvedApiBase;
+};
 
 // Dummy initDb to satisfy imports, does not run automatically on app start
 export const initDb = () => {
@@ -42,7 +74,8 @@ const makeRequest = async (path, method = 'GET', body = null) => {
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_URL}${path}`, options);
+  const base = await resolveApiBase();
+  const response = await fetch(`${base}${path}`, options);
   if (!response.ok) {
     const errData = await response.json();
     throw new Error(errData.message || 'API request failed');

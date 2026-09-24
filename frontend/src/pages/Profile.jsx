@@ -295,17 +295,17 @@ function Profile({ onLogout }) {
             <div className="pricing-flex">
               <div className="price-item">
                 <span className="duration">Monthly Plan</span>
-                <strong>$9.99 / mo</strong>
+                <strong>₹49 / mo</strong>
               </div>
               <div className="price-item-divider"></div>
               <div className="price-item">
-                <span className="duration">Annual Plan</span>
-                <strong>$59.99 / yr</strong>
+                <span className="duration">3 Months (Best Value)</span>
+                <strong>₹99</strong>
               </div>
             </div>
 
             <button 
-              onClick={handleTogglePremium} 
+              onClick={() => user.isPremium ? handleTogglePremium() : navigate('/premium')} 
               className={`btn btn-block ${user.isPremium ? 'btn-danger' : 'btn-cyan glow-cyan'}`}
             >
               {user.isPremium ? 'CANCEL PREMIUM ACCESS' : 'UPGRADE TO FITMITRA PRO'}

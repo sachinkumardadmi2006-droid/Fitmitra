@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Dumbbell, Clock, Flame, ChevronRight, Play, BookOpen, AlertTriangle, Lightbulb } from 'lucide-react';
+import { Search, Dumbbell, Clock, Flame, ChevronRight, Play, BookOpen, AlertTriangle, Lightbulb, Lock, Sparkles, CheckCircle2, ShieldCheck, Crown } from 'lucide-react';
 import { WORKOUTS, EXERCISES } from '../data/mockData';
+import { getUser, saveUser } from '../utils/db';
 
 function Workouts() {
   const navigate = useNavigate();
@@ -9,11 +10,36 @@ function Workouts() {
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeDifficulty, setActiveDifficulty] = useState('All');
   
+  // User state for premium check
+  const [user, setUser] = useState(null);
+
   // Exercise details modal state
   const [selectedExercise, setSelectedExercise] = useState(null);
 
+  // Upgrade Plan Modal state
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeItemName, setUpgradeItemName] = useState('');
+
   const categories = ['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'];
   const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced'];
+
+  // Sync user state from storage / DB
+  const loadUser = () => {
+    const u = getUser();
+    setUser(u);
+  };
+
+  useEffect(() => {
+    loadUser();
+    window.addEventListener('storage', loadUser);
+    return () => window.removeEventListener('storage', loadUser);
+  }, []);
+
+  // Helper to check if difficulty tier is locked for current user
+  const isLocked = (difficulty) => {
+    if (user?.isPremium) return false;
+    return difficulty === 'Intermediate' || difficulty === 'Advanced';
+  };
 
   // Filter Workouts based on category & difficulty & search
   const filteredWorkouts = WORKOUTS.filter(w => {
@@ -33,8 +59,33 @@ function Workouts() {
     return matchesCategory && matchesDifficulty && matchesSearch;
   });
 
+  const handleWorkoutClick = (w) => {
+    if (isLocked(w.difficulty)) {
+      setUpgradeItemName(w.name);
+      setShowUpgradeModal(true);
+    } else {
+      navigate(`/workouts/${w.id}`);
+    }
+  };
+
+  const handleExerciseClick = (ex) => {
+    if (isLocked(ex.difficulty)) {
+      setUpgradeItemName(ex.name);
+      setShowUpgradeModal(true);
+    } else {
+      setSelectedExercise(ex);
+    }
+  };
+
+  const handleUpgradeNow = async () => {
+    const updatedUser = { ...user, isPremium: true };
+    await saveUser(updatedUser);
+    setUser(updatedUser);
+    setShowUpgradeModal(false);
+  };
+
   return (
-    <div className="workouts-page animate-fade-in">
+    <div className="workouts-page animate-fade-in" style={{ paddingBottom: '60px' }}>
       <div className="page-header">
         <div>
           <h1 className="page-title text-gradient">Workouts & Library</h1>
@@ -85,7 +136,7 @@ function Workouts() {
                 fontWeight: '600'
               }}
             >
-              {diff}
+              {diff} {isLocked(diff) && '🔒'}
             </button>
           ))}
         </div>
@@ -95,40 +146,57 @@ function Workouts() {
       <section className="section-block" style={{ marginBottom: '40px' }}>
         <h2 className="section-title-left">Training Routines ({filteredWorkouts.length})</h2>
         <div className="grid-cols-3">
-          {filteredWorkouts.map(w => (
-            <div key={w.id} className="glass-card glass-card-hover workout-card">
-              <div className="card-header-info">
-                <span className="badge badge-primary" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveDifficulty(w.difficulty); }}>{w.difficulty}</span>
-                <span className="category-tag" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveCategory(w.category); }}>{w.category}</span>
-              </div>
-              <h3 className="card-workout-name">{w.name}</h3>
-              <p className="card-workout-desc">{w.tagline}</p>
-              
-              <div className="workout-meta-grid">
-                <div className="meta-item">
-                  <Clock size={16} />
-                  <span>{w.duration} Min</span>
+          {filteredWorkouts.map(w => {
+            const locked = isLocked(w.difficulty);
+            return (
+              <div 
+                key={w.id} 
+                className={`glass-card glass-card-hover workout-card ${locked ? 'workout-card-locked' : ''}`}
+                onClick={() => handleWorkoutClick(w)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="card-header-info">
+                  <span className={`badge ${locked ? 'badge-locked' : 'badge-primary'}`}>
+                    {w.difficulty} {locked && <Lock size={12} style={{ marginLeft: '4px' }} />}
+                  </span>
+                  <span className="category-tag">{w.category}</span>
                 </div>
-                <div className="meta-item">
-                  <Flame size={16} />
-                  <span>{w.calories} Kcal</span>
+                <h3 className="card-workout-name">{w.name}</h3>
+                <p className="card-workout-desc">{w.tagline}</p>
+                
+                <div className="workout-meta-grid">
+                  <div className="meta-item">
+                    <Clock size={16} />
+                    <span>{w.duration} Min</span>
+                  </div>
+                  <div className="meta-item">
+                    <Flame size={16} />
+                    <span>{w.calories} Kcal</span>
+                  </div>
+                  <div className="meta-item">
+                    <Dumbbell size={16} />
+                    <span>{w.exercises.length} Exercises</span>
+                  </div>
                 </div>
-                <div className="meta-item">
-                  <Dumbbell size={16} />
-                  <span>{w.exercises.length} Exercises</span>
-                </div>
-              </div>
 
-              <div className="workout-card-footer" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '16px', marginTop: '16px' }}>
-                <button 
-                  onClick={() => navigate(`/workouts/${w.id}`)} 
-                  className="btn btn-outline-neon btn-sm btn-block"
-                >
-                  View Details & Start <ChevronRight size={16} />
-                </button>
+                <div className="workout-card-footer" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '16px', marginTop: '16px' }}>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleWorkoutClick(w);
+                    }} 
+                    className={`btn ${locked ? 'btn-upgrade-locked' : 'btn-outline-neon'} btn-sm btn-block`}
+                  >
+                    {locked ? (
+                      <>Unlock with FitMitra Pro <Lock size={14} /></>
+                    ) : (
+                      <>View Details & Start <ChevronRight size={16} /></>
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {filteredWorkouts.length === 0 && (
             <p className="no-results">No workouts match your criteria.</p>
           )}
@@ -141,31 +209,31 @@ function Workouts() {
         <p className="section-desc">Click any exercise to learn the proper form, setup instructions, and tips.</p>
 
         <div className="exercises-list-grid">
-          {filteredExercises.map(ex => (
-            <div 
-              key={ex.id} 
-              className="glass-card glass-card-hover exercise-row-card"
-              onClick={() => setSelectedExercise(ex)}
-            >
-              <div className="ex-info">
-                <h3>{ex.name}</h3>
-                <p>{ex.targetMuscle} • <strong>{ex.equipment}</strong></p>
+          {filteredExercises.map(ex => {
+            const locked = isLocked(ex.difficulty);
+            return (
+              <div 
+                key={ex.id} 
+                className={`glass-card glass-card-hover exercise-row-card ${locked ? 'ex-row-locked' : ''}`}
+                onClick={() => handleExerciseClick(ex)}
+              >
+                <div className="ex-info">
+                  <h3>{ex.name}</h3>
+                  <p>{ex.targetMuscle} • <strong>{ex.equipment}</strong></p>
+                </div>
+                <div className="ex-action">
+                  <span className={`badge ${locked ? 'badge-locked' : 'badge-cyan'}`}>
+                    {ex.difficulty} {locked && <Lock size={12} style={{ marginLeft: '4px' }} />}
+                  </span>
+                  {locked ? (
+                    <Lock size={18} className="library-icon locked-icon" style={{ color: 'var(--accent-orange)' }} />
+                  ) : (
+                    <BookOpen size={18} className="library-icon" />
+                  )}
+                </div>
               </div>
-              <div className="ex-action">
-                <span 
-                  className="badge badge-cyan"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveDifficulty(ex.difficulty);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {ex.difficulty}
-                </span>
-                <BookOpen size={18} className="library-icon" />
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {filteredExercises.length === 0 && (
             <p className="no-results">No exercises match your criteria.</p>
           )}
@@ -185,7 +253,6 @@ function Workouts() {
             </div>
 
             <div className="ex-modal-body">
-              {/* Actual video guide display */}
               {selectedExercise.videoUrl ? (
                 <div className="ex-media-video-container" style={{ width: '100%', height: '220px', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px', background: '#000' }}>
                   <video 
@@ -256,6 +323,59 @@ function Workouts() {
         </div>
       )}
 
+      {/* UPGRADE YOUR PLAN MODAL */}
+      {showUpgradeModal && (
+        <div className="modal-backdrop" onClick={() => setShowUpgradeModal(false)}>
+          <div className="modal-content glass-card upgrade-plan-modal" onClick={e => e.stopPropagation()}>
+            <div className="upgrade-header text-center">
+              <div className="crown-badge-wrapper">
+                <Crown size={32} className="crown-icon" />
+              </div>
+              <h2 className="upgrade-title text-gradient">Upgrade Your Plan</h2>
+              <p className="upgrade-subtitle">
+                Unlock Intermediate & Advanced Workouts
+              </p>
+            </div>
+
+            <div className="upgrade-body">
+              <div className="upgrade-highlight-box">
+                <p>
+                  <strong>{upgradeItemName ? `"${upgradeItemName}"` : 'This routine'}</strong> requires a FitMitra Pro subscription.
+                </p>
+              </div>
+
+              <p className="upgrade-desc">
+                Intermediate & Advanced routines are designed for serious muscle gain and fat loss. Upgrade your account today to unlock full access across all devices!
+              </p>
+
+              <div className="perks-list">
+                <div className="perk-item">
+                  <CheckCircle2 size={18} className="perk-check" />
+                  <span>Full access to <strong>40+ Intermediate & Advanced Workouts</strong></span>
+                </div>
+                <div className="perk-item">
+                  <CheckCircle2 size={18} className="perk-check" />
+                  <span><strong>70+ Exercise Library</strong> with HD Video Form Guides</span>
+                </div>
+                <div className="perk-item">
+                  <CheckCircle2 size={18} className="perk-check" />
+                  <span><strong>Custom Macro Goals</strong> & Specialized Nutrition Recipes</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="upgrade-footer" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button className="btn btn-primary btn-block glow-neon" onClick={handleUpgradeNow}>
+                <Sparkles size={18} style={{ marginRight: '8px' }} /> UPGRADE TO FITMITRA PRO NOW
+              </button>
+              <button className="btn btn-secondary btn-block" onClick={() => setShowUpgradeModal(false)}>
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .section-title-left {
           font-size: 1.4rem;
@@ -318,6 +438,34 @@ function Workouts() {
           font-weight: 600;
           border-color: var(--primary-neon);
           box-shadow: 0 4px 12px var(--primary-neon-glow);
+        }
+
+        /* Locked Badges & Cards */
+        .badge-locked {
+          background: rgba(249, 115, 22, 0.15) !important;
+          color: #f97316 !important;
+          border: 1px solid rgba(249, 115, 22, 0.3) !important;
+          display: inline-flex;
+          align-items: center;
+        }
+
+        .workout-card-locked {
+          border-color: rgba(249, 115, 22, 0.25);
+        }
+
+        .btn-upgrade-locked {
+          background: linear-gradient(135deg, #f97316, #ea580c);
+          color: #fff;
+          font-weight: 700;
+          border: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
+
+        .btn-upgrade-locked:hover {
+          box-shadow: 0 0 15px rgba(249, 115, 22, 0.4);
         }
 
         /* Workout Cards */
@@ -422,172 +570,86 @@ function Workouts() {
           color: var(--secondary-cyan);
         }
 
-        /* Exercise Modal specific */
-        .exercise-modal {
-          max-width: 540px;
+        /* UPGRADE MODAL STYLING */
+        .upgrade-plan-modal {
+          max-width: 480px;
           width: 100%;
-          max-height: 90vh;
-          overflow-y: auto;
-          padding: 24px;
+          padding: 28px;
+          text-align: center;
+          border: 1px solid var(--border-glass-bright);
         }
 
-        .ex-modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          border-bottom: 1px solid var(--border-glass);
-          padding-bottom: 16px;
-          margin-bottom: 20px;
-          text-align: left;
-        }
-
-        .ex-modal-header h2 {
-          font-size: 1.5rem;
-        }
-
-        .ex-modal-header .sub {
-          font-size: 0.85rem;
-          color: var(--text-secondary);
-        }
-
-        .close-btn {
-          background: transparent;
-          border: none;
-          color: var(--text-muted);
-          font-size: 2rem;
-          cursor: pointer;
-          line-height: 1;
-        }
-
-        .close-btn:hover {
-          color: var(--text-primary);
-        }
-
-        .ex-media-placeholder {
-          width: 100%;
-          height: 180px;
-          background: #000;
-          border-radius: var(--border-radius-md);
+        .crown-badge-wrapper {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          background: rgba(249, 115, 22, 0.15);
+          border: 1px solid rgba(249, 115, 22, 0.3);
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 20px;
-          border: 1px solid var(--border-glass);
-          position: relative;
+          margin: 0 auto 16px;
         }
 
-        .overlay-indicator {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 8px;
-          color: var(--text-secondary);
-          font-size: 0.85rem;
+        .crown-icon {
+          color: #f97316;
         }
 
-        .ex-modal-stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid var(--border-glass);
-          padding: 12px;
-          border-radius: var(--border-radius-md);
-          text-align: center;
-          margin-bottom: 20px;
-        }
-
-        .ex-modal-stats .stat {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .ex-modal-stats span {
-          font-size: 0.75rem;
-          color: var(--text-muted);
-        }
-
-        .ex-modal-stats strong {
-          font-family: var(--font-heading);
-          font-size: 1.1rem;
-          color: var(--primary-neon);
-        }
-
-        .instructions-box {
-          text-align: left;
-          margin-bottom: 20px;
-        }
-
-        .instructions-box h3 {
-          font-size: 1rem;
-          margin-bottom: 10px;
-          color: var(--text-primary);
-        }
-
-        .instructions-box ol {
-          padding-left: 20px;
-          font-size: 0.85rem;
-          color: var(--text-secondary);
-          line-height: 1.5;
-        }
-
-        .instructions-box li {
-          margin-bottom: 8px;
-        }
-
-        .tips-mistakes-flex {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          margin-bottom: 20px;
-        }
-
-        .notes-box {
-          background: rgba(255, 255, 255, 0.01);
-          padding: 14px;
-          border-radius: var(--border-radius-md);
-          text-align: left;
-        }
-
-        .tip-border {
-          border-left: 3px solid #eab308;
-        }
-
-        .mistake-border {
-          border-left: 3px solid var(--accent-rose);
-        }
-
-        .flex-title {
-          font-size: 0.9rem;
-          font-weight: 600;
-          margin-bottom: 8px;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .tip-color {
-          color: #eab308;
-        }
-
-        .mistake-color {
-          color: var(--accent-rose);
-        }
-
-        .notes-box ul {
-          padding-left: 20px;
-          font-size: 0.8rem;
-          color: var(--text-secondary);
-          line-height: 1.4;
-        }
-
-        .notes-box li {
+        .upgrade-title {
+          font-size: 1.8rem;
           margin-bottom: 4px;
         }
 
-        .ex-modal-footer {
-          margin-top: 24px;
+        .upgrade-subtitle {
+          font-size: 0.9rem;
+          color: var(--text-secondary);
+          margin-bottom: 20px;
+        }
+
+        .upgrade-highlight-box {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px dashed var(--border-glass-bright);
+          padding: 12px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+          font-size: 0.875rem;
+          color: var(--text-primary);
+        }
+
+        .upgrade-desc {
+          font-size: 0.85rem;
+          color: var(--text-secondary);
+          line-height: 1.4;
+          margin-bottom: 20px;
+        }
+
+        .perks-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          text-align: left;
+          background: rgba(0, 0, 0, 0.25);
+          padding: 16px;
+          border-radius: 12px;
+          margin-bottom: 24px;
+          border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .perk-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 0.85rem;
+          color: var(--text-primary);
+        }
+
+        .perk-check {
+          color: var(--primary-neon);
+          flex-shrink: 0;
+        }
+
+        .glow-neon {
+          box-shadow: 0 0 20px var(--primary-neon-glow);
         }
       `}</style>
     </div>

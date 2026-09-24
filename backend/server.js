@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
 import twilio from 'twilio';
+import morgan from 'morgan';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,33 @@ const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Custom Morgan tokens for Success vs Failure terminal logging
+morgan.token('status-badge', (req, res) => {
+  const status = res.statusCode;
+  if (status >= 500) return '\x1b[41m\x1b[37m[CRITICAL FAILURE]\x1b[0m'; // White on Red background
+  if (status >= 400) return '\x1b[31m[FAILURE]\x1b[0m';          // Red text
+  if (status >= 300) return '\x1b[36m[REDIRECT]\x1b[0m';         // Cyan text
+  return '\x1b[32m[SUCCESS]\x1b[0m';                             // Green text
+});
+
+morgan.token('status-colored', (req, res) => {
+  const status = res.statusCode;
+  const color = status >= 500 ? '\x1b[31m\x1b[1m' : status >= 400 ? '\x1b[31m' : status >= 300 ? '\x1b[36m' : '\x1b[32m';
+  return `${color}${status}\x1b[0m`;
+});
+
+morgan.token('method-colored', (req) => {
+  return `\x1b[1m\x1b[35m${req.method}\x1b[0m`;
+});
+
+morgan.token('url-colored', (req) => {
+  return `\x1b[37m${req.originalUrl || req.url}\x1b[0m`;
+});
+
+// Register Morgan logger middleware
+app.use(morgan(':status-badge :method-colored :url-colored :status-colored - :response-time ms (:res[content-length] bytes)'));
+
 
 // Initialize JSON database if it doesn't exist
 const initDb = () => {
@@ -526,9 +554,16 @@ app.post('/api/weight', getAuthUser, (req, res) => {
   });
 });
 
+// Global error handling middleware
+app.use((err, req, res, next) => {
+  console.error('\x1b[41m\x1b[37m[UNHANDLED ERROR]\x1b[0m', err.message || err);
+  res.status(500).json({ success: false, message: 'Internal Server Error', error: err.message });
+});
+
 // Start Express Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   initDb();
   console.log(`FitMitra backend running on port ${PORT}`);
 });
+
