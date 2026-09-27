@@ -1,5 +1,6 @@
-// FitMitra Premium Subscription Screen & Confirmation Modal
-import React, { useState, useEffect } from 'react';
+// FitMitra Premium Subscription Screen & Checkout Modal
+// Powered by live backend API: GET /api/v1/subscriptions/plans & POST /api/v1/subscriptions/create
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,264 +10,294 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Check, Shield, X, Sparkles, Star, Crown, Flame, Gem } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  Check,
+  Shield,
+  X,
+  Sparkles,
+  Star,
+  Crown,
+  Flame,
+  Gem,
+  CheckCircle2,
+} from 'lucide-react-native';
 import { Colors } from '../constants/theme';
-import { getUser, saveUser } from '../utils/db';
-
-const PLANS = [
-  {
-    id: 'monthly',
-    icon: '🔥',
-    title: 'MONTHLY',
-    price: '₹49',
-    period: '/ month',
-    rawPrice: 49,
-    badge: null,
-    features: [
-      'All workout levels',
-      'Diet plans',
-      'Progress tracking',
-    ],
-  },
-  {
-    id: '3months',
-    icon: '⭐',
-    title: '3 MONTHS',
-    price: '₹99',
-    period: '',
-    rawPrice: 99,
-    badge: 'BEST VALUE',
-    features: [
-      'All workout levels',
-      'Diet plans',
-      'Progress tracking',
-      'Premium exercises',
-    ],
-  },
-  {
-    id: '6months',
-    icon: '💎',
-    title: '6 MONTHS',
-    price: '₹149',
-    period: '',
-    rawPrice: 149,
-    badge: null,
-    features: [
-      'All workout levels',
-      'Diet plans',
-      'Progress tracking',
-      'Premium exercises',
-    ],
-  },
-  {
-    id: 'yearly',
-    icon: '👑',
-    title: 'YEARLY',
-    price: '₹249',
-    period: '/ year',
-    rawPrice: 249,
-    badge: null,
-    features: [
-      'All workout levels',
-      'Diet plans',
-      'Progress tracking',
-      'Premium exercises',
-      'VIP Support',
-    ],
-  },
-];
+import { subscriptionService } from '../services';
+import { useAuth } from '../context/AuthContext';
+import { onDbUpdate, emitDbUpdate } from '../utils/events';
+import { LoadingSpinner } from '../components/common/LoadingSpinner';
 
 export default function PremiumScreen() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
+
+  const [plans, setPlans] = useState([]);
+  const [currentSub, setCurrentSub] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [paying, setPaying] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadSubscriptionData = useCallback(async () => {
+    try {
+      // 1. Fetch real plans from server
+      const plansRes = await subscriptionService.getPlans();
+      const planItems = Array.isArray(plansRes)
+        ? plansRes
+        : plansRes?.plans || plansRes?.items || [];
+      setPlans(planItems);
+
+      // 2. Fetch user's current subscription
+      try {
+        const sub = await subscriptionService.getMySubscription();
+        setCurrentSub(sub && sub.status !== 'INACTIVE' ? sub : null);
+      } catch (_) {
+        setCurrentSub(null);
+      }
+    } catch (e) {
+      console.warn('Error loading subscription plans:', e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    getUser().then(u => setUser(u));
-  }, []);
+    setLoading(true);
+    loadSubscriptionData();
+    const unsub = onDbUpdate(loadSubscriptionData);
+    return unsub;
+  }, [loadSubscriptionData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadSubscriptionData();
+  };
 
   const handleOpenPlanModal = (plan) => {
     setSelectedPlan(plan);
     setModalVisible(true);
   };
 
-  const handleProcessPayment = async () => {
+  const handleConfirmSubscription = async () => {
     if (!selectedPlan) return;
-    setPaying(true);
-    setTimeout(async () => {
-      setPaying(false);
-      setModalVisible(false);
-      
-      // Update user status
-      const updatedUser = {
-        ...(user || {}),
-        isPremium: true,
-        premiumPlan: selectedPlan.id,
-        premiumPurchasedAt: new Date().toISOString(),
-      };
-      await saveUser(updatedUser);
-      setUser(updatedUser);
+    try {
+      setSubmitting(true);
+      const planId = selectedPlan._id || selectedPlan.id;
+      const res = await subscriptionService.createSubscription({ planId });
 
+      emitDbUpdate();
+      setModalVisible(false);
       Alert.alert(
-        '🎉 Payment Successful!',
-        `Welcome to FitMitra Premium! You have unlocked full access with the ${selectedPlan.title} plan.`,
-        [
-          {
-            text: 'Let\'s Go!',
-            onPress: () => router.back(),
-          },
-        ]
+        'Subscription Activated! 🎉',
+        `Welcome to ${selectedPlan.name}! You now have full access to all workouts, recipes, and features.`
       );
-    }, 1200);
+      loadSubscriptionData();
+    } catch (err) {
+      Alert.alert(
+        'Subscription Failed',
+        err.message || 'Unable to activate subscription right now. Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return <LoadingSpinner message="Loading subscription plans..." fullScreen />;
+  }
+
+  const isCurrentPlanActive = (plan) => {
+    const planId = plan._id || plan.id;
+    const activePlanId = currentSub?.planId?._id || currentSub?.planId || currentSub?.plan?._id;
+    return activePlanId === planId && (currentSub?.status === 'ACTIVE' || currentSub?.status === 'TRIALING');
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header Bar */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ChevronLeft size={24} color={Colors.textPrimary} />
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
+      }
+    >
+      {/* Header bar */}
+      <View style={styles.navBar}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <ChevronLeft size={22} color={Colors.textPrimary} />
         </Pressable>
-        <Text style={styles.headerTitle}>FitMitra Premium</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.navTitle}>FitMitra PRO</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Hero Banner */}
-        <View style={styles.heroSection}>
-          <Text style={styles.heroEmoji}>💪</Text>
-          <Text style={styles.heroTitle}>UNLOCK YOUR POTENTIAL</Text>
-          <Text style={styles.heroSubtitle}>Train smarter. Get stronger.</Text>
+      {/* Hero Badge */}
+      <View style={styles.heroSection}>
+        <View style={styles.iconCircle}>
+          <Crown size={36} color="#FFB800" />
         </View>
+        <Text style={styles.heroTitle}>Unlock Your Full Potential</Text>
+        <Text style={styles.heroSubtitle}>
+          Choose your plan for personalized coaching, complete workout libraries, and customized meal plans.
+        </Text>
+      </View>
 
-        {/* Subscription Plan Cards */}
-        <View style={styles.plansWrap}>
-          {PLANS.map((plan) => {
-            const isBestValue = plan.badge === 'BEST VALUE';
-            return (
-              <View
-                key={plan.id}
-                style={[
-                  styles.planCard,
-                  isBestValue && styles.bestValueCard,
-                ]}
-              >
-                {/* Header Row */}
-                <View style={styles.planCardHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 20 }}>{plan.icon}</Text>
-                    <Text style={styles.planTitle}>{plan.title}</Text>
+      {/* Active Subscription Banner if already subscribed */}
+      {currentSub && (
+        <View style={styles.activeBanner}>
+          <CheckCircle2 size={20} color={Colors.primaryNeon} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.activeBannerTitle}>Active Membership</Text>
+            <Text style={styles.activeBannerSub}>
+              {currentSub.planId?.name || currentSub.tier || 'PRO'} • Status:{' '}
+              {currentSub.status}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Plans List */}
+      <View style={styles.plansContainer}>
+        {plans.map((plan) => {
+          const planId = plan._id || plan.id;
+          const priceRupees = Math.round((plan.priceInPaise || 0) / 100);
+          const regularRupees = Math.round((plan.regularPriceInPaise || 0) / 100);
+          const isActive = isCurrentPlanActive(plan);
+
+          return (
+            <View
+              key={planId}
+              style={[
+                styles.planCard,
+                isActive && styles.planCardActive,
+                plan.tier === 'ADVANCED' && styles.planCardAdvanced,
+              ]}
+            >
+              <View style={styles.planHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.planTier}>{plan.tier}</Text>
+                  <Text style={styles.planName}>{plan.name}</Text>
+                </View>
+                <View style={styles.priceWrap}>
+                  <Text style={styles.priceText}>₹{priceRupees}</Text>
+                  <Text style={styles.periodText}>/{plan.billingPeriod?.toLowerCase() || 'mo'}</Text>
+                </View>
+              </View>
+
+              {regularRupees > priceRupees && (
+                <Text style={styles.regularPriceText}>Regular: ₹{regularRupees}</Text>
+              )}
+
+              {plan.trialDays > 0 && (
+                <View style={styles.trialPill}>
+                  <Text style={styles.trialPillText}>{plan.trialDays}-Day Free Trial Included</Text>
+                </View>
+              )}
+
+              {/* Features list */}
+              <View style={styles.featuresList}>
+                {(plan.features || []).map((feat, idx) => (
+                  <View key={idx} style={styles.featureRow}>
+                    <Check size={14} color={Colors.primaryNeon} />
+                    <Text style={styles.featureText}>{feat}</Text>
                   </View>
-                  {isBestValue && (
-                    <View style={styles.bestValueBadge}>
-                      <Text style={styles.bestValueText}>BEST VALUE</Text>
-                    </View>
-                  )}
-                </View>
+                ))}
+              </View>
 
-                {/* Price */}
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceText}>{plan.price}</Text>
-                  {!!plan.period && <Text style={styles.periodText}>{' ' + plan.period}</Text>}
+              {/* Action Button */}
+              {isActive ? (
+                <View style={styles.activeBtn}>
+                  <CheckCircle2 size={16} color={Colors.primaryNeon} />
+                  <Text style={styles.activeBtnText}>Current Active Plan</Text>
                 </View>
-
-                {/* Features List */}
-                <View style={styles.featuresList}>
-                  {plan.features.map((feat, idx) => (
-                    <View key={idx} style={styles.featureRow}>
-                      <Check size={16} color={Colors.primaryNeon} />
-                      <Text style={styles.featureText}>{feat}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* Action Button */}
+              ) : (
                 <Pressable
-                  style={[styles.planBtn, isBestValue && styles.bestValueBtn]}
+                  style={({ pressed }) => [
+                    styles.chooseBtn,
+                    pressed && { opacity: 0.85 },
+                  ]}
                   onPress={() => handleOpenPlanModal(plan)}
                 >
-                  <Text style={[styles.planBtnText, isBestValue && styles.bestValueBtnText]}>
-                    Get {plan.price} Plan
-                  </Text>
+                  <Sparkles size={16} color={Colors.bgDarkBase} />
+                  <Text style={styles.chooseBtnText}>Select {plan.name}</Text>
                 </Pressable>
-              </View>
-            );
-          })}
-        </View>
+              )}
+            </View>
+          );
+        })}
+      </View>
 
-        {/* Footer Guarantee */}
-        <View style={styles.footerSection}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-            <Shield size={18} color={Colors.primaryNeon} />
-            <Text style={styles.footerTitle}>Secure payments</Text>
-          </View>
-          <Text style={styles.footerSub}>UPI • Cards • Net Banking</Text>
-        </View>
-      </ScrollView>
+      {/* Trust Guarantee */}
+      <View style={styles.trustBox}>
+        <Shield size={20} color={Colors.primaryNeon} />
+        <Text style={styles.trustText}>
+          Secure payments powered by Razorpay. Cancel anytime with zero questions asked.
+        </Text>
+      </View>
 
-      {/* CONFIRM YOUR PLAN MODAL */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => !paying && setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Modal Close Button */}
-            <Pressable style={styles.closeBtn} onPress={() => setModalVisible(false)} disabled={paying}>
-              <X size={20} color={Colors.textSecondary} />
-            </Pressable>
-
-            <Text style={styles.confirmHeaderTitle}>Confirm Your Plan</Text>
+      {/* Confirmation Modal */}
+      <Modal visible={modalVisible} transparent animationType="slide">
+        <View style={styles.backdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Subscription</Text>
+              <Pressable onPress={() => setModalVisible(false)} style={styles.modalClose}>
+                <X size={20} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
 
             {selectedPlan && (
-              <View style={styles.confirmBody}>
-                {/* Brand & Selected Plan Name */}
-                <Text style={styles.brandTitle}>FitMitra Premium</Text>
-                <Text style={styles.confirmPlanName}>{selectedPlan.title}</Text>
-
-                {/* Price */}
-                <Text style={styles.confirmPrice}>{selectedPlan.price}</Text>
-
-                {/* Checkable Included Features */}
-                <View style={styles.confirmFeaturesWrap}>
-                  {selectedPlan.features.map((feat, idx) => (
-                    <View key={idx} style={styles.confirmFeatureRow}>
-                      <Check size={16} color={Colors.primaryNeon} />
-                      <Text style={styles.confirmFeatureText}>{feat}</Text>
-                    </View>
-                  ))}
+              <>
+                <View style={styles.summaryBox}>
+                  <View>
+                    <Text style={styles.summaryName}>{selectedPlan.name}</Text>
+                    <Text style={styles.summaryPeriod}>
+                      Billed {selectedPlan.billingPeriod?.toLowerCase()}
+                    </Text>
+                  </View>
+                  <Text style={styles.summaryPrice}>
+                    ₹{Math.round((selectedPlan.priceInPaise || 0) / 100)}
+                  </Text>
                 </View>
 
-                {/* Pay Button */}
+                {selectedPlan.trialDays > 0 && (
+                  <Text style={styles.trialNotice}>
+                    ⚡ Your first {selectedPlan.trialDays} days are 100% free! You can cancel anytime before the trial ends.
+                  </Text>
+                )}
+
                 <Pressable
-                  style={styles.payBtn}
-                  onPress={handleProcessPayment}
-                  disabled={paying}
+                  disabled={submitting}
+                  style={({ pressed }) => [
+                    styles.confirmBtn,
+                    submitting && { opacity: 0.6 },
+                    pressed && { opacity: 0.8 },
+                  ]}
+                  onPress={handleConfirmSubscription}
                 >
-                  {paying ? (
-                    <ActivityIndicator size="small" color="#000000" />
+                  {submitting ? (
+                    <ActivityIndicator color={Colors.bgDarkBase} />
                   ) : (
-                    <Text style={styles.payBtnText}>Pay {selectedPlan.price}</Text>
+                    <>
+                      <Sparkles size={18} color={Colors.bgDarkBase} />
+                      <Text style={styles.confirmBtnText}>
+                        {selectedPlan.trialDays > 0
+                          ? `Start ${selectedPlan.trialDays}-Day Free Trial`
+                          : `Subscribe for ₹${Math.round((selectedPlan.priceInPaise || 0) / 100)}`}
+                      </Text>
+                    </>
                   )}
                 </Pressable>
-
-                {/* Secure Badge */}
-                <View style={styles.secureBadgeRow}>
-                  <Shield size={15} color={Colors.textSecondary} />
-                  <Text style={styles.secureBadgeText}>Secure payment</Text>
-                </View>
-              </View>
+              </>
             )}
           </View>
         </View>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -275,241 +306,285 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bgDarkBase,
   },
-  header: {
-    height: 56,
+  contentContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 54,
+    paddingBottom: 40,
+  },
+  navBar: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderGlass,
+    alignItems: 'center',
+    marginBottom: 20,
   },
   backBtn: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerTitle: {
+  navTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
   },
   heroSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
-  heroEmoji: {
-    fontSize: 36,
-    marginBottom: 8,
-  },
-  heroTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-    letterSpacing: 0.5,
-  },
-  heroSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  plansWrap: {
-    gap: 18,
-    marginBottom: 28,
-  },
-  planCard: {
-    backgroundColor: Colors.bgDarkCard,
-    borderRadius: 20,
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(255, 184, 0, 0.12)',
     borderWidth: 1.5,
-    borderColor: Colors.borderGlassBright,
-    padding: 20,
-  },
-  bestValueCard: {
-    borderColor: Colors.primaryNeon,
-    backgroundColor: 'rgba(204, 255, 0, 0.04)',
-    shadowColor: Colors.primaryNeon,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  planCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderColor: 'rgba(255, 184, 0, 0.4)',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  planTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: 0.5,
-  },
-  bestValueBadge: {
-    backgroundColor: Colors.primaryNeon,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  bestValueText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#000000',
-    letterSpacing: 0.5,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
     marginBottom: 16,
   },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    paddingHorizontal: 10,
+  },
+  activeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(0, 245, 155, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 245, 155, 0.3)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  activeBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.primaryNeon,
+  },
+  activeBannerSub: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  plansContainer: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  planCard: {
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: Colors.borderGlass,
+    padding: 20,
+  },
+  planCardActive: {
+    borderColor: Colors.primaryNeon,
+    backgroundColor: 'rgba(0, 245, 155, 0.04)',
+  },
+  planCardAdvanced: {
+    borderColor: 'rgba(255, 184, 0, 0.4)',
+  },
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  planTier: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.primaryNeon,
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  planName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  priceWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
   priceText: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '900',
     color: Colors.textPrimary,
   },
   periodText: {
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.textSecondary,
   },
+  regularPriceText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textDecorationLine: 'line-through',
+    marginBottom: 10,
+  },
+  trialPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0, 216, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 216, 246, 0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 14,
+  },
+  trialPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00D8F6',
+  },
   featuresList: {
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    marginBottom: 16,
   },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   featureText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  planBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justify: 'center',
-  },
-  bestValueBtn: {
-    backgroundColor: Colors.primaryNeon,
-  },
-  planBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  bestValueBtnText: {
-    color: '#000000',
-    fontWeight: '800',
-  },
-  footerSection: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  footerTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  footerSub: {
     fontSize: 13,
     color: Colors.textSecondary,
-    marginTop: 4,
   },
-  // MODAL STYLES
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  chooseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    gap: 8,
+    backgroundColor: Colors.primaryNeon,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
-  modalContent: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: Colors.white,
-    borderRadius: 24,
-    padding: 24,
-    position: 'relative',
-    alignItems: 'center',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    padding: 4,
-    zIndex: 10,
-  },
-  confirmHeaderTitle: {
-    fontSize: 18,
+  chooseBtnText: {
+    color: Colors.bgDarkBase,
     fontWeight: '800',
-    color: Colors.authText,
-    marginBottom: 20,
-    textAlign: 'center',
+    fontSize: 14,
   },
-  confirmBody: {
-    width: '100%',
+  activeBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0, 245, 155, 0.12)',
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 245, 155, 0.3)',
   },
-  brandTitle: {
-    fontSize: 15,
-    color: Colors.authSubtext,
-    fontWeight: '600',
-  },
-  confirmPlanName: {
-    fontSize: 20,
+  activeBtnText: {
+    color: Colors.primaryNeon,
     fontWeight: '800',
-    color: Colors.authText,
-    marginTop: 4,
+    fontSize: 14,
   },
-  confirmPrice: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: Colors.authText,
-    marginVertical: 16,
-  },
-  confirmFeaturesWrap: {
-    width: '100%',
-    backgroundColor: '#F8FAFC',
+  trustBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 16,
     padding: 16,
-    gap: 12,
-    marginBottom: 24,
   },
-  confirmFeatureRow: {
+  trustText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(6, 9, 19, 0.85)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#0D1222',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: Colors.borderGlass,
+  },
+  modalHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    marginBottom: 20,
   },
-  confirmFeatureText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.authText,
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.textPrimary,
   },
-  payBtn: {
-    width: '100%',
-    height: 52,
-    backgroundColor: Colors.authText,
-    borderRadius: 14,
+  modalClose: {
+    padding: 4,
+  },
+  summaryBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justify: 'center',
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderGlass,
     marginBottom: 16,
   },
-  payBtnText: {
+  summaryName: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.white,
+    color: Colors.textPrimary,
   },
-  secureBadgeRow: {
+  summaryPeriod: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  summaryPrice: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: Colors.textPrimary,
+  },
+  trialNotice: {
+    fontSize: 12,
+    color: '#00D8F6',
+    lineHeight: 18,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  confirmBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryNeon,
+    paddingVertical: 15,
+    borderRadius: 14,
+    marginBottom: 20,
   },
-  secureBadgeText: {
-    fontSize: 13,
-    color: Colors.authSubtext,
+  confirmBtnText: {
+    color: Colors.bgDarkBase,
+    fontWeight: '800',
+    fontSize: 15,
   },
 });

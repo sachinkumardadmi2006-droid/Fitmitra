@@ -1,51 +1,103 @@
-# FitMitra Mobile App (React Native Expo)
+# FitMitra Mobile Native App (React Native & Expo Router)
 
-FitMitra is a bilingual (English + Kannada) personal fitness trainer and lifestyle tracking app built with React Native and Expo Router.
+FitMitra is a bilingual (English + Kannada) personal fitness trainer, nutrition tracker, and supplements commerce mobile application built with React Native and Expo Router, connecting to the FitMitra Express/MongoDB backend (`http://<HOST>:5000/api/v1`).
+
+---
+
+## Professional Architecture & Folder Structure
+
+```
+mobile/
+├── app/                      # Expo Router File-Based Routing
+│   ├── (tabs)/               # Bottom Tab Navigator Screens
+│   │   ├── _layout.jsx       # Tab bar configuration & icons (Home, Workout, Diet, Store, Progress, Profile)
+│   │   ├── index.jsx         # Home / Consolidated Dashboard & Reward Points Banner
+│   │   ├── workouts.jsx      # Exercises & Workout Catalog (Live API)
+│   │   ├── nutrition.jsx     # Daily Diet & Meal Tracking (Live API)
+│   │   ├── store.jsx         # Supplements Store & Shiprocket Live Tracking (Live API)
+│   │   ├── progress.jsx      # Weight Transformation & Workout History (Live API)
+│   │   ├── profile.jsx       # User Profile, Biometrics & Points (Live API)
+│   │   └── programs.jsx      # Structured Multi-Week Programs (Live API)
+│   ├── workout/
+│   │   └── [workoutId].jsx   # Interactive Workout Player (+5 Points on Completion)
+│   ├── login.jsx             # Authentication Screen (Phone OTP & Email)
+│   ├── signup.jsx            # Account Registration Screen
+│   ├── onboarding.jsx        # 3-step User Goals & Biometrics Wizard
+│   ├── premium.jsx           # Pro Membership Paywall (Razorpay Integration)
+│   ├── _layout.jsx           # Root layout with AuthProvider & Stack Navigation
+│   └── +not-found.jsx        # 404 Fallback
+├── components/               # Reusable Modular UI Components
+│   ├── common/               # Primitives (LoadingSpinner, EmptyState, Badge, StatCard)
+│   ├── modals/               # Modals (PointsCelebrationModal)
+│   ├── store/                # Store Widgets (ProductCard, TrackingTimeline, OrderCard, OrderModal)
+│   └── index.js              # Unified components barrel exports
+├── context/                  # Global State Management
+│   └── AuthContext.jsx       # Auth session, user, live profile & points state
+├── hooks/                    # Custom React Hooks
+│   ├── useAuth.js            # Authentication state hook
+│   └── usePoints.js          # Live points balance & refresh hook
+├── services/                 # Modular API Services Layer
+│   ├── api.js                # Core Axios/Fetch client with Bearer token injection
+│   ├── authService.js        # Auth session, token storage & sync
+│   ├── dashboardService.js   # Consolidated single-endpoint dashboard API
+│   ├── workoutService.js     # Exercises, programs, start/log/complete workout APIs
+│   ├── nutritionService.js   # Recipes, daily logs, meal creation & deletion APIs
+│   ├── storeService.js       # Products, cash & points checkout, order tracking APIs
+│   ├── aiService.js          # LangChain RAG AI chat API
+│   ├── subscriptionService.js# Plans, subscription orders & payment verification
+│   ├── profileService.js     # User biometrics, goals & points API
+│   └── index.js              # Unified service exports
+├── constants/                # App Constants & Theme Tokens
+│   ├── api.js                # Base URL configuration (targeting /api/v1)
+│   └── theme.js              # Design system tokens (Neon, Glassmorphism, Colors)
+└── utils/                    # Utility Helpers
+    ├── i18n.js               # Bilingual translations (English & Kannada)
+    ├── events.js             # EventEmitter for reactive cross-component updates
+    └── aiCoach.js            # Fitness knowledge base & offline fallback
+```
+
+---
+
+## Key Features & Backend Integrations
+
+1. **Zero-Trust Client Authentication**:
+   - Client sends `Authorization: Bearer <idToken>` (or `Bearer dev-token` in development).
+   - Session and profile synchronized via `POST /api/v1/auth/sync`.
+
+2. **Consolidated Dashboard (`GET /api/v1/dashboard`)**:
+   - Single network call loads today's workout, nutrition totals, recent sessions, and 7-day stats.
+   - Dynamic **Reward Points (`⚡ pts`)** banner with direct navigation to the Supplements Store.
+
+3. **Workout Player with Reward Points**:
+   - Session lifecycle managed via `POST /api/v1/workouts/start`, `log-exercise`, and `complete`.
+   - Completing a workout triggers atomic database award of **+5 Reward Points** and displays the celebratory celebration dialog.
+
+4. **Supplements Store & Live Shiprocket Tracking**:
+   - Supplements catalog (`GET /api/v1/store/products`): Whey Protein, Creatine, Oats.
+   - Dual checkout: Cash (₹) via `POST /api/v1/store/orders/cash` and **Points Redemption (⚡ pts)** via `POST /api/v1/store/orders/points`.
+   - Real-time Shiprocket shipment tracking (`GET /api/v1/shipping/track/:awb`) with vertical checkpoint timeline stepper.
+
+5. **Nutrition & Meal Tracking**:
+   - Daily logs fetched from `GET /api/v1/nutrition/logs?date=YYYY-MM-DD`.
+   - Meal additions via `POST /api/v1/nutrition/logs` and deletions via `DELETE /api/v1/nutrition/logs/:logId/items/:itemId`.
+   - Real-time daily energy balance (Calories, Protein, Carbs, Fats).
+
+6. **LangChain Gemini AI Coach**:
+   - Chat connected to `POST /api/v1/ai/chat` with Kannada & English bilingual fitness assistance.
+   - Automatic offline fallback.
+
+7. **Pro Subscriptions & Payments**:
+   - Real tiers fetched from `GET /api/v1/subscriptions/plans`.
+   - Order creation and verification via `POST /api/v1/subscriptions/create` and `POST /api/v1/payments/verify`.
+
+---
 
 ## Quick Start
 
-### 1. Install Dependencies
-Make sure you are in the `mobile` directory:
 ```bash
+# Navigate to mobile directory
 cd mobile
-npm install
-```
 
-### 2. Configure Backend API (if testing on device/emulator)
-Check `mobile/constants/api.js`:
-- **Android Emulator**: Uses `http://10.0.2.2:5000/api` (automatically configured)
-- **iOS Simulator**: Uses `http://localhost:5000/api` (automatically configured)
-- **Physical Device (Expo Go)**: Update `API_URL` to your machine's local Wi-Fi IP address:
-  ```js
-  export const API_URL = 'http://192.168.x.x:5000/api';
-  ```
-
-### 3. Ensure Backend is Running
-The Express backend runs on port 5000:
-```bash
-cd backend
-npm run dev
-```
-
-### 4. Start the Expo App
-From the `mobile` directory:
-```bash
-# Start Expo development server (interactive QR code)
+# Start Expo development server
 npx expo start
-
-# Or directly targeting Android
-npx expo start --android
-
-# Or for Web preview
-npx expo start --web
 ```
-
-## Features
-- **Authentication**: Phone OTP and Email/Password flows connecting to real Express API backend.
-- **Onboarding Wizard**: 3-step fitness goal, experience, and biometric profile setup.
-- **Dashboard (Home)**: Daily activity stats, nutrition summary ring, quick meal logging, workout recommendations, and AI Coach chatbot.
-- **Workouts**: Comprehensive exercise catalogue with muscle group filters and search.
-- **Interactive Workout Player**: Real-time timer, sets completion checklist, rest interval countdown, and session logging.
-- **Nutrition & Diet**: Daily energy balance, macro targets (protein, carbs, fats), curated healthy Indian recipes, and custom meal logging.
-- **Progress Tracking**: Dynamic SVG weight transformation chart, weight history delta logs, and completed workouts log.
-- **Profile & Settings**: Biometrics, fitness goals, PRO upgrade modal with mock checkout, bilingual language selector (English / Kannada), and data reset.

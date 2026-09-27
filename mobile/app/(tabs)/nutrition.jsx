@@ -1,4 +1,5 @@
-// Nutrition & Diet Tracker Tab — mirrors frontend Nutrition.jsx
+// Nutrition & Diet Tracker Tab — connected to live Nutrition APIs
+// GET /api/v1/nutrition/recipes, GET /api/v1/nutrition/logs, POST /api/v1/nutrition/logs
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -11,7 +12,9 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
   Apple,
   Plus,
@@ -23,145 +26,138 @@ import {
   Lock,
   Sparkles,
   ChevronRight,
-  CreditCard,
-  CheckCircle,
+  Flame,
 } from 'lucide-react-native';
 import { Colors } from '../../constants/theme';
-import {
-  getUser,
-  getTodayNutritionLogs,
-  addNutritionLog,
-  deleteNutritionLog,
-  saveUser,
-} from '../../utils/db';
-import { RECIPES } from '../../data/mockData';
+import { nutritionService } from '../../services';
+import { useAuth } from '../../context/AuthContext';
+import { onDbUpdate, emitDbUpdate } from '../../utils/events';
 import { t } from '../../utils/i18n';
-import { onDbUpdate } from '../../utils/events';
-
-const EXPIRED_RECIPES = [
-  {
-    id: 'expired-shake',
-    name: 'Summer Mango Protein Shake',
-    nameKn: 'ಬೇಸಿಗೆ ಮಾವಿನ ಪ್ರೋಟೀನ್ ಶೇಕ್',
-    category: 'Snacks',
-    calories: 280,
-    protein: 25,
-    carbs: 35,
-    fats: 4,
-    prepTime: 5,
-    cookTime: 0,
-    imageUrl:
-      'https://images.unsplash.com/photo-1553530666-ba11a7da3888?w=500&auto=format&fit=crop&q=60',
-    ingredients: [
-      '1 cup Sweet Mango pulp',
-      '1 scoop Vanilla Whey Protein',
-      '1 cup Almond Milk',
-      'Ice cubes',
-    ],
-    preparation: [
-      'Combine all ingredients in a blender.',
-      'Blend on high until completely smooth.',
-      'Pour into a chilled glass and serve immediately.',
-    ],
-    isExpired: true,
-  },
-];
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { TopBar } from '../../components/common/TopBar';
+import { useTheme } from '../../context/ThemeContext';
+import { Utensils } from 'lucide-react-native';
 
 export default function NutritionTab() {
-  const [user, setUser] = useState(null);
-  const [todayLogs, setTodayLogs] = useState([]);
+  const router = useRouter();
+  const { user, profile } = useAuth();
+  const { colors, isDark } = useTheme();
+
+  const [recipes, setRecipes] = useState([]);
+  const [nutritionLog, setNutritionLog] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Tabs & Filters
   const [activeTab, setActiveTab] = useState('All');
   const [recipeSearch, setRecipeSearch] = useState('');
-  const [inProgressIds, setInProgressIds] = useState([]);
 
   // Recipe Modal
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [recipeModalVisible, setRecipeModalVisible] = useState(false);
-  const [targetMealType, setTargetMealType] = useState('Breakfast');
+  const [targetMealType, setTargetMealType] = useState('BREAKFAST');
 
   // Custom Log Modal
   const [customModalVisible, setCustomModalVisible] = useState(false);
-  const [customMealType, setCustomMealType] = useState('Breakfast');
+  const [customMealType, setCustomMealType] = useState('BREAKFAST');
   const [customFoodName, setCustomFoodName] = useState('');
   const [customCalories, setCustomCalories] = useState('');
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs] = useState('');
   const [customFats, setCustomFats] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Premium Payment Modal
-  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
-  const [paymentPlan, setPaymentPlan] = useState('monthly');
-  const [paymentMethod, setPaymentMethod] = useState('upi');
-  const [upiId, setUpiId] = useState('');
-  const [cardNum, setCardNum] = useState('');
-  const [cardExp, setCardExp] = useState('');
-  const [cardCvv, setCardCvv] = useState('');
-  const [cardName, setCardName] = useState('');
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const lang = user?.language || 'en';
+  const todayDate = new Date().toISOString().split('T')[0];
 
   const loadData = useCallback(async () => {
     try {
-      const u = await getUser();
-      const logs = await getTodayNutritionLogs();
-      setUser(u);
-      setTodayLogs(logs || []);
+      // 1. Fetch real recipes
+      const recipeRes = await nutritionService.getRecipes({ limit: 50 });
+      const recipeList = Array.isArray(recipeRes)
+        ? recipeRes
+        : recipeRes?.recipes || recipeRes?.items || [];
+      setRecipes(recipeList);
+
+      // 2. Fetch today's meal logs
+      const logRes = await nutritionService.getNutritionLogs(todayDate);
+      // Backend may return single log object or array of logs
+      const logData = Array.isArray(logRes) ? logRes[0] : logRes;
+      setNutritionLog(logData || null);
     } catch (e) {
-      console.warn('Error loading nutrition data:', e);
+      console.warn('Error loading nutrition data from server:', e.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [todayDate]);
 
   useEffect(() => {
+    setLoading(true);
     loadData();
     const unsub = onDbUpdate(loadData);
     return unsub;
   }, [loadData]);
 
-  const lang = user?.language || 'en';
-
-  // Macro Calculations
-  const targetCal = user?.targetCal || 2200;
-  const targetProtein = user?.targetProtein || 140;
-  const targetCarbs = user?.targetCarbs || 250;
-  const targetFats = user?.targetFats || 65;
-
-  const totalCalories = todayLogs.reduce((acc, l) => acc + (Number(l.calories) || 0), 0);
-  const totalProtein = todayLogs.reduce((acc, l) => acc + (Number(l.protein) || 0), 0);
-  const totalCarbs = todayLogs.reduce((acc, l) => acc + (Number(l.carbs) || 0), 0);
-  const totalFats = todayLogs.reduce((acc, l) => acc + (Number(l.fats) || 0), 0);
-  const remainingCal = Math.max(0, targetCal - totalCalories);
-
-  // Group logs
-  const meals = {
-    Breakfast: todayLogs.filter((l) => l.mealType === 'Breakfast'),
-    Lunch: todayLogs.filter((l) => l.mealType === 'Lunch'),
-    Dinner: todayLogs.filter((l) => l.mealType === 'Dinner'),
-    Snacks: todayLogs.filter((l) => l.mealType === 'Snacks'),
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
   };
 
-  const handleAddRecipeMeal = async (recipe, mealType) => {
-    const chosenType = mealType || targetMealType;
+  // Macro Goals & Calculations
+  const targetCal = profile?.dailyCalorieTarget || user?.targetCal || 2200;
+  const targetProtein = profile?.dailyProteinTargetGrams || user?.targetProtein || 140;
+  const targetCarbs = profile?.dailyCarbsTargetGrams || user?.targetCarbs || 250;
+  const targetFats = profile?.dailyFatTargetGrams || user?.targetFats || 65;
+
+  const totals = nutritionLog?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const totalCalories = Math.round(totals.calories || 0);
+  const totalProtein = Math.round(totals.protein || 0);
+  const totalCarbs = Math.round(totals.carbs || 0);
+  const totalFats = Math.round(totals.fat || totals.fats || 0);
+  const remainingCal = Math.max(0, targetCal - totalCalories);
+
+  // Group meals from server log
+  const rawMeals = nutritionLog?.meals || {};
+  const meals = {
+    Breakfast: rawMeals.BREAKFAST || rawMeals.breakfast || [],
+    Lunch: rawMeals.LUNCH || rawMeals.lunch || [],
+    Dinner: rawMeals.DINNER || rawMeals.dinner || [],
+    Snacks: rawMeals.SNACK || rawMeals.snack || rawMeals.SNACKS || [],
+  };
+
+  const handleAddRecipeMeal = async (recipe, mealCategory) => {
+    const chosenType = (mealCategory || targetMealType || 'BREAKFAST').toUpperCase();
+    const normalizedMealType = chosenType === 'SNACKS' ? 'SNACK' : chosenType;
+
     const mealName = lang === 'kn' && recipe.nameKn ? recipe.nameKn : recipe.name;
     try {
-      await addNutritionLog({
-        mealType: chosenType,
-        name: mealName,
-        calories: recipe.calories,
-        protein: recipe.protein,
-        carbs: recipe.carbs,
-        fats: recipe.fats,
+      setIsSubmitting(true);
+      await nutritionService.addNutritionLog({
+        date: todayDate,
+        mealType: normalizedMealType,
+        items: [
+          {
+            recipeId: recipe._id || recipe.id,
+            name: mealName,
+            quantity: 1,
+            unit: 'serving',
+            calories: Number(recipe.calories) || 0,
+            protein: Number(recipe.protein) || 0,
+            carbs: Number(recipe.carbs) || 0,
+            fat: Number(recipe.fat || recipe.fats) || 0,
+          },
+        ],
       });
-      setInProgressIds((prev) => prev.filter((id) => id !== recipe.id));
+
       setRecipeModalVisible(false);
-      Alert.alert('Success', `${mealName} logged to ${chosenType}!`);
+      emitDbUpdate();
+      Alert.alert('Meal Logged!', `${mealName} added to your daily intake.`);
       loadData();
     } catch (e) {
-      Alert.alert('Error', 'Failed to log meal.');
+      Alert.alert('Error', e.message || 'Failed to log recipe meal.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -170,130 +166,107 @@ export default function NutritionTab() {
       Alert.alert('Missing Info', 'Please enter at least food name and calories.');
       return;
     }
+    const normalizedMealType = customMealType.toUpperCase() === 'SNACKS' ? 'SNACK' : customMealType.toUpperCase();
+
     try {
-      await addNutritionLog({
-        mealType: customMealType,
-        name: customFoodName.trim(),
-        calories: Number(customCalories) || 0,
-        protein: Number(customProtein) || 0,
-        carbs: Number(customCarbs) || 0,
-        fats: Number(customFats) || 0,
+      setIsSubmitting(true);
+      await nutritionService.addNutritionLog({
+        date: todayDate,
+        mealType: normalizedMealType,
+        items: [
+          {
+            name: customFoodName.trim(),
+            quantity: 1,
+            unit: 'serving',
+            calories: Number(customCalories) || 0,
+            protein: Number(customProtein) || 0,
+            carbs: Number(customCarbs) || 0,
+            fat: Number(customFats) || 0,
+          },
+        ],
       });
+
       setCustomModalVisible(false);
       setCustomFoodName('');
       setCustomCalories('');
       setCustomProtein('');
       setCustomCarbs('');
       setCustomFats('');
+      emitDbUpdate();
       loadData();
     } catch (e) {
-      Alert.alert('Error', 'Failed to add food log.');
+      Alert.alert('Error', e.message || 'Failed to add food log.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeleteLog = async (id) => {
+  const handleDeleteItem = async (itemId) => {
+    if (!nutritionLog?._id) return;
     try {
-      await deleteNutritionLog(id);
+      await nutritionService.deleteNutritionLogItem(nutritionLog._id, itemId);
+      emitDbUpdate();
       loadData();
     } catch (e) {
-      Alert.alert('Error', 'Could not delete item.');
+      Alert.alert('Error', e.message || 'Could not delete meal item.');
     }
   };
 
   const openRecipeDetails = (recipe, defaultMealType) => {
-    if (recipe.isLocked && !user?.isPremium) {
-      setPaymentModalVisible(true);
+    if (recipe.isPremium && !user?.isPremium) {
+      router.push('/premium');
       return;
     }
     setSelectedRecipe(recipe);
-    setTargetMealType(defaultMealType || recipe.category || 'Breakfast');
+    setTargetMealType(defaultMealType || 'BREAKFAST');
     setRecipeModalVisible(true);
-    if (!inProgressIds.includes(recipe.id) && !recipe.isExpired) {
-      setInProgressIds((prev) => [...prev, recipe.id]);
-    }
-  };
-
-  const handleProcessPayment = async () => {
-    setPaymentProcessing(true);
-    setTimeout(async () => {
-      setPaymentProcessing(false);
-      setPaymentSuccess(true);
-      setTimeout(async () => {
-        const updated = { ...user, isPremium: true };
-        await saveUser(updated);
-        setUser(updated);
-        setPaymentModalVisible(false);
-        setPaymentSuccess(false);
-        setUpiId('');
-        setCardNum('');
-        Alert.alert('FitMitra PRO', 'Congratulations! Premium unlocked successfully.');
-        loadData();
-      }, 1000);
-    }, 1500);
   };
 
   // Filter Recipes
-  const taggedRecipes = (RECIPES || []).map((recipe) => {
-    const isLocked = !user?.isPremium && (recipe.id === 'salmon-potato' || recipe.id === 'jolada-roti');
-    const freePreview = recipe.id === 'ragi-mudde' || recipe.id === 'paneer-salad' || recipe.id === 'protein-oats';
-    const isNew = recipe.id === 'salmon-potato' || recipe.id === 'ragi-mudde' || recipe.id === 'idli-sambar';
-    return { ...recipe, isLocked, freePreview, isNew };
+  const filteredRecipes = recipes.filter((r) => {
+    const q = recipeSearch.toLowerCase();
+    const nameMatch = (r.name || '').toLowerCase().includes(q);
+    const catMatch = (r.category || '').toLowerCase().includes(q);
+    const searchMatches = !q || nameMatch || catMatch;
+
+    if (activeTab === 'All') return searchMatches;
+    return (r.category || '').toLowerCase().includes(activeTab.toLowerCase()) && searchMatches;
   });
 
-  const getFilteredRecipes = () => {
-    let list = taggedRecipes;
-    if (activeTab === 'In Progress') {
-      list = taggedRecipes.filter((r) => inProgressIds.includes(r.id));
-    } else if (activeTab === 'Completed') {
-      list = taggedRecipes.filter((r) =>
-        todayLogs.some((l) => l.name === r.name || l.name === r.nameKn)
-      );
-    } else if (activeTab === 'Expired') {
-      list = EXPIRED_RECIPES;
-    }
-
-    if (recipeSearch.trim()) {
-      const q = recipeSearch.toLowerCase();
-      list = list.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          (r.nameKn && r.nameKn.toLowerCase().includes(q)) ||
-          r.category.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  };
-
-  const filteredRecipes = getFilteredRecipes();
-
-  if (loading || !user) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primaryNeon} />
-        <Text style={styles.loadingText}>Loading nutrition...</Text>
-      </View>
-    );
+  if (loading) {
+    return <LoadingSpinner message="Loading nutrition tracker..." fullScreen />;
   }
 
-  const mealTypes = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+  const mealCategories = [
+    { key: 'Breakfast', serverKey: 'BREAKFAST' },
+    { key: 'Lunch', serverKey: 'LUNCH' },
+    { key: 'Dinner', serverKey: 'DINNER' },
+    { key: 'Snacks', serverKey: 'SNACK' },
+  ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>{t('nutritionLogger', lang)}</Text>
-          <Text style={styles.headerSubtitle}>{t('trackYourDailyMeals', lang)}</Text>
-        </View>
-        <Pressable
-          style={styles.quickAddBtn}
-          onPress={() => setCustomModalVisible(true)}
-        >
-          <Plus size={16} color="#000" />
-          <Text style={styles.quickAddBtnText}>Add Food</Text>
-        </Pressable>
-      </View>
-
+    <View style={{ flex: 1, backgroundColor: colors.bgBase }}>
+      <TopBar
+        title="Nutrition & Diet"
+        subtitle="Track Calories & Macros"
+        icon={Utensils}
+        rightAction={
+          <Pressable
+            style={[styles.quickAddBtn, { backgroundColor: colors.primary }]}
+            onPress={() => setCustomModalVisible(true)}
+          >
+            <Plus size={16} color="#000" />
+            <Text style={styles.quickAddBtnText}>Add Food</Text>
+          </Pressable>
+        }
+      />
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.bgBase }]}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+      >
       {/* Energy Balance Card */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>
@@ -323,7 +296,7 @@ export default function NutritionTab() {
           <View
             style={[
               styles.mainProgressFill,
-              { width: `${Math.min(100, Math.round((totalCalories / targetCal) * 100))}%` },
+              { width: `${Math.min(100, Math.round((totalCalories / (targetCal || 1)) * 100))}%` },
             ]}
           />
         </View>
@@ -344,7 +317,7 @@ export default function NutritionTab() {
                   styles.miniFill,
                   {
                     backgroundColor: Colors.secondaryCyan,
-                    width: `${Math.min(100, Math.round((totalProtein / targetProtein) * 100))}%`,
+                    width: `${Math.min(100, Math.round((totalProtein / (targetProtein || 1)) * 100))}%`,
                   },
                 ]}
               />
@@ -365,7 +338,7 @@ export default function NutritionTab() {
                   styles.miniFill,
                   {
                     backgroundColor: Colors.accentAmber,
-                    width: `${Math.min(100, Math.round((totalCarbs / targetCarbs) * 100))}%`,
+                    width: `${Math.min(100, Math.round((totalCarbs / (targetCarbs || 1)) * 100))}%`,
                   },
                 ]}
               />
@@ -386,7 +359,7 @@ export default function NutritionTab() {
                   styles.miniFill,
                   {
                     backgroundColor: Colors.accentRose,
-                    width: `${Math.min(100, Math.round((totalFats / targetFats) * 100))}%`,
+                    width: `${Math.min(100, Math.round((totalFats / (targetFats || 1)) * 100))}%`,
                   },
                 ]}
               />
@@ -397,22 +370,24 @@ export default function NutritionTab() {
 
       {/* Meals Log Section */}
       <Text style={styles.sectionHeader}>Today's Logged Meals</Text>
-      {mealTypes.map((mt) => {
-        const list = meals[mt] || [];
+      {mealCategories.map(({ key, serverKey }) => {
+        const list = meals[key] || [];
         const mealCals = list.reduce((a, b) => a + (Number(b.calories) || 0), 0);
         return (
-          <View key={mt} style={styles.mealGroupCard}>
+          <View key={key} style={styles.mealGroupCard}>
             <View style={styles.mealGroupHeader}>
               <View>
-                <Text style={styles.mealGroupTitle}>{mt}</Text>
-                <Text style={styles.mealGroupSub}>{list.length} item{list.length === 1 ? '' : 's'}</Text>
+                <Text style={styles.mealGroupTitle}>{key}</Text>
+                <Text style={styles.mealGroupSub}>
+                  {list.length} item{list.length === 1 ? '' : 's'}
+                </Text>
               </View>
               <View style={styles.mealGroupRight}>
                 <Text style={styles.mealGroupCals}>{mealCals} kcal</Text>
                 <Pressable
                   style={styles.addMiniBtn}
                   onPress={() => {
-                    setCustomMealType(mt);
+                    setCustomMealType(serverKey);
                     setCustomModalVisible(true);
                   }}
                 >
@@ -422,19 +397,19 @@ export default function NutritionTab() {
             </View>
 
             {list.length === 0 ? (
-              <Text style={styles.emptyMealText}>No food logged yet for {mt}</Text>
+              <Text style={styles.emptyMealText}>No food logged yet for {key}</Text>
             ) : (
-              list.map((item) => (
-                <View key={item.id} style={styles.foodRow}>
+              list.map((item, idx) => (
+                <View key={item._id || item.id || idx} style={styles.foodRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.foodName}>{item.name}</Text>
                     <Text style={styles.foodMacros}>
-                      P: {item.protein || 0}g • C: {item.carbs || 0}g • F: {item.fats || 0}g
+                      P: {item.protein || 0}g • C: {item.carbs || 0}g • F: {item.fat || item.fats || 0}g
                     </Text>
                   </View>
                   <Text style={styles.foodCals}>{item.calories} kcal</Text>
                   <Pressable
-                    onPress={() => handleDeleteLog(item.id)}
+                    onPress={() => handleDeleteItem(item._id || item.id)}
                     style={styles.deleteBtn}
                   >
                     <Trash2 size={16} color={Colors.accentRose} />
@@ -452,7 +427,7 @@ export default function NutritionTab() {
         {!user?.isPremium && (
           <Pressable
             style={styles.proPill}
-            onPress={() => setPaymentModalVisible(true)}
+            onPress={() => router.push('/premium')}
           >
             <Sparkles size={12} color="#000" />
             <Text style={styles.proPillText}>Upgrade PRO</Text>
@@ -467,7 +442,7 @@ export default function NutritionTab() {
         style={styles.tabsScroll}
         contentContainerStyle={{ gap: 8 }}
       >
-        {['All', 'In Progress', 'Completed', 'Expired'].map((tab) => (
+        {['All', 'Breakfast', 'Lunch', 'Dinner', 'Snacks'].map((tab) => (
           <Pressable
             key={tab}
             style={[styles.tabChip, activeTab === tab && styles.tabChipActive]}
@@ -501,61 +476,53 @@ export default function NutritionTab() {
 
       {/* Recipe Cards List */}
       <View style={{ gap: 14 }}>
-        {filteredRecipes.map((recipe) => {
-          const isDone = todayLogs.some(
-            (l) => l.name === recipe.name || l.name === recipe.nameKn
-          );
-          return (
-            <Pressable
-              key={recipe.id}
-              style={styles.recipeCard}
-              onPress={() => openRecipeDetails(recipe)}
-            >
-              <Image source={{ uri: recipe.imageUrl }} style={styles.recipeImg} />
-              <View style={styles.recipeBody}>
-                <View style={styles.recipeBadges}>
-                  <View style={styles.catBadge}>
-                    <Text style={styles.catBadgeText}>{recipe.category}</Text>
+        {filteredRecipes.length === 0 ? (
+          <Text style={styles.emptyMealText}>No recipes match your criteria.</Text>
+        ) : (
+          filteredRecipes.map((recipe) => {
+            const img =
+              recipe.imageUrl ||
+              'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60';
+
+            return (
+              <Pressable
+                key={recipe._id || recipe.id}
+                style={styles.recipeCard}
+                onPress={() => openRecipeDetails(recipe)}
+              >
+                <Image source={{ uri: img }} style={styles.recipeImg} />
+                <View style={styles.recipeBody}>
+                  <View style={styles.recipeBadges}>
+                    <View style={styles.catBadge}>
+                      <Text style={styles.catBadgeText}>{recipe.category || 'Healthy'}</Text>
+                    </View>
+                    {recipe.isPremium && (
+                      <View style={styles.lockBadge}>
+                        <Lock size={10} color={Colors.accentAmber} />
+                        <Text style={styles.lockBadgeText}>PRO</Text>
+                      </View>
+                    )}
                   </View>
-                  {recipe.isLocked && (
-                    <View style={styles.lockBadge}>
-                      <Lock size={10} color={Colors.accentAmber} />
-                      <Text style={styles.lockBadgeText}>PRO</Text>
-                    </View>
-                  )}
-                  {recipe.freePreview && (
-                    <View style={styles.freeBadge}>
-                      <Text style={styles.freeBadgeText}>Free Preview</Text>
-                    </View>
-                  )}
-                  {isDone && (
-                    <View style={styles.doneBadge}>
-                      <Check size={10} color="#000" />
-                      <Text style={styles.doneBadgeText}>Logged</Text>
-                    </View>
-                  )}
-                </View>
 
-                <Text style={styles.recipeTitle}>
-                  {lang === 'kn' && recipe.nameKn ? recipe.nameKn : recipe.name}
-                </Text>
+                  <Text style={styles.recipeTitle}>{recipe.name}</Text>
 
-                <View style={styles.recipeMetaRow}>
-                  <Text style={styles.recipeCals}>{recipe.calories} kcal</Text>
-                  <Text style={styles.recipeDot}>•</Text>
-                  <Text style={styles.recipeMetaText}>P: {recipe.protein}g</Text>
-                  <Text style={styles.recipeDot}>•</Text>
-                  <Text style={styles.recipeMetaText}>C: {recipe.carbs}g</Text>
-                  <Text style={styles.recipeDot}>•</Text>
-                  <Clock size={12} color={Colors.textSecondary} />
-                  <Text style={styles.recipeMetaText}>
-                    {(recipe.prepTime || 0) + (recipe.cookTime || 0)}m
-                  </Text>
+                  <View style={styles.recipeMetaRow}>
+                    <Text style={styles.recipeCals}>{recipe.calories} kcal</Text>
+                    <Text style={styles.recipeDot}>•</Text>
+                    <Text style={styles.recipeMetaText}>P: {recipe.protein}g</Text>
+                    <Text style={styles.recipeDot}>•</Text>
+                    <Text style={styles.recipeMetaText}>C: {recipe.carbs}g</Text>
+                    <Text style={styles.recipeDot}>•</Text>
+                    <Clock size={12} color={Colors.textSecondary} />
+                    <Text style={styles.recipeMetaText}>
+                      {(recipe.prepTimeMinutes || 10) + (recipe.cookTimeMinutes || 0)}m
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            </Pressable>
-          );
-        })}
+              </Pressable>
+            );
+          })
+        )}
       </View>
 
       {/* Recipe Detail Modal */}
@@ -569,7 +536,14 @@ export default function NutritionTab() {
           <View style={styles.modalContent}>
             {selectedRecipe && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Image source={{ uri: selectedRecipe.imageUrl }} style={styles.modalHeroImg} />
+                <Image
+                  source={{
+                    uri:
+                      selectedRecipe.imageUrl ||
+                      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60',
+                  }}
+                  style={styles.modalHeroImg}
+                />
                 <Pressable
                   style={styles.modalCloseBtn}
                   onPress={() => setRecipeModalVisible(false)}
@@ -578,11 +552,7 @@ export default function NutritionTab() {
                 </Pressable>
 
                 <View style={styles.modalInner}>
-                  <Text style={styles.modalRecipeTitle}>
-                    {lang === 'kn' && selectedRecipe.nameKn
-                      ? selectedRecipe.nameKn
-                      : selectedRecipe.name}
-                  </Text>
+                  <Text style={styles.modalRecipeTitle}>{selectedRecipe.name}</Text>
 
                   {/* Macros Strip */}
                   <View style={styles.modalMacroStrip}>
@@ -599,7 +569,9 @@ export default function NutritionTab() {
                       <Text style={styles.modalMacroLbl}>Carbs</Text>
                     </View>
                     <View style={styles.modalMacroItem}>
-                      <Text style={styles.modalMacroVal}>{selectedRecipe.fats}g</Text>
+                      <Text style={styles.modalMacroVal}>
+                        {selectedRecipe.fat || selectedRecipe.fats || 0}g
+                      </Text>
                       <Text style={styles.modalMacroLbl}>Fats</Text>
                     </View>
                   </View>
@@ -607,59 +579,78 @@ export default function NutritionTab() {
                   {/* Meal Destination Selector */}
                   <Text style={styles.modalSectionLabel}>Log to Meal Category:</Text>
                   <View style={styles.targetMealRow}>
-                    {mealTypes.map((mt) => (
+                    {mealCategories.map(({ key, serverKey }) => (
                       <Pressable
-                        key={mt}
+                        key={key}
                         style={[
                           styles.targetMealPill,
-                          targetMealType === mt && styles.targetMealPillActive,
+                          targetMealType === serverKey && styles.targetMealPillActive,
                         ]}
-                        onPress={() => setTargetMealType(mt)}
+                        onPress={() => setTargetMealType(serverKey)}
                       >
                         <Text
                           style={[
                             styles.targetMealPillText,
-                            targetMealType === mt && styles.targetMealPillTextActive,
+                            targetMealType === serverKey && styles.targetMealPillTextActive,
                           ]}
                         >
-                          {mt}
+                          {key}
                         </Text>
                       </Pressable>
                     ))}
                   </View>
 
                   {/* Ingredients */}
-                  <Text style={styles.modalSectionLabel}>Ingredients</Text>
-                  <View style={styles.ingredBox}>
-                    {selectedRecipe.ingredients?.map((ing, i) => (
-                      <Text key={i} style={styles.ingredItem}>
-                        • {ing}
-                      </Text>
-                    ))}
-                  </View>
+                  {selectedRecipe.ingredients?.length > 0 && (
+                    <>
+                      <Text style={styles.modalSectionLabel}>Ingredients</Text>
+                      <View style={styles.ingredBox}>
+                        {selectedRecipe.ingredients.map((ing, i) => (
+                          <Text key={i} style={styles.ingredItem}>
+                            • {typeof ing === 'string' ? ing : ing.name}
+                          </Text>
+                        ))}
+                      </View>
+                    </>
+                  )}
 
                   {/* Steps */}
-                  <Text style={styles.modalSectionLabel}>Preparation Instructions</Text>
-                  <View style={{ gap: 10, marginBottom: 20 }}>
-                    {selectedRecipe.preparation?.map((step, idx) => (
-                      <View key={idx} style={styles.stepRow}>
-                        <View style={styles.stepNum}>
-                          <Text style={styles.stepNumText}>{idx + 1}</Text>
-                        </View>
-                        <Text style={styles.stepText}>{step}</Text>
+                  {selectedRecipe.instructions?.length > 0 && (
+                    <>
+                      <Text style={styles.modalSectionLabel}>Preparation Instructions</Text>
+                      <View style={{ gap: 10, marginBottom: 20 }}>
+                        {selectedRecipe.instructions.map((step, idx) => (
+                          <View key={idx} style={styles.stepRow}>
+                            <View style={styles.stepNum}>
+                              <Text style={styles.stepNumText}>{idx + 1}</Text>
+                            </View>
+                            <Text style={styles.stepText}>{step}</Text>
+                          </View>
+                        ))}
                       </View>
-                    ))}
-                  </View>
+                    </>
+                  )}
 
                   {/* Log Action Button */}
                   <Pressable
-                    style={styles.logActionBtn}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.logActionBtn,
+                      isSubmitting && { opacity: 0.6 },
+                      pressed && { opacity: 0.8 },
+                    ]}
                     onPress={() => handleAddRecipeMeal(selectedRecipe, targetMealType)}
                   >
-                    <Plus size={18} color="#000" />
-                    <Text style={styles.logActionBtnText}>
-                      Log This Recipe to {targetMealType}
-                    </Text>
+                    {isSubmitting ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <>
+                        <Plus size={18} color="#000" />
+                        <Text style={styles.logActionBtnText}>
+                          Log This Recipe to {targetMealType}
+                        </Text>
+                      </>
+                    )}
                   </Pressable>
                 </View>
               </ScrollView>
@@ -686,22 +677,22 @@ export default function NutritionTab() {
 
             {/* Meal type selector */}
             <View style={[styles.targetMealRow, { marginBottom: 16 }]}>
-              {mealTypes.map((mt) => (
+              {mealCategories.map(({ key, serverKey }) => (
                 <Pressable
-                  key={mt}
+                  key={key}
                   style={[
                     styles.targetMealPill,
-                    customMealType === mt && styles.targetMealPillActive,
+                    customMealType === serverKey && styles.targetMealPillActive,
                   ]}
-                  onPress={() => setCustomMealType(mt)}
+                  onPress={() => setCustomMealType(serverKey)}
                 >
                   <Text
                     style={[
                       styles.targetMealPillText,
-                      customMealType === mt && styles.targetMealPillTextActive,
+                      customMealType === serverKey && styles.targetMealPillTextActive,
                     ]}
                   >
-                    {mt}
+                    {key}
                   </Text>
                 </Pressable>
               ))}
@@ -751,152 +742,29 @@ export default function NutritionTab() {
               />
             </View>
 
-            <Pressable style={styles.saveCustomBtn} onPress={handleAddCustomMeal}>
-              <Text style={styles.saveCustomBtnText}>Log to Daily Journal</Text>
+            <Pressable
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                styles.logActionBtn,
+                isSubmitting && { opacity: 0.6 },
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={handleAddCustomMeal}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <>
+                  <Check size={18} color="#000" />
+                  <Text style={styles.logActionBtnText}>Save Entry</Text>
+                </>
+              )}
             </Pressable>
           </View>
         </View>
       </Modal>
-
-      {/* Upgrade to PRO Modal */}
-      <Modal
-        visible={paymentModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPaymentModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.paymentModalCard}>
-            <View style={styles.modalHeaderRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Sparkles size={18} color={Colors.accentAmber} />
-                <Text style={styles.paymentTitle}>FitMitra PRO</Text>
-              </View>
-              <Pressable onPress={() => setPaymentModalVisible(false)}>
-                <X size={20} color={Colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            {paymentSuccess ? (
-              <View style={styles.successBox}>
-                <CheckCircle size={48} color={Colors.primaryNeon} />
-                <Text style={styles.successTitle}>Payment Successful!</Text>
-                <Text style={styles.successSub}>Unlocking FitMitra PRO...</Text>
-              </View>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.paymentSubtitle}>
-                  Unlock all regional Indian keto recipes, personalized macro adjustments, and advanced dietitian charts.
-                </Text>
-
-                {/* Plan Selection */}
-                <View style={styles.planRow}>
-                  <Pressable
-                    style={[styles.planCard, paymentPlan === 'monthly' && styles.planCardActive]}
-                    onPress={() => setPaymentPlan('monthly')}
-                  >
-                    <Text style={styles.planName}>Monthly</Text>
-                    <Text style={styles.planPrice}>₹299/mo</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.planCard, paymentPlan === 'annual' && styles.planCardActive]}
-                    onPress={() => setPaymentPlan('annual')}
-                  >
-                    <View style={styles.saveTag}>
-                      <Text style={styles.saveTagText}>SAVE 40%</Text>
-                    </View>
-                    <Text style={styles.planName}>Annual</Text>
-                    <Text style={styles.planPrice}>₹1,999/yr</Text>
-                  </Pressable>
-                </View>
-
-                {/* Method Toggle */}
-                <View style={styles.methodToggle}>
-                  <Pressable
-                    style={[styles.methodBtn, paymentMethod === 'upi' && styles.methodBtnActive]}
-                    onPress={() => setPaymentMethod('upi')}
-                  >
-                    <Text
-                      style={[
-                        styles.methodBtnText,
-                        paymentMethod === 'upi' && styles.methodBtnTextActive,
-                      ]}
-                    >
-                      UPI / GPay / PhonePe
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.methodBtn, paymentMethod === 'card' && styles.methodBtnActive]}
-                    onPress={() => setPaymentMethod('card')}
-                  >
-                    <Text
-                      style={[
-                        styles.methodBtnText,
-                        paymentMethod === 'card' && styles.methodBtnTextActive,
-                      ]}
-                    >
-                      Credit / Debit Card
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {paymentMethod === 'upi' ? (
-                  <TextInput
-                    style={styles.customInput}
-                    placeholder="Enter UPI ID (e.g. user@okhdfcbank)"
-                    placeholderTextColor={Colors.textSecondary}
-                    value={upiId}
-                    onChangeText={setUpiId}
-                  />
-                ) : (
-                  <View style={{ gap: 10 }}>
-                    <TextInput
-                      style={styles.customInput}
-                      placeholder="Card Number"
-                      keyboardType="numeric"
-                      placeholderTextColor={Colors.textSecondary}
-                      value={cardNum}
-                      onChangeText={setCardNum}
-                    />
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <TextInput
-                        style={[styles.customInput, { flex: 1 }]}
-                        placeholder="MM/YY"
-                        placeholderTextColor={Colors.textSecondary}
-                        value={cardExp}
-                        onChangeText={setCardExp}
-                      />
-                      <TextInput
-                        style={[styles.customInput, { flex: 1 }]}
-                        placeholder="CVV"
-                        keyboardType="numeric"
-                        placeholderTextColor={Colors.textSecondary}
-                        value={cardCvv}
-                        onChangeText={setCardCvv}
-                      />
-                    </View>
-                  </View>
-                )}
-
-                <Pressable
-                  style={styles.payBtn}
-                  onPress={handleProcessPayment}
-                  disabled={paymentProcessing}
-                >
-                  {paymentProcessing ? (
-                    <ActivityIndicator size="small" color="#000" />
-                  ) : (
-                    <Text style={styles.payBtnText}>
-                      Pay {paymentPlan === 'monthly' ? '₹299' : '₹1,999'} & Unlock
-                    </Text>
-                  )}
-                </Pressable>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
+  </View>
   );
 }
 
@@ -906,29 +774,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgDarkBase,
   },
   contentContainer: {
-    padding: 16,
-    paddingTop: 48,
-    paddingBottom: 90,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Colors.bgDarkBase,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: Colors.textSecondary,
-    marginTop: 10,
+    paddingHorizontal: 20,
+    paddingTop: 54,
+    paddingBottom: 40,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 20,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '900',
     color: Colors.textPrimary,
   },
   headerSubtitle: {
@@ -939,56 +797,57 @@ const styles = StyleSheet.create({
   quickAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     backgroundColor: Colors.primaryNeon,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   quickAddBtnText: {
     color: '#000',
-    fontWeight: '700',
-    fontSize: 12,
+    fontWeight: '800',
+    fontSize: 13,
   },
   card: {
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 20,
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 18,
+    borderColor: Colors.borderGlass,
+    padding: 20,
     marginBottom: 24,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
-    color: Colors.textPrimary,
+    color: Colors.textSecondary,
     marginBottom: 16,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   calRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   calBox: {
     alignItems: 'center',
     flex: 1,
   },
   calBoxActive: {
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(0, 245, 155, 0.08)',
+    borderRadius: 12,
+    paddingVertical: 4,
   },
   calLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: Colors.textSecondary,
-    textTransform: 'uppercase',
     fontWeight: '600',
   },
   calValue: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '900',
     color: Colors.textPrimary,
-    marginTop: 4,
+    marginVertical: 2,
   },
   calUnit: {
     fontSize: 10,
@@ -996,10 +855,10 @@ const styles = StyleSheet.create({
   },
   mainProgressTrack: {
     height: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   mainProgressFill: {
     height: '100%',
@@ -1016,7 +875,7 @@ const styles = StyleSheet.create({
   macroHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   macroName: {
     fontSize: 11,
@@ -1024,47 +883,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   macroVal: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textPrimary,
     fontWeight: '700',
   },
   miniTrack: {
-    height: 5,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 3,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 2,
     overflow: 'hidden',
   },
   miniFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 2,
   },
   sectionHeader: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: Colors.textPrimary,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   mealGroupCard: {
-    backgroundColor: 'rgba(13, 18, 34, 0.7)',
-    borderColor: Colors.borderGlass,
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 18,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
+    borderColor: Colors.borderGlass,
+    padding: 16,
+    marginBottom: 14,
   },
   mealGroupHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   mealGroupTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: Colors.textPrimary,
   },
   mealGroupSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: Colors.textSecondary,
   },
   mealGroupRight: {
@@ -1073,49 +932,49 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   mealGroupCals: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: Colors.primaryNeon,
   },
   addMiniBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(204, 255, 0, 0.1)',
-    alignItems: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 245, 155, 0.12)',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyMealText: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.textSecondary,
     fontStyle: 'italic',
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
   foodRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
+    borderTopColor: 'rgba(255, 255, 255, 0.05)',
   },
   foodName: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
   },
   foodMacros: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
     marginTop: 2,
   },
   foodCals: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginRight: 10,
+    marginRight: 12,
   },
   deleteBtn: {
-    padding: 4,
+    padding: 6,
   },
   recipeHeaderRow: {
     flexDirection: 'row',
@@ -1129,28 +988,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: Colors.accentAmber,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: 12,
   },
   proPillText: {
+    color: '#000',
     fontSize: 11,
     fontWeight: '800',
-    color: '#000',
   },
   tabsScroll: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   tabChip: {
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: Colors.bgDarkCard,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabChipActive: {
-    backgroundColor: Colors.primaryNeon,
+    backgroundColor: 'rgba(0, 245, 155, 0.15)',
     borderColor: Colors.primaryNeon,
   },
   tabChipText: {
@@ -1159,116 +1018,91 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   tabChipTextActive: {
-    color: '#000',
+    color: Colors.primaryNeon,
+    fontWeight: '700',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
+    gap: 10,
+    backgroundColor: Colors.bgCardGlass,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderColor: Colors.borderGlass,
+    borderRadius: 14,
+    paddingHorizontal: 14,
     height: 44,
     marginBottom: 16,
-    gap: 8,
   },
   searchInput: {
     flex: 1,
     color: Colors.textPrimary,
-    fontSize: 13,
+    fontSize: 14,
   },
   recipeCard: {
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 18,
     borderWidth: 1,
-    borderRadius: 14,
+    borderColor: Colors.borderGlass,
     overflow: 'hidden',
     flexDirection: 'row',
+    height: 110,
   },
   recipeImg: {
-    width: 105,
-    height: 105,
+    width: 110,
+    height: '100%',
   },
   recipeBody: {
     flex: 1,
-    padding: 10,
-    justifyContent: 'center',
+    padding: 12,
+    justifyContent: 'space-between',
   },
   recipeBadges: {
     flexDirection: 'row',
     gap: 6,
-    marginBottom: 4,
   },
   catBadge: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   catBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
+    fontWeight: '700',
     color: Colors.textSecondary,
-    fontWeight: '600',
   },
   lockBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    backgroundColor: 'rgba(255, 184, 0, 0.15)',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   lockBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
+    fontWeight: '800',
     color: Colors.accentAmber,
-    fontWeight: '700',
-  },
-  freeBadge: {
-    backgroundColor: 'rgba(0, 240, 255, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  freeBadgeText: {
-    fontSize: 9,
-    color: Colors.secondaryCyan,
-    fontWeight: '700',
-  },
-  doneBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: Colors.primaryNeon,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  doneBadgeText: {
-    fontSize: 9,
-    color: '#000',
-    fontWeight: '700',
   },
   recipeTitle: {
     fontSize: 14,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 6,
   },
   recipeMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   recipeCals: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     color: Colors.primaryNeon,
   },
   recipeDot: {
-    color: Colors.textSecondary,
     fontSize: 10,
+    color: Colors.textSecondary,
   },
   recipeMetaText: {
     fontSize: 11,
@@ -1276,15 +1110,14 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(6, 9, 19, 0.85)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: Colors.bgDarkCard,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: '#0D1222',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     maxHeight: '90%',
-    overflow: 'hidden',
   },
   modalHeroImg: {
     width: '100%',
@@ -1292,43 +1125,42 @@ const styles = StyleSheet.create({
   },
   modalCloseBtn: {
     position: 'absolute',
-    top: 14,
-    right: 14,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
+    top: 16,
+    right: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   modalInner: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 24,
   },
   modalRecipeTitle: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '900',
     color: Colors.textPrimary,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   modalMacroStrip: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12,
-    padding: 12,
-    justifyContent: 'space-around',
-    marginBottom: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginBottom: 20,
   },
   modalMacroItem: {
+    flex: 1,
     alignItems: 'center',
   },
   modalMacroVal: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.primaryNeon,
+    color: Colors.textPrimary,
   },
   modalMacroLbl: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
     marginTop: 2,
   },
@@ -1341,50 +1173,54 @@ const styles = StyleSheet.create({
   targetMealRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 18,
+    marginBottom: 20,
   },
   targetMealPill: {
     flex: 1,
     paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   targetMealPillActive: {
-    backgroundColor: Colors.primaryNeon,
+    backgroundColor: 'rgba(0, 245, 155, 0.15)',
+    borderColor: Colors.primaryNeon,
   },
   targetMealPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.textSecondary,
   },
   targetMealPillTextActive: {
-    color: '#000',
-    fontWeight: '700',
+    color: Colors.primaryNeon,
+    fontWeight: '800',
   },
   ingredBox: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 10,
-    padding: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
     gap: 6,
-    marginBottom: 18,
   },
   ingredItem: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: Colors.textPrimary,
     lineHeight: 18,
   },
   stepRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
+    alignItems: 'flex-start',
   },
   stepNum: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(204, 255, 0, 0.15)',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 245, 155, 0.15)',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   stepNumText: {
     fontSize: 11,
@@ -1398,26 +1234,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   logActionBtn: {
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 14,
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    backgroundColor: Colors.primaryNeon,
+    paddingVertical: 14,
+    borderRadius: 14,
     marginTop: 10,
+    marginBottom: 20,
   },
   logActionBtnText: {
     color: '#000',
-    fontSize: 14,
     fontWeight: '800',
+    fontSize: 15,
   },
   customModalCard: {
-    backgroundColor: Colors.bgDarkCard,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 40,
+    backgroundColor: '#0D1222',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -1427,145 +1263,22 @@ const styles = StyleSheet.create({
   },
   modalHeaderTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
   },
   customInput: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderColor: Colors.borderGlass,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
     color: Colors.textPrimary,
-    fontSize: 13,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   macroInputsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 14,
-  },
-  saveCustomBtn: {
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  saveCustomBtnText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  paymentModalCard: {
-    backgroundColor: Colors.bgDarkCard,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 40,
-    maxHeight: '85%',
-  },
-  paymentTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.accentAmber,
-  },
-  paymentSubtitle: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  planRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  planCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderColor: Colors.borderGlass,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-  },
-  planCardActive: {
-    borderColor: Colors.accentAmber,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-  },
-  saveTag: {
-    backgroundColor: Colors.accentAmber,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  saveTagText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#000',
-  },
-  planName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  planPrice: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginTop: 2,
-  },
-  methodToggle: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 14,
-  },
-  methodBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  methodBtnActive: {
-    backgroundColor: Colors.bgDarkBase,
-  },
-  methodBtnText: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  methodBtnTextActive: {
-    color: Colors.textPrimary,
-    fontWeight: '700',
-  },
-  payBtn: {
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  payBtnText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  successBox: {
-    alignItems: 'center',
-    paddingVertical: 30,
-    gap: 10,
-  },
-  successTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.primaryNeon,
-  },
-  successSub: {
-    fontSize: 13,
-    color: Colors.textSecondary,
   },
 });

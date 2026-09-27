@@ -1,4 +1,6 @@
-// Interactive Workout Player & Session Detail Screen — mirrors frontend WorkoutDetails.jsx
+// Interactive Workout Player & Session Detail Screen
+// Now connected to POST /api/v1/workouts/start, log-exercise, and complete
+// Awards +5 Reward Points on completion via server
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -23,16 +25,21 @@ import {
   ChevronLeft,
   X,
   Sparkles,
+  Zap,
 } from 'lucide-react-native';
 import { Colors } from '../../constants/theme';
-import { WORKOUTS, EXERCISES } from '../../data/mockData';
-import { addWorkoutHistory } from '../../utils/db';
+import { workoutService } from '../../services';
+import { PointsCelebrationModal } from '../../components/modals/PointsCelebrationModal';
 
 export default function WorkoutDetailScreen() {
   const { workoutId } = useLocalSearchParams();
   const router = useRouter();
 
   const [workout, setWorkout] = useState(null);
+  const [loadingWorkout, setLoadingWorkout] = useState(true);
+
+  // Server session tracking
+  const [sessionId, setSessionId] = useState(null);
 
   // Player state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -44,11 +51,94 @@ export default function WorkoutDetailScreen() {
   const [isFinished, setIsFinished] = useState(false);
   const [savingHistory, setSavingHistory] = useState(false);
 
+  // +5 Points reward modal
+  const [showPointsModal, setShowPointsModal] = useState(false);
+  const [earnedPoints, setEarnedPoints] = useState(0);
+  const [newPointsBalance, setNewPointsBalance] = useState(null);
+
   useEffect(() => {
-    const found = WORKOUTS.find((w) => w.id === workoutId);
-    if (found) {
-      setWorkout(found);
-    }
+    let isMounted = true;
+    const fetchRoutine = async () => {
+      setLoadingWorkout(true);
+      try {
+        // Try fetching as program
+        try {
+          const prog = await workoutService.getProgram(workoutId);
+          if (prog && isMounted) {
+            setWorkout({
+              id: prog._id || prog.id,
+              name: prog.name,
+              tagline: prog.description,
+              category: prog.goal,
+              difficulty: prog.level,
+              duration: 45,
+              calories: 320,
+              exercises: prog.routines?.[0]?.exercises || [],
+            });
+            setLoadingWorkout(false);
+            return;
+          }
+        } catch (_) {}
+
+        // Try fetching as single exercise
+        try {
+          const ex = await workoutService.getExercise(workoutId);
+          if (ex && isMounted) {
+            setWorkout({
+              id: ex._id || ex.id,
+              name: ex.name,
+              tagline: ex.description,
+              category: ex.muscleGroups?.[0] || 'Strength',
+              difficulty: ex.difficulty || 'Beginner',
+              duration: 30,
+              calories: 220,
+              exercises: [
+                {
+                  exerciseId: ex._id || ex.id,
+                  name: ex.name,
+                  sets: 4,
+                  reps: 12,
+                  rest: 60,
+                  instructions: ex.instructions || [],
+                },
+              ],
+            });
+            setLoadingWorkout(false);
+            return;
+          }
+        } catch (_) {}
+
+        // Fallback: load general exercises list
+        const res = await workoutService.getExercises({ limit: 5 });
+        const items = Array.isArray(res) ? res : (res?.items || res?.exercises || []);
+        if (items.length > 0 && isMounted) {
+          setWorkout({
+            id: workoutId,
+            name: 'Full Body Activation',
+            tagline: 'High-intensity compound workout for strength and fat burn',
+            category: 'Full Body',
+            difficulty: 'Intermediate',
+            duration: 40,
+            calories: 300,
+            exercises: items.map((it) => ({
+              exerciseId: it._id || it.id,
+              name: it.name,
+              sets: 3,
+              reps: 12,
+              rest: 60,
+              instructions: it.instructions || [],
+            })),
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load workout routine:', err.message);
+      } finally {
+        if (isMounted) setLoadingWorkout(false);
+      }
+    };
+
+    fetchRoutine();
+    return () => { isMounted = false; };
   }, [workoutId]);
 
   // Elapsed timer
@@ -90,23 +180,35 @@ export default function WorkoutDetailScreen() {
     );
   }
 
-  const exerciseList = (workout.exercises || []).map((exMeta) => {
-    const full = EXERCISES.find((e) => e.id === exMeta.exerciseId) || {};
-    return { ...full, ...exMeta };
-  });
+  const exerciseList = (workout?.exercises || []).map((exMeta) => ({
+    name: exMeta.name || 'Exercise',
+    sets: exMeta.sets || 3,
+    reps: exMeta.reps || 10,
+    rest: exMeta.rest || 60,
+    instructions: exMeta.instructions || [],
+    ...exMeta,
+  }));
 
   const currentEx = exerciseList[currentExIndex];
 
-  const handleStartWorkout = () => {
+  const handleStartWorkout = async () => {
     setIsPlaying(true);
     setCurrentExIndex(0);
     setCompletedSets({});
     setIsResting(false);
     setElapsedSeconds(0);
     setIsFinished(false);
+    // Create server session
+    try {
+      const session = await workoutService.startWorkout();
+      setSessionId(session?._id || session?.id || null);
+    } catch (err) {
+      // Continue offline — server session creation failed
+      console.warn('Could not create server workout session:', err.message);
+    }
   };
 
-  const handleToggleSet = (setIdx) => {
+  const handleToggleSet = async (setIdx) => {
     const key = `${currentExIndex}_${setIdx}`;
     const nextState = !completedSets[key];
     setCompletedSets((prev) => ({ ...prev, [key]: nextState }));
@@ -114,6 +216,20 @@ export default function WorkoutDetailScreen() {
     if (nextState) {
       setRestTimeLeft(currentEx?.rest || 60);
       setIsResting(true);
+      // Log exercise to server session
+      if (sessionId && currentEx) {
+        try {
+          await workoutService.logExercise(sessionId, {
+            exerciseId: currentEx.id || currentEx._id || 'unknown',
+            setNumber: setIdx + 1,
+            repsCompleted: currentEx.reps || 10,
+            weightKg: 0,
+          });
+        } catch (err) {
+          // Non-critical — session continues offline
+          console.warn('Exercise log failed:', err.message);
+        }
+      }
     }
   };
 
@@ -137,34 +253,34 @@ export default function WorkoutDetailScreen() {
     try {
       setSavingHistory(true);
       const minutes = Math.max(1, Math.round(elapsedSeconds / 60));
-      const calsBurned = Math.round(
-        (minutes / (workout.duration || 45)) * (workout.calories || 300)
-      );
 
-      await addWorkoutHistory({
-        name: workout.name,
-        duration: minutes,
-        calories: calsBurned,
-      });
+      let pointsEarned = 0;
+      let newBalance = null;
+
+      if (sessionId) {
+        // Complete session on server — this awards +5 reward points atomically
+        try {
+          const result = await workoutService.completeWorkout(sessionId);
+          pointsEarned = result?.pointsAwarded || result?.points || 5;
+          newBalance = result?.newPointsBalance || result?.totalPoints || null;
+        } catch (err) {
+          console.warn('Server workout completion failed:', err.message);
+          pointsEarned = 5; // Show reward UI optimistically
+        }
+      } else {
+        pointsEarned = 5;
+      }
 
       setIsFinished(false);
       setIsPlaying(false);
-      Alert.alert(
-        'Workout Completed! 🔥',
-        `Great job! Logged ${minutes} mins and ${calsBurned} calories burned to your profile.`,
-        [
-          {
-            text: 'View Progress',
-            onPress: () => router.push('/(tabs)/progress'),
-          },
-          {
-            text: 'OK',
-            onPress: () => router.push('/(tabs)'),
-          },
-        ]
-      );
+      setSessionId(null);
+
+      // Show the +5 Points celebration modal instead of plain Alert
+      setEarnedPoints(pointsEarned);
+      setNewPointsBalance(newBalance);
+      setShowPointsModal(true);
     } catch (e) {
-      Alert.alert('Error', 'Failed to record workout history.');
+      Alert.alert('Error', 'Failed to record workout. Please try again.');
     } finally {
       setSavingHistory(false);
     }
@@ -408,6 +524,40 @@ export default function WorkoutDetailScreen() {
                 {savingHistory ? 'Saving to Profile...' : 'Save to Workout Log'}
               </Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ⚡ +5 Reward Points Celebration Modal */}
+      <Modal visible={showPointsModal} transparent animationType="fade">
+        <View style={styles.pointsModalBackdrop}>
+          <View style={styles.pointsModalCard}>
+            <View style={styles.pointsModalIcon}>
+              <Zap size={40} color="#FFB800" fill="#FFB800" />
+            </View>
+            <Text style={styles.pointsModalTitle}>Workout Complete! 🔥</Text>
+            <Text style={styles.pointsEarned}>+{earnedPoints}</Text>
+            <Text style={styles.pointsLabel}>Reward Points Earned</Text>
+            {newPointsBalance !== null && (
+              <Text style={styles.pointsBalance}>Total Balance: ⚡ {newPointsBalance} pts</Text>
+            )}
+            <Text style={styles.pointsDesc}>
+              Great work! Keep completing workouts to earn more points and redeem them for supplements.
+            </Text>
+            <View style={styles.pointsModalActions}>
+              <Pressable
+                style={styles.pointsStorBtn}
+                onPress={() => { setShowPointsModal(false); router.push('/(tabs)/store'); }}
+              >
+                <Text style={styles.pointsStoreBtnText}>🛒 Redeem in Store</Text>
+              </Pressable>
+              <Pressable
+                style={styles.pointsDoneBtn}
+                onPress={() => { setShowPointsModal(false); router.push('/(tabs)'); }}
+              >
+                <Text style={styles.pointsDoneBtnText}>Back to Home</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>

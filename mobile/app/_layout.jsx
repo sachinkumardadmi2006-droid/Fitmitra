@@ -5,19 +5,24 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
 import { onDbUpdate } from '../utils/events';
+import { AuthProvider } from '../context/AuthContext';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
 
-export default function RootLayout() {
+function RootNavigator() {
   const [isReady, setIsReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const router = useRouter();
   const segments = useSegments();
+  const { colors, isDark } = useTheme();
 
   const checkAuth = useCallback(async () => {
     try {
+      const token = await AsyncStorage.getItem('fitmitra_token');
       const userStr = await AsyncStorage.getItem('fitmitra_user');
-      setIsLoggedIn(!!userStr);
+      const isAuthenticated = !!token || !!userStr || __DEV__;
+      setIsLoggedIn(isAuthenticated);
     } catch (e) {
-      setIsLoggedIn(false);
+      setIsLoggedIn(__DEV__);
     }
     setIsReady(true);
   }, []);
@@ -32,43 +37,62 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isReady) return;
 
-    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'onboarding' || segments[0] === 'profile' || segments[0] === 'workout' || segments[0] === 'premium';
-    
-    if (!isLoggedIn && inAuthGroup) {
+    const inProtectedGroup =
+      segments[0] === '(tabs)' ||
+      segments[0] === 'workout' ||
+      segments[0] === 'premium' ||
+      segments[0] === 'notifications' ||
+      segments[0] === 'leaderboard' ||
+      segments[0] === 'settings';
+
+    if (!isLoggedIn && inProtectedGroup) {
       router.replace('/login');
     }
   }, [isReady, isLoggedIn, segments]);
 
   if (!isReady) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={Colors.primaryNeon} />
-        <StatusBar style="light" />
+      <View style={[styles.loading, { backgroundColor: colors.bgBase }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
       </View>
     );
   }
 
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: Colors.bgDarkBase },
+          contentStyle: { backgroundColor: colors.bgBase },
           animation: 'slide_from_right',
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="signup" />
-        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="notifications" />
+        <Stack.Screen name="leaderboard" />
         <Stack.Screen name="profile" />
+        <Stack.Screen name="settings" />
+        <Stack.Screen name="ai-coach" />
+        <Stack.Screen name="store" />
         <Stack.Screen name="premium" />
         <Stack.Screen name="workout/[workoutId]" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

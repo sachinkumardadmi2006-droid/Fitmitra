@@ -30,18 +30,16 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 import { Colors } from '../../constants/theme';
-import {
-  getUser,
-  getWeightHistory,
-  getWorkoutHistory,
-  addWeightLog,
-} from '../../utils/db';
-import { onDbUpdate } from '../../utils/events';
+import { profileService, workoutService, authService } from '../../services';
+import { onDbUpdate, emitDbUpdate } from '../../utils/events';
 import { t } from '../../utils/i18n';
+import { TopBar } from '../../components/common/TopBar';
+import { useTheme } from '../../context/ThemeContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function ProgressTab() {
+  const { colors, isDark } = useTheme();
   const [user, setUser] = useState(null);
   const [weightLogs, setWeightLogs] = useState([]);
   const [workoutLogs, setWorkoutLogs] = useState([]);
@@ -51,12 +49,30 @@ export default function ProgressTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const u = await getUser();
-      const weights = await getWeightHistory();
-      const workouts = await getWorkoutHistory();
-      setUser(u);
-      setWeightLogs(weights || []);
-      setWorkoutLogs(workouts || []);
+      const u = await authService.getLocalUser();
+      setUser(u || {});
+
+      try {
+        const historyRes = await workoutService.getWorkoutHistory();
+        const historyItems = Array.isArray(historyRes)
+          ? historyRes
+          : historyRes?.items || historyRes?.history || [];
+        setWorkoutLogs(historyItems);
+      } catch (_) {}
+
+      try {
+        const prof = await profileService.getProfile();
+        if (prof?.weightKg) {
+          const today = new Date().toISOString().split('T')[0];
+          setWeightLogs([{ date: today, weight: prof.weightKg }]);
+          setUser((prev) => ({
+            ...prev,
+            currentWeight: prof.weightKg,
+            startingWeight: prof.weightKg,
+            goalWeight: prof.targetWeightKg || Math.round(prof.weightKg * 0.9),
+          }));
+        }
+      } catch (_) {}
     } catch (e) {
       console.warn('Error loading progress data:', e);
     } finally {
@@ -79,12 +95,15 @@ export default function ProgressTab() {
 
     try {
       setLogging(true);
-      await addWeightLog(val);
+      await profileService.updateProfile({ weightKg: val });
+      const today = new Date().toISOString().split('T')[0];
+      setWeightLogs((prev) => [{ date: today, weight: val }, ...prev]);
       setInputWeight('');
+      emitDbUpdate();
       Alert.alert('Success', `Logged today's weight: ${val} kg`);
       loadData();
     } catch (e) {
-      Alert.alert('Error', 'Failed to log weight entry.');
+      Alert.alert('Error', e.message || 'Failed to log weight entry.');
     } finally {
       setLogging(false);
     }
@@ -238,15 +257,12 @@ export default function ProgressTab() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t('progress', lang)}</Text>
-        <Text style={styles.headerSubtitle}>
-          Track body weights, trends, and review historical workout sessions
-        </Text>
-      </View>
-
+    <View style={{ flex: 1, backgroundColor: colors.bgBase }}>
+      <TopBar title="Transformation" subtitle="Weight Trends & Historical Logs" icon={TrendingUp} />
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.bgBase }]}
+        contentContainerStyle={[styles.contentContainer, { paddingHorizontal: 16 }]}
+      >
       {/* Goal Transformation Card */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Weight Transformation Goal</Text>
@@ -401,6 +417,7 @@ export default function ProgressTab() {
         )}
       </View>
     </ScrollView>
+  </View>
   );
 }
 

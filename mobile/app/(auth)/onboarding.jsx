@@ -3,8 +3,9 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Target, Dumbbell, UserCheck, Flame } from 'lucide-react-native';
-import { saveUser, getUser, addWeightLog } from '../utils/db';
-import { Colors, FontSize, BorderRadius } from '../constants/theme';
+import { profileService, authService } from '../../services';
+import { emitDbUpdate } from '../../utils/events';
+import { Colors, FontSize, BorderRadius } from '../../constants/theme';
 
 export default function Onboarding() {
   const router = useRouter();
@@ -23,8 +24,8 @@ export default function Onboarding() {
 
   const handleComplete = async () => {
     const w = parseFloat(weight) || 70;
-    const h = parseInt(height) || 170;
-    const a = parseInt(age) || 24;
+    const h = parseInt(height, 10) || 170;
+    const a = parseInt(age, 10) || 24;
     let baseCal = gender === 'Male' ? 10 * w + 6.25 * h - 5 * a + 5 : 10 * w + 6.25 * h - 5 * a - 161;
     let multiplier = activity === 'Moderately Active' ? 1.4 : activity === 'Very Active' ? 1.6 : 1.2;
     let targetCal = Math.round(baseCal * multiplier);
@@ -35,7 +36,33 @@ export default function Onboarding() {
     const targetFats = Math.round((targetCal * 0.25) / 9);
     const targetCarbs = Math.round((targetCal - (targetProtein * 4) - (targetFats * 9)) / 4);
 
-    const currentUser = await getUser();
+    const goalEnum =
+      goal === 'Fat Loss'
+        ? 'WEIGHT_LOSS'
+        : goal === 'Muscle Gain'
+        ? 'MUSCLE_GAIN'
+        : 'GENERAL_FITNESS';
+
+    const expEnum =
+      experience === 'Beginner'
+        ? 'BEGINNER'
+        : experience === 'Advanced'
+        ? 'ADVANCED'
+        : 'INTERMEDIATE';
+
+    try {
+      await profileService.updateProfile({
+        heightCm: h,
+        weightKg: w,
+        goal: goalEnum,
+        experienceLevel: expEnum,
+        gender,
+      });
+    } catch (e) {
+      console.warn('Onboarding profile sync error:', e.message);
+    }
+
+    const currentUser = (await authService.getLocalUser()) || {};
     const updatedUser = {
       ...currentUser,
       fitnessGoal: goal, experienceLevel: experience,
@@ -43,8 +70,8 @@ export default function Onboarding() {
       goalWeight: goal === 'Fat Loss' ? Math.round(w * 0.9) : goal === 'Muscle Gain' ? Math.round(w * 1.08) : w,
       gender, activityLevel: activity, targetCal, targetProtein, targetCarbs, targetFats,
     };
-    await saveUser(updatedUser);
-    await addWeightLog(weight);
+    await authService.saveLocalUser(updatedUser);
+    emitDbUpdate();
     router.replace('/(tabs)');
   };
 

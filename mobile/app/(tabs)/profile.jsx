@@ -28,8 +28,9 @@ import {
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../constants/theme';
-import { getUser, saveUser, initDb } from '../../utils/db';
-import { onDbUpdate } from '../../utils/events';
+import { authService, profileService } from '../../services';
+import { useAuth } from '../../context/AuthContext';
+import { onDbUpdate, emitDbUpdate } from '../../utils/events';
 import { t } from '../../utils/i18n';
 
 const GOALS = ['Muscle Gain', 'Fat Loss', 'Strength', 'General Fitness'];
@@ -43,6 +44,7 @@ const ACTIVITIES = [
 
 export default function ProfileTab() {
   const router = useRouter();
+  const { points, refreshProfile } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,15 +68,42 @@ export default function ProfileTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const u = await getUser();
-      setUser(u);
+      const u = await authService.getLocalUser();
+      setUser(u || {});
+
+      try {
+        const p = await profileService.getProfile();
+        if (p) {
+          if (p.heightCm) setHeight(String(p.heightCm));
+          if (p.weightKg) setWeight(String(p.weightKg));
+          if (p.goal) {
+            setGoal(
+              p.goal === 'MUSCLE_GAIN'
+                ? 'Muscle Gain'
+                : p.goal === 'WEIGHT_LOSS'
+                ? 'Fat Loss'
+                : 'General Fitness'
+            );
+          }
+          if (p.experienceLevel) {
+            setExperience(
+              p.experienceLevel === 'BEGINNER'
+                ? 'Beginner'
+                : p.experienceLevel === 'ADVANCED'
+                ? 'Advanced'
+                : 'Intermediate'
+            );
+          }
+        }
+      } catch (_) {}
+
       if (u) {
         setName(u.name || '');
         setAge(u.age ? String(u.age) : '');
-        setHeight(u.height ? String(u.height) : '');
-        setWeight(u.weight || u.currentWeight ? String(u.weight || u.currentWeight) : '');
-        setGoal(u.fitnessGoal || 'Muscle Gain');
-        setExperience(u.experienceLevel || 'Intermediate');
+        if (!height && u.height) setHeight(String(u.height));
+        if (!weight && (u.weight || u.currentWeight)) {
+          setWeight(String(u.weight || u.currentWeight));
+        }
         setActivity(u.activityLevel || 'Moderately Active');
         setLanguage(u.language || 'en');
       }
@@ -99,21 +128,53 @@ export default function ProfileTab() {
 
     try {
       setSaving(true);
+      const hNum = parseInt(height, 10);
+      const wNum = parseFloat(weight);
+
+      const goalEnum =
+        goal === 'Fat Loss'
+          ? 'WEIGHT_LOSS'
+          : goal === 'Muscle Gain'
+          ? 'MUSCLE_GAIN'
+          : 'GENERAL_FITNESS';
+
+      const expEnum =
+        experience === 'Beginner'
+          ? 'BEGINNER'
+          : experience === 'Advanced'
+          ? 'ADVANCED'
+          : 'INTERMEDIATE';
+
+      // Update server profile
+      try {
+        await profileService.updateProfile({
+          heightCm: hNum || undefined,
+          weightKg: wNum || undefined,
+          goal: goalEnum,
+          experienceLevel: expEnum,
+        });
+      } catch (err) {
+        console.warn('Server profile update error:', err.message);
+      }
+
+      // Update local storage
       const updated = {
         ...user,
         name: name.trim(),
-        age: parseInt(age, 10) || user.age,
-        height: parseInt(height, 10) || user.height,
-        weight: parseFloat(weight) || user.weight,
-        currentWeight: parseFloat(weight) || user.currentWeight,
+        age: parseInt(age, 10) || user?.age,
+        height: hNum || user?.height,
+        weight: wNum || user?.weight,
+        currentWeight: wNum || user?.currentWeight,
         fitnessGoal: goal,
         experienceLevel: experience,
         activityLevel: activity,
         language: language,
       };
 
-      await saveUser(updated);
+      await authService.saveLocalUser(updated);
       setUser(updated);
+      refreshProfile();
+      emitDbUpdate();
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (e) {
       Alert.alert('Error', 'Failed to update profile.');
@@ -129,10 +190,7 @@ export default function ProfileTab() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
-          await AsyncStorage.removeItem('fitmitra_user');
-          await AsyncStorage.removeItem('fitmitra_workout_history');
-          await AsyncStorage.removeItem('fitmitra_nutrition_logs');
-          await AsyncStorage.removeItem('fitmitra_weight_history');
+          await authService.logout();
           router.replace('/login');
         },
       },
@@ -226,6 +284,14 @@ export default function ProfileTab() {
           <Text style={styles.statVal}>{bmi}</Text>
           <Text style={styles.statLbl}>BMI</Text>
         </View>
+        <View style={styles.statDivider} />
+        <Pressable
+          style={styles.statBox}
+          onPress={() => router.push('/(tabs)/store')}
+        >
+          <Text style={[styles.statVal, { color: '#FFB800' }]}>⚡ {points}</Text>
+          <Text style={[styles.statLbl, { color: '#FFB800' }]}>Points</Text>
+        </Pressable>
       </View>
 
       {/* PRO Membership Banner */}

@@ -1,281 +1,956 @@
-// Dashboard Screen — Home tab (mirrors frontend Dashboard.jsx)
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, TextInput, ScrollView, StyleSheet, Modal } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { Flame, Dumbbell, Award, Scale, Plus, Send } from 'lucide-react-native';
-import { getUser, getTodayNutritionLogs, addNutritionLog, getWorkoutHistory, addWeightLog } from '../../utils/db';
-import { WORKOUTS } from '../../data/mockData';
-import { t } from '../../utils/i18n';
-import { onDbUpdate } from '../../utils/events';
-import { Colors, FontSize, BorderRadius } from '../../constants/theme';
-import Svg, { Circle } from 'react-native-svg';
+import {
+  Dumbbell,
+  Flame,
+  Zap,
+  Play,
+  CheckCircle2,
+  Utensils,
+  Plus,
+  Droplets,
+  Sparkles,
+  TrendingUp,
+  ArrowRight,
+  Target,
+  ChevronRight,
+} from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { dashboardService } from '../../services/dashboardService';
+import { nutritionService } from '../../services/nutritionService';
+import { workoutService } from '../../services/workoutService';
+import { TopBar } from '../../components/common/TopBar';
+import { MaterialCard } from '../../components/common/MaterialCard';
+import { useTheme } from '../../context/ThemeContext';
+import { FontSize, BorderRadius } from '../../constants/theme';
 
-export default function Dashboard() {
+export default function HomeDashboard() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [caloriesConsumed, setCaloriesConsumed] = useState(0);
-  const [todayWorkout, setTodayWorkout] = useState(null);
-  const [todayWorkoutCompleted, setTodayWorkoutCompleted] = useState(false);
-  const [completedDetails, setCompletedDetails] = useState(null);
-  const [showWeightModal, setShowWeightModal] = useState(false);
-  const [logWeightVal, setLogWeightVal] = useState('');
-  const [quickName, setQuickName] = useState('');
-  const [quickCal, setQuickCal] = useState('');
-  const [quickProt, setQuickProt] = useState('');
-  const [chatMessages, setChatMessages] = useState([
-    { sender: 'bot', text: 'Hey! I am your FitMitra AI Coach. Need a quick tip?' }
-  ]);
-  const [chatInput, setChatInput] = useState('');
+  const { colors, isDark } = useTheme();
+
+  const [userName, setUserName] = useState('Athlete');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [waterMl, setWaterMl] = useState(1500);
+  const [targetWaterMl] = useState(3000);
+  const [todayRoutine, setTodayRoutine] = useState({
+    title: 'Full Body Athletic Conditioning',
+    duration: '45 mins',
+    exercisesCount: 6,
+    target: 'Full Body',
+    routineId: 'full-body-1',
+  });
 
   const loadData = useCallback(async () => {
-    const u = await getUser();
-    setUser(u);
-    if (!u) return;
-    const todayLogs = await getTodayNutritionLogs();
-    setCaloriesConsumed(todayLogs.reduce((a, c) => a + c.calories, 0));
-    const history = await getWorkoutHistory();
-    const todayStr = new Date().toISOString().split('T')[0];
-    const done = history.find(h => h.date === todayStr);
-    if (done) { setTodayWorkoutCompleted(true); setCompletedDetails(done); }
-    else { setTodayWorkoutCompleted(false); }
-    const rec = WORKOUTS.find(w => {
-      if (u.fitnessGoal === 'Muscle Gain') return w.id === 'chest-triceps';
-      if (u.fitnessGoal === 'Fat Loss') return w.id === 'core-cardio';
-      if (u.fitnessGoal === 'Strength') return w.id === 'leg-destroyer';
-      return w.id === 'shoulder-blast';
-    }) || WORKOUTS[0];
-    setTodayWorkout(rec);
+    try {
+      // 1. Load user display name
+      const userStr = await AsyncStorage.getItem('fitmitra_user');
+      if (userStr) {
+        const parsed = JSON.parse(userStr);
+        if (parsed.displayName) setUserName(parsed.displayName.split(' ')[0]);
+      }
+
+      // 2. Fetch live dashboard data
+      const data = await dashboardService.getDashboard();
+      if (data) {
+        setDashboardData(data);
+      }
+
+      // 3. Fetch hydration data
+      const hydration = await nutritionService.getHydration();
+      if (hydration !== undefined) {
+        setWaterMl(hydration || 1500);
+      }
+
+      // 4. Fetch workout exercises to customize hero card
+      const exercises = await workoutService.getExercises();
+      if (exercises && exercises.length > 0) {
+        setTodayRoutine((prev) => ({
+          ...prev,
+          exercisesCount: exercises.length,
+        }));
+      }
+    } catch (err) {
+      console.warn('Dashboard fetch error:', err.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  useEffect(() => { loadData(); const unsub = onDbUpdate(loadData); return unsub; }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  const handleQuickMeal = async () => {
-    if (!quickName || !quickCal) return;
-    await addNutritionLog({ mealType: 'Snacks', name: quickName, calories: parseInt(quickCal), protein: parseInt(quickProt) || 0, carbs: 0, fats: 0 });
-    setQuickName(''); setQuickCal(''); setQuickProt('');
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
   };
 
-  const handleWeightLog = async () => {
-    if (!logWeightVal) return;
-    await addWeightLog(logWeightVal);
-    setShowWeightModal(false); setLogWeightVal('');
+  const handleAddWater = async () => {
+    const nextWater = Math.min(waterMl + 250, 5000);
+    setWaterMl(nextWater);
+    await nutritionService.setHydration(nextWater);
   };
 
-  const lang = user?.language || 'en';
+  // Dynamic greeting based on time of day
   const getGreeting = () => {
-    const h = new Date().getHours();
-    if (lang === 'kn') return h < 12 ? 'ಶುಭೋದಯ' : h < 17 ? 'ಶುಭ ಮಧ್ಯಾಹ್ನ' : 'ಶುಭ ಸಂಜೆ';
-    return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening';
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   };
 
-  const handleSendMessage = (textToSend) => {
-    const text = textToSend || chatInput;
-    if (!text) return;
-    setChatMessages(prev => [...prev, { sender: 'user', text }]);
-    setChatInput('');
-    setTimeout(() => {
-      const q = text.toLowerCase();
-      let resp = "Keep focusing on your workouts and hitting calorie targets!";
-      if (q.includes('protein') || q.includes('eat')) resp = "Post-workout, focus on 20-30g protein with simple carbs.";
-      else if (q.includes('sore') || q.includes('rest')) resp = "If sore, reduce overload slightly. Keep movements controlled.";
-      else if (q.includes('water') || q.includes('hydration')) resp = "Aim for 3-4 liters daily. 200ml every 15-20 min during lifts.";
-      setChatMessages(prev => [...prev, { sender: 'bot', text: resp }]);
-    }, 800);
-  };
+  const profile = dashboardData?.profile || {};
+  const todayWorkout = dashboardData?.todayWorkout || {};
+  const todayNutrition = dashboardData?.todayNutrition || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const points = profile?.points || 0;
+  const streak = dashboardData?.stats?.workoutsLast7Days || 1;
+  const isWorkoutCompleted = todayWorkout?.hasCompletedToday;
 
-  if (!user) return <View style={styles.loadingBox}><Text style={styles.loadingText}>Loading...</Text></View>;
+  // Calorie & macro targets based on profile or standard athlete target
+  const targetCalories = 2200;
+  const targetProtein = 140;
+  const targetCarbs = 240;
+  const targetFat = 65;
 
-  const calPct = Math.min(100, Math.round((caloriesConsumed / (user.targetCal || 2000)) * 100));
-  const circumference = 2 * Math.PI * 40;
-  const strokeDashoffset = circumference - (circumference * calPct) / 100;
+  const currentCalories = todayNutrition?.calories || 0;
+  const currentProtein = todayNutrition?.protein || 0;
+  const currentCarbs = todayNutrition?.carbs || 0;
+  const currentFat = todayNutrition?.fat || 0;
+
+  const proteinPct = Math.min(Math.round((currentProtein / targetProtein) * 100), 100);
+  const carbsPct = Math.min(Math.round((currentCarbs / targetCarbs) * 100), 100);
+  const fatPct = Math.min(Math.round((currentFat / targetFat) * 100), 100);
+
+  if (loading && !dashboardData) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.bgBase }]}>
+        <TopBar />
+        <View style={styles.centerSpinner}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading your dashboard...
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 80 }}>
-      {/* Header */}
-      <View style={styles.pageHeader}>
-        <Text style={styles.greeting}>{getGreeting()}, {user.name} 👋</Text>
-        <Pressable style={styles.weightBtn} onPress={() => setShowWeightModal(true)}>
-          <Scale size={14} color={Colors.textSecondary} />
-          <Text style={styles.weightBtnText}>{t('logWeight', lang)}</Text>
-        </Pressable>
-      </View>
+    <View style={[styles.container, { backgroundColor: colors.bgBase }]}>
+      {/* 1. Context-Aware TopBar */}
+      <TopBar />
 
-      {/* Stats Row */}
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Flame size={20} color={Colors.primaryNeon} />
-          <Text style={styles.statVal}>{user.streak} {t('days', lang)}</Text>
-          <Text style={styles.statLabel}>{t('streak', lang)}</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Scale size={20} color={Colors.secondaryCyan} />
-          <Text style={styles.statVal}>{user.currentWeight} KG</Text>
-          <Text style={styles.statLabel}>{t('currentWeight', lang)}</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Dumbbell size={20} color={Colors.accentPurple} />
-          <Text style={styles.statVal}>{user.completedWorkoutsCount}</Text>
-          <Text style={styles.statLabel}>{t('completedWorkouts', lang)}</Text>
-        </View>
-      </View>
-
-      {/* Today's Workout */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{lang === 'kn' ? 'ಇಂದಿನ ವ್ಯಾಯಾಮ' : "Today's Workout"}</Text>
-        {todayWorkoutCompleted ? (
-          <View style={styles.completedRow}>
-            <Award size={40} color={Colors.primaryNeon} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.completedTitle}>✓ Workout Completed!</Text>
-              <Text style={styles.completedSub}>{completedDetails?.name}</Text>
-              <Text style={styles.completedMeta}>🔥 {completedDetails?.calories} Kcal  ⏱ {completedDetails?.duration} Min</Text>
-            </View>
-          </View>
-        ) : todayWorkout && (
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 2. Compact Greeting & Gamification Header */}
+        <View style={styles.greetingRow}>
           <View>
-            <Text style={styles.workoutName}>{todayWorkout.name}</Text>
-            <Text style={styles.workoutMeta}>{todayWorkout.difficulty} • {todayWorkout.duration} Min • {todayWorkout.exercises.length} Exercises</Text>
-            <Pressable style={styles.startBtn} onPress={() => router.push(`/workout/${todayWorkout.id}`)}>
-              <Text style={styles.startBtnText}>{t('startWorkout', lang)}</Text>
-              <Dumbbell size={18} color="#000" />
+            <Text style={[styles.greetingSub, { color: colors.textSecondary }]}>
+              {getGreeting()},
+            </Text>
+            <Text style={[styles.greetingName, { color: colors.textPrimary }]}>
+              {userName} 👋
+            </Text>
+          </View>
+
+          {/* Gamification Pill: Streak + Points */}
+          <View style={[styles.gamePill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.pillItem}>
+              <Flame size={15} color="#FF7A00" />
+              <Text style={[styles.pillText, { color: colors.textPrimary }]}>
+                {streak} <Text style={{ color: colors.textSecondary, fontSize: 11 }}>d</Text>
+              </Text>
+            </View>
+            <View style={[styles.pillDivider, { backgroundColor: colors.border }]} />
+            <Pressable
+              style={styles.pillItem}
+              onPress={() => router.push('/store')}
+            >
+              <Zap size={15} color={colors.primary} />
+              <Text style={[styles.pillText, { color: colors.textPrimary }]}>
+                {points} <Text style={{ color: colors.primary, fontSize: 11 }}>pts</Text>
+              </Text>
             </Pressable>
           </View>
-        )}
-      </View>
+        </View>
 
-      {/* Nutrition Summary */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{lang === 'kn' ? 'ಇಂದಿನ ಆಹಾರ' : "Nutrition Summary"}</Text>
-        <View style={styles.nutritionRow}>
-          <View style={styles.circleContainer}>
-            <Svg width={100} height={100}>
-              <Circle cx={50} cy={50} r={40} stroke={Colors.borderGlass} strokeWidth={6} fill="none" />
-              <Circle cx={50} cy={50} r={40} stroke={Colors.secondaryCyan} strokeWidth={6} fill="none"
-                strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round" rotation="-90" origin="50,50"
-              />
-            </Svg>
-            <View style={styles.circleText}>
-              <Text style={styles.circleVal}>{caloriesConsumed}</Text>
-              <Text style={styles.circleLabel}>of {user.targetCal}</Text>
+        {/* 3. TODAY'S WORKOUT HERO CARD (DOMINANT / PRIMARY VISUAL FOCUS - BIG) */}
+        <MaterialCard
+          elevated
+          style={[
+            styles.workoutHero,
+            {
+              borderColor: isWorkoutCompleted ? colors.success + '66' : colors.primary + '55',
+              backgroundColor: isDark ? colors.surfaceElevated : colors.surface,
+            },
+          ]}
+        >
+          {/* Header Row with Tag & Points Badge */}
+          <View style={styles.workoutHeaderRow}>
+            <View style={[styles.tagBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '44' }]}>
+              <Dumbbell size={13} color={colors.primary} />
+              <Text style={[styles.tagText, { color: colors.primary }]}>
+                TODAY'S WORKOUT
+              </Text>
+            </View>
+
+            <View style={[styles.rewardBadge, { backgroundColor: isWorkoutCompleted ? colors.success + '18' : colors.primary + '18' }]}>
+              <Zap size={13} color={isWorkoutCompleted ? colors.success : colors.primary} />
+              <Text
+                style={[
+                  styles.rewardBadgeText,
+                  { color: isWorkoutCompleted ? colors.success : colors.primary },
+                ]}
+              >
+                {isWorkoutCompleted ? '⚡ +5 pts Earned' : '⚡ +5 pts Available'}
+              </Text>
             </View>
           </View>
-          <View style={{ flex: 1, gap: 8 }}>
-            <View style={styles.macroRow}><Text style={[styles.macroVal, { color: Colors.primaryNeon }]}>{user.targetProtein}g</Text><Text style={styles.macroLabel}>Protein</Text></View>
-            <View style={styles.macroRow}><Text style={[styles.macroVal, { color: Colors.secondaryCyan }]}>{user.targetCarbs}g</Text><Text style={styles.macroLabel}>Carbs</Text></View>
-            <View style={styles.macroRow}><Text style={[styles.macroVal, { color: Colors.accentOrange }]}>{user.targetFats}g</Text><Text style={styles.macroLabel}>Fats</Text></View>
-          </View>
-        </View>
-        {/* Quick meal log */}
-        <View style={styles.quickMealSection}>
-          <Text style={styles.quickMealTitle}>{t('quickLogMeal', lang)}</Text>
-          <View style={styles.quickMealRow}>
-            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Meal name" placeholderTextColor={Colors.textMuted} value={quickName} onChangeText={setQuickName} />
-            <TextInput style={[styles.input, { width: 70 }]} placeholder="Kcal" placeholderTextColor={Colors.textMuted} keyboardType="number-pad" value={quickCal} onChangeText={setQuickCal} />
-            <Pressable style={styles.addBtn} onPress={handleQuickMeal}><Plus size={20} color="#000" /></Pressable>
-          </View>
-        </View>
-      </View>
 
-      {/* AI Coach */}
-      <View style={styles.card}>
-        <View style={styles.aiHeader}>
-          <View style={styles.botAvatar}><Text style={styles.botAvatarText}>AI</Text></View>
-          <View><Text style={styles.aiTitle}>{t('aiCoach', lang)}</Text><Text style={styles.onlineText}>● Online</Text></View>
-        </View>
-        <ScrollView style={styles.chatArea} nestedScrollEnabled>
-          {chatMessages.map((m, i) => (
-            <View key={i} style={[styles.bubble, m.sender === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
-              <Text style={styles.bubbleText}>{m.text}</Text>
-            </View>
-          ))}
-        </ScrollView>
-        <View style={styles.promptRow}>
-          {['Post-Workout Meal?', 'Hydration Tip?'].map(p => (
-            <Pressable key={p} style={styles.promptBtn} onPress={() => handleSendMessage(p)}><Text style={styles.promptBtnText}>{p}</Text></Pressable>
-          ))}
-        </View>
-        <View style={styles.chatInputRow}>
-          <TextInput style={[styles.input, { flex: 1 }]} placeholder={t('askCoach', lang)} placeholderTextColor={Colors.textMuted}
-            value={chatInput} onChangeText={setChatInput} onSubmitEditing={() => handleSendMessage()} />
-          <Pressable style={styles.sendBtn} onPress={() => handleSendMessage()}><Send size={16} color="#000" /></Pressable>
-        </View>
-      </View>
+          {/* Routine Title */}
+          <Text style={[styles.workoutTitle, { color: colors.textPrimary }]}>
+            {todayRoutine.title}
+          </Text>
 
-      {/* Weight Modal */}
-      <Modal visible={showWeightModal} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{t('logWeight', lang)}</Text>
-            <TextInput style={styles.input} placeholder="E.g. 72.4" placeholderTextColor={Colors.textMuted}
-              keyboardType="decimal-pad" value={logWeightVal} onChangeText={setLogWeightVal} autoFocus />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.btnSecondary} onPress={() => setShowWeightModal(false)}><Text style={styles.btnSecText}>{t('cancel', lang)}</Text></Pressable>
-              <Pressable style={styles.btnPrimary} onPress={handleWeightLog}><Text style={styles.btnPrimText}>{t('save', lang)}</Text></Pressable>
+          {/* Meta Information */}
+          <View style={styles.workoutMetaRow}>
+            <Text style={[styles.workoutMetaText, { color: colors.textSecondary }]}>
+              ⏱️ {todayRoutine.duration}
+            </Text>
+            <Text style={[styles.metaBullet, { color: colors.textMuted }]}>•</Text>
+            <Text style={[styles.workoutMetaText, { color: colors.textSecondary }]}>
+              🏋️ {todayRoutine.exercisesCount} Exercises
+            </Text>
+            <Text style={[styles.metaBullet, { color: colors.textMuted }]}>•</Text>
+            <Text style={[styles.workoutMetaText, { color: colors.textSecondary }]}>
+              🎯 {todayRoutine.target}
+            </Text>
+          </View>
+
+          {/* Big High-Contrast Action Button */}
+          <Pressable
+            style={[
+              styles.startWorkoutBtn,
+              {
+                backgroundColor: isWorkoutCompleted ? colors.surface : colors.primary,
+                borderColor: isWorkoutCompleted ? colors.success : 'transparent',
+                borderWidth: isWorkoutCompleted ? 1.5 : 0,
+              },
+            ]}
+            onPress={() => router.push(`/workout/${todayRoutine.routineId}`)}
+          >
+            {isWorkoutCompleted ? (
+              <View style={styles.btnContentRow}>
+                <CheckCircle2 size={20} color={colors.success} />
+                <Text style={[styles.btnTextCompleted, { color: colors.success }]}>
+                  Workout Completed • Review Session
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.btnContentRow}>
+                <Play size={20} color="#000" fill="#000" />
+                <Text style={styles.btnTextPrimary}>Start Workout Now</Text>
+                <ArrowRight size={18} color="#000" />
+              </View>
+            )}
+          </Pressable>
+        </MaterialCard>
+
+        {/* 4. TODAY'S NUTRITION & MACROS OVERVIEW (MEDIUM) */}
+        <MaterialCard style={[styles.sectionCard, { backgroundColor: colors.surface }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.titleIconRow}>
+              <Utensils size={18} color={colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Today's Nutrition
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.smallActionBtn, { borderColor: colors.border }]}
+              onPress={() => router.push('/(tabs)/nutrition')}
+            >
+              <Plus size={14} color={colors.primary} />
+              <Text style={[styles.smallActionText, { color: colors.primary }]}>
+                Log Meal
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Calories Split */}
+          <View style={styles.calorieRow}>
+            <View>
+              <Text style={[styles.calorieNumber, { color: colors.textPrimary }]}>
+                {currentCalories}{' '}
+                <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textSecondary }}>
+                  / {targetCalories} kcal
+                </Text>
+              </Text>
+              <Text style={[styles.calorieSub, { color: colors.textMuted }]}>
+                {Math.max(targetCalories - currentCalories, 0)} kcal remaining today
+              </Text>
+            </View>
+
+            <View style={[styles.calorieBadge, { backgroundColor: colors.primary + '18' }]}>
+              <Text style={[styles.caloriePct, { color: colors.primary }]}>
+                {Math.round((currentCalories / targetCalories) * 100)}%
+              </Text>
             </View>
           </View>
+
+          {/* 3 Macro Bars (Protein, Carbs, Fats) */}
+          <View style={styles.macroBarsContainer}>
+            {/* Protein */}
+            <View style={styles.macroBarCol}>
+              <View style={styles.macroHeader}>
+                <Text style={[styles.macroName, { color: colors.textSecondary }]}>Protein</Text>
+                <Text style={[styles.macroVal, { color: colors.textPrimary }]}>
+                  {currentProtein}g <Text style={{ color: colors.textMuted }}>/{targetProtein}g</Text>
+                </Text>
+              </View>
+              <View style={[styles.barTrack, { backgroundColor: colors.surfaceElevated }]}>
+                <View
+                  style={[
+                    styles.barFill,
+                    { width: `${proteinPct}%`, backgroundColor: colors.primary },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Carbs */}
+            <View style={styles.macroBarCol}>
+              <View style={styles.macroHeader}>
+                <Text style={[styles.macroName, { color: colors.textSecondary }]}>Carbs</Text>
+                <Text style={[styles.macroVal, { color: colors.textPrimary }]}>
+                  {currentCarbs}g <Text style={{ color: colors.textMuted }}>/{targetCarbs}g</Text>
+                </Text>
+              </View>
+              <View style={[styles.barTrack, { backgroundColor: colors.surfaceElevated }]}>
+                <View
+                  style={[
+                    styles.barFill,
+                    { width: `${carbsPct}%`, backgroundColor: colors.accentAmber },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Fats */}
+            <View style={styles.macroBarCol}>
+              <View style={styles.macroHeader}>
+                <Text style={[styles.macroName, { color: colors.textSecondary }]}>Fats</Text>
+                <Text style={[styles.macroVal, { color: colors.textPrimary }]}>
+                  {currentFat}g <Text style={{ color: colors.textMuted }}>/{targetFat}g</Text>
+                </Text>
+              </View>
+              <View style={[styles.barTrack, { backgroundColor: colors.surfaceElevated }]}>
+                <View
+                  style={[
+                    styles.barFill,
+                    { width: `${fatPct}%`, backgroundColor: colors.accentRose },
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+        </MaterialCard>
+
+        {/* 5. DAILY GOALS CHECKLIST & HYDRATION (COMPACT) */}
+        <MaterialCard style={[styles.sectionCard, { backgroundColor: colors.surface }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.titleIconRow}>
+              <Target size={18} color={colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Daily Goals
+              </Text>
+            </View>
+          </View>
+
+          {/* Goal 1: Workout */}
+          <View style={[styles.goalItem, { borderColor: colors.borderLight }]}>
+            <CheckCircle2
+              size={20}
+              color={isWorkoutCompleted ? colors.success : colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.goalText,
+                {
+                  color: isWorkoutCompleted ? colors.textPrimary : colors.textSecondary,
+                  textDecorationLine: isWorkoutCompleted ? 'line-through' : 'none',
+                },
+              ]}
+            >
+              Complete scheduled workout (+5 reward points)
+            </Text>
+          </View>
+
+          {/* Goal 2: Protein Target */}
+          <View style={[styles.goalItem, { borderColor: colors.borderLight }]}>
+            <CheckCircle2
+              size={20}
+              color={currentProtein >= targetProtein ? colors.success : colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.goalText,
+                {
+                  color: currentProtein >= targetProtein ? colors.textPrimary : colors.textSecondary,
+                  textDecorationLine: currentProtein >= targetProtein ? 'line-through' : 'none',
+                },
+              ]}
+            >
+              Reach 140g daily protein goal ({currentProtein}g reached)
+            </Text>
+          </View>
+
+          {/* Goal 3: Hydration Interactive Tracker */}
+          <View style={[styles.goalItem, { borderColor: 'transparent', paddingBottom: 0 }]}>
+            <Droplets size={20} color={colors.secondaryCyan} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.goalText, { color: colors.textPrimary }]}>
+                Hydration Tracker ({waterMl / 1000}L / {targetWaterMl / 1000}L)
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.waterAddBtn, { backgroundColor: colors.secondaryCyan + '20', borderColor: colors.secondaryCyan }]}
+              onPress={handleAddWater}
+            >
+              <Plus size={12} color={colors.secondaryCyan} />
+              <Text style={[styles.waterAddText, { color: colors.secondaryCyan }]}>
+                +250ml
+              </Text>
+            </Pressable>
+          </View>
+        </MaterialCard>
+
+        {/* 6. PROGRESS & CONSISTENCY SNAPSHOT (COMPACT) */}
+        <MaterialCard
+          style={[styles.sectionCard, { backgroundColor: colors.surface }]}
+          onPress={() => router.push('/(tabs)/progress')}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.titleIconRow}>
+              <TrendingUp size={18} color={colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Transformation Snapshot
+              </Text>
+            </View>
+            <ChevronRight size={18} color={colors.textSecondary} />
+          </View>
+
+          <View style={styles.progressRow}>
+            <View>
+              <Text style={[styles.progressMetric, { color: colors.textPrimary }]}>
+                {profile?.weightKg || 72.4} kg
+              </Text>
+              <Text style={[styles.progressSub, { color: colors.textSecondary }]}>
+                Target: {profile?.targetWeightKg || 70.0} kg • Goal: {profile?.goal || 'Muscle Gain'}
+              </Text>
+            </View>
+
+            {/* 7-Day Consistency Dots */}
+            <View style={styles.dotsContainer}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => {
+                const isActive = idx < streak;
+                return (
+                  <View key={idx} style={styles.dotCol}>
+                    <View
+                      style={[
+                        styles.dotCircle,
+                        {
+                          backgroundColor: isActive ? colors.primary : colors.surfaceElevated,
+                          borderColor: isActive ? colors.primary : colors.border,
+                        },
+                      ]}
+                    />
+                    <Text style={[styles.dotDay, { color: colors.textMuted }]}>{day}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </MaterialCard>
+
+        {/* 7. AI COACH PROMPT (MEDIUM) */}
+        <MaterialCard
+          style={[styles.aiCard, { borderColor: colors.primary + '44', backgroundColor: colors.surface }]}
+          onPress={() => router.push('/ai-coach')}
+        >
+          <View style={styles.aiHeaderRow}>
+            <View style={[styles.aiIconWrap, { backgroundColor: colors.primary + '20' }]}>
+              <Sparkles size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.aiTitle, { color: colors.textPrimary }]}>
+                Ask FitMitra AI Coach
+              </Text>
+              <Text style={[styles.aiSub, { color: colors.textSecondary }]}>
+                Powered by DeepSeek + LangGraph
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.aiPromptChip, { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight }]}>
+            <Text style={[styles.aiPromptText, { color: colors.textPrimary }]}>
+              "💡 Suggest high-protein post-workout snacks under 300 kcal"
+            </Text>
+            <ArrowRight size={14} color={colors.primary} />
+          </View>
+        </MaterialCard>
+
+        {/* 8. RECOMMENDED FOR YOU (HORIZONTAL SCROLL) */}
+        <View style={styles.recommendedSection}>
+          <Text style={[styles.recommendedHeading, { color: colors.textPrimary }]}>
+            Recommended For You
+          </Text>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recScroll}>
+            {/* Recommendation 1 */}
+            <Pressable
+              style={[styles.recCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/(tabs)/nutrition')}
+            >
+              <View style={[styles.recIconWrap, { backgroundColor: colors.accentAmber + '20' }]}>
+                <Utensils size={18} color={colors.accentAmber} />
+              </View>
+              <Text style={[styles.recTitle, { color: colors.textPrimary }]}>
+                Paneer Tikka Bowl
+              </Text>
+              <Text style={[styles.recSub, { color: colors.textSecondary }]}>
+                32g Protein • 380 kcal
+              </Text>
+            </Pressable>
+
+            {/* Recommendation 2 */}
+            <Pressable
+              style={[styles.recCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/store')}
+            >
+              <View style={[styles.recIconWrap, { backgroundColor: colors.primary + '20' }]}>
+                <Zap size={18} color={colors.primary} />
+              </View>
+              <Text style={[styles.recTitle, { color: colors.textPrimary }]}>
+                FitMitra Whey Isolate
+              </Text>
+              <Text style={[styles.recSub, { color: colors.textSecondary }]}>
+                Redeem with ⚡ Points
+              </Text>
+            </Pressable>
+
+            {/* Recommendation 3 */}
+            <Pressable
+              style={[styles.recCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/leaderboard')}
+            >
+              <View style={[styles.recIconWrap, { backgroundColor: colors.accentPurple + '20' }]}>
+                <Flame size={18} color={colors.accentPurple} />
+              </View>
+              <Text style={[styles.recTitle, { color: colors.textPrimary }]}>
+                Community Leaderboard
+              </Text>
+              <Text style={[styles.recSub, { color: colors.textSecondary }]}>
+                Compete on streaks & reps
+              </Text>
+            </Pressable>
+          </ScrollView>
         </View>
-      </Modal>
-    </ScrollView>
+
+        {/* Bottom padding for tab bar */}
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bgDarkBase },
-  loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.bgDarkBase },
-  loadingText: { color: Colors.textSecondary },
-  pageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 50 },
-  greeting: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, flex: 1 },
-  weightBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.borderGlassBright },
-  weightBtnText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 16, marginBottom: 20 },
-  statBox: { alignItems: 'center', gap: 4, padding: 12, flex: 1, backgroundColor: Colors.bgGlass, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.borderGlass, marginHorizontal: 4 },
-  statVal: { fontWeight: '700', fontSize: FontSize.lg, color: Colors.textPrimary },
-  statLabel: { fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase' },
-  card: { backgroundColor: Colors.bgGlass, borderWidth: 1, borderColor: Colors.borderGlass, borderRadius: BorderRadius.lg, padding: 20, marginHorizontal: 16, marginBottom: 16 },
-  cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
-  completedRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  completedTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.primaryNeon },
-  completedSub: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: 2 },
-  completedMeta: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '600', marginTop: 8 },
-  workoutName: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  workoutMeta: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: 16 },
-  startBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primaryNeon, paddingVertical: 14, borderRadius: BorderRadius.md },
-  startBtnText: { fontWeight: '700', fontSize: FontSize.md, color: '#000' },
-  nutritionRow: { flexDirection: 'row', alignItems: 'center', gap: 20, marginBottom: 20 },
-  circleContainer: { position: 'relative', width: 100, height: 100 },
-  circleText: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' },
-  circleVal: { fontWeight: '800', fontSize: FontSize.xl, color: Colors.textPrimary },
-  circleLabel: { fontSize: 10, color: Colors.textSecondary },
-  macroRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, paddingHorizontal: 12, borderWidth: 1, borderColor: Colors.borderGlass, borderRadius: BorderRadius.sm },
-  macroVal: { fontWeight: '700', fontSize: FontSize.md },
-  macroLabel: { fontSize: FontSize.xs, color: Colors.textMuted, textTransform: 'uppercase' },
-  quickMealSection: { borderTopWidth: 1, borderColor: Colors.borderGlass, paddingTop: 16 },
-  quickMealTitle: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', marginBottom: 10 },
-  quickMealRow: { flexDirection: 'row', gap: 8 },
-  input: { backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: Colors.borderGlass, borderRadius: BorderRadius.sm, paddingHorizontal: 12, height: 42, color: Colors.textPrimary, fontSize: FontSize.sm },
-  addBtn: { width: 42, height: 42, borderRadius: BorderRadius.sm, backgroundColor: Colors.secondaryCyan, alignItems: 'center', justifyContent: 'center' },
-  aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderColor: Colors.borderGlass },
-  botAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primaryNeon, alignItems: 'center', justifyContent: 'center' },
-  botAvatarText: { fontWeight: '800', fontSize: 12, color: '#000' },
-  aiTitle: { fontWeight: '600', fontSize: FontSize.md, color: Colors.textPrimary },
-  onlineText: { fontSize: 10, color: '#10b981' },
-  chatArea: { maxHeight: 200, marginBottom: 12 },
-  bubble: { padding: 12, borderRadius: BorderRadius.md, marginBottom: 8, maxWidth: '85%' },
-  bubbleBot: { backgroundColor: 'rgba(255,255,255,0.04)', alignSelf: 'flex-start' },
-  bubbleUser: { backgroundColor: Colors.primaryNeonDim, alignSelf: 'flex-end' },
-  bubbleText: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
-  promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  promptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.borderGlass },
-  promptBtnText: { fontSize: 11, color: Colors.textSecondary },
-  chatInputRow: { flexDirection: 'row', gap: 8 },
-  sendBtn: { width: 42, height: 42, borderRadius: BorderRadius.sm, backgroundColor: Colors.primaryNeon, alignItems: 'center', justifyContent: 'center' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', padding: 24 },
-  modalCard: { backgroundColor: Colors.bgDarkCard, borderRadius: BorderRadius.lg, padding: 24, borderWidth: 1, borderColor: Colors.borderGlass },
-  modalTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 24 },
-  btnSecondary: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.borderGlassBright },
-  btnSecText: { color: Colors.textSecondary, fontWeight: '600' },
-  btnPrimary: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: BorderRadius.md, backgroundColor: Colors.primaryNeon },
-  btnPrimText: { color: '#000', fontWeight: '700' },
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+  },
+  centerSpinner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  greetingSub: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  greetingName: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  gamePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    gap: 8,
+  },
+  pillItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pillText: {
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+  },
+  pillDivider: {
+    width: 1,
+    height: 12,
+  },
+
+  /* Workout Hero Card (DOMINANT - BIG) */
+  workoutHero: {
+    padding: 20,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1.5,
+    marginBottom: 16,
+  },
+  workoutHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  tagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  rewardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  rewardBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  workoutTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  workoutMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  workoutMetaText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+  },
+  metaBullet: {
+    marginHorizontal: 8,
+    fontSize: 10,
+  },
+  startWorkoutBtn: {
+    height: 52,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  btnTextPrimary: {
+    color: '#000',
+    fontSize: FontSize.md,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  btnTextCompleted: {
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+  },
+
+  /* Section Card */
+  sectionCard: {
+    marginBottom: 14,
+    padding: 16,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  titleIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '800',
+  },
+  smallActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  smallActionText: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+  },
+
+  /* Calorie Row */
+  calorieRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  calorieNumber: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  calorieSub: {
+    fontSize: FontSize.xs,
+    marginTop: 2,
+  },
+  calorieBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.md,
+  },
+  caloriePct: {
+    fontSize: FontSize.md,
+    fontWeight: '900',
+  },
+
+  /* Macro Bars */
+  macroBarsContainer: {
+    gap: 10,
+  },
+  macroBarCol: {
+    gap: 4,
+  },
+  macroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  macroName: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+  },
+  macroVal: {
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+  },
+  barTrack: {
+    height: 7,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+
+  /* Goals */
+  goalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  goalText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    flex: 1,
+  },
+  waterAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  waterAddText: {
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+  },
+
+  /* Progress Row */
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressMetric: {
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  progressSub: {
+    fontSize: FontSize.xs,
+    marginTop: 2,
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  dotCol: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  dotCircle: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  dotDay: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
+  /* AI Card */
+  aiCard: {
+    borderWidth: 1.5,
+    marginBottom: 16,
+    padding: 16,
+  },
+  aiHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  aiIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '800',
+  },
+  aiSub: {
+    fontSize: FontSize.xs,
+  },
+  aiPromptChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  aiPromptText: {
+    fontSize: FontSize.xs,
+    fontStyle: 'italic',
+    flex: 1,
+    marginRight: 8,
+  },
+
+  /* Recommended Section */
+  recommendedSection: {
+    marginBottom: 20,
+  },
+  recommendedHeading: {
+    fontSize: FontSize.md,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  recScroll: {
+    gap: 12,
+  },
+  recCard: {
+    width: 170,
+    padding: 14,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  recIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  recTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  recSub: {
+    fontSize: FontSize.xs,
+  },
 });

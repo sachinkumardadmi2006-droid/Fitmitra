@@ -1,4 +1,5 @@
 // Structured Programs Tab — mirrors frontend Programs.jsx
+// Powered by live GET /api/v1/programs API
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -8,6 +9,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import {
   Calendar,
@@ -19,67 +21,90 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import { Colors } from '../../constants/theme';
-import { getUser, saveUser } from '../../utils/db';
-import { PROGRAMS } from '../../data/mockData';
+import { workoutService, authService } from '../../services';
+import { useAuth } from '../../context/AuthContext';
 import { onDbUpdate } from '../../utils/events';
 import { t } from '../../utils/i18n';
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { EmptyState } from '../../components/common/EmptyState';
 
 export default function ProgramsTab() {
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
+  const [programs, setPrograms] = useState([]);
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeProgramId, setActiveProgramId] = useState(user?.activeProgramId || null);
+
+  const lang = user?.language || 'en';
 
   const loadData = useCallback(async () => {
     try {
-      const u = await getUser();
-      setUser(u);
-      if (PROGRAMS && PROGRAMS.length > 0) {
-        setSelectedProgram((prev) => prev || PROGRAMS[0]);
+      const result = await workoutService.getPrograms({ limit: 50 });
+      const items = Array.isArray(result) ? result : result?.programs || result?.items || [];
+      setPrograms(items);
+
+      if (items.length > 0) {
+        setSelectedProgram((prev) => {
+          if (prev) {
+            const stillExists = items.find((p) => (p._id || p.id) === (prev._id || prev.id));
+            return stillExists || items[0];
+          }
+          return items[0];
+        });
       }
     } catch (e) {
-      console.warn('Error loading programs:', e);
+      console.warn('Error loading programs from server:', e.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
+    setLoading(true);
     loadData();
     const unsub = onDbUpdate(loadData);
     return unsub;
   }, [loadData]);
 
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
+  };
+
   const handleStartProgram = async (programId) => {
     try {
-      const updatedUser = {
-        ...user,
-        activeProgramId: programId,
-        activeProgramWeek: 1,
-      };
-      await saveUser(updatedUser);
-      setUser(updatedUser);
+      setActiveProgramId(programId);
+      const localUser = await authService.getLocalUser();
+      if (localUser) {
+        await authService.saveLocalUser({
+          ...localUser,
+          activeProgramId: programId,
+          activeProgramWeek: 1,
+        });
+      }
       Alert.alert(
         'Program Activated!',
-        `You have enrolled in ${selectedProgram?.name || 'this program'}. Check your Dashboard for daily tasks!`
+        `You have enrolled in ${selectedProgram?.name || 'this program'}. Check your Dashboard for daily sessions!`
       );
     } catch (e) {
       Alert.alert('Error', 'Failed to activate program.');
     }
   };
 
-  if (loading || !user) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primaryNeon} />
-        <Text style={styles.loadingText}>Loading training programs...</Text>
-      </View>
-    );
+  if (loading) {
+    return <LoadingSpinner message="Loading training programs from server..." fullScreen />;
   }
 
-  const lang = user?.language || 'en';
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
+      }
+    >
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t('fitnessPrograms', lang)}</Text>
@@ -90,59 +115,70 @@ export default function ProgramsTab() {
 
       {/* Program Selector Carousel / List */}
       <Text style={styles.sectionHeader}>{t('availablePrograms', lang)}</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 12, paddingBottom: 10 }}
-      >
-        {PROGRAMS.map((prog) => {
-          const isActive = user.activeProgramId === prog.id;
-          const isSelected = selectedProgram?.id === prog.id;
+      {programs.length === 0 ? (
+        <EmptyState
+          icon={Target}
+          title="No Programs Available"
+          description="Check back soon as new structured fitness programs are added to the library."
+        />
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 12, paddingBottom: 10 }}
+        >
+          {programs.map((prog) => {
+            const progId = prog._id || prog.id;
+            const isActive = activeProgramId === progId;
+            const isSelected = (selectedProgram?._id || selectedProgram?.id) === progId;
 
-          return (
-            <Pressable
-              key={prog.id}
-              style={[
-                styles.progCard,
-                isSelected && styles.progCardSelected,
-                isActive && styles.progCardActive,
-              ]}
-              onPress={() => setSelectedProgram(prog)}
-            >
-              <View style={styles.cardBadgeRow}>
-                <View style={styles.levelBadge}>
-                  <Text style={styles.levelBadgeText}>{prog.level}</Text>
-                </View>
-                {isActive && (
-                  <View style={styles.activeTag}>
-                    <Text style={styles.activeTagText}>Active</Text>
+            return (
+              <Pressable
+                key={progId}
+                style={[
+                  styles.progCard,
+                  isSelected && styles.progCardSelected,
+                  isActive && styles.progCardActive,
+                ]}
+                onPress={() => setSelectedProgram(prog)}
+              >
+                <View style={styles.cardBadgeRow}>
+                  <View style={styles.levelBadge}>
+                    <Text style={styles.levelBadgeText}>{prog.level || 'ALL LEVELS'}</Text>
                   </View>
-                )}
-              </View>
-
-              <Text style={styles.progCardTitle}>
-                {lang === 'kn' && prog.nameKn ? prog.nameKn : prog.name}
-              </Text>
-              <Text style={styles.progCardTagline} numberOfLines={2}>
-                {lang === 'kn' && prog.taglineKn ? prog.taglineKn : prog.tagline}
-              </Text>
-
-              <View style={styles.progCardMeta}>
-                <View style={styles.metaItem}>
-                  <Clock size={12} color={Colors.textSecondary} />
-                  <Text style={styles.metaText}>{prog.durationWeeks} Weeks</Text>
+                  {isActive && (
+                    <View style={styles.activeTag}>
+                      <Text style={styles.activeTagText}>Active</Text>
+                    </View>
+                  )}
                 </View>
-                <View style={styles.metaItem}>
-                  <Target size={12} color={Colors.primaryNeon} />
-                  <Text style={[styles.metaText, { color: Colors.primaryNeon }]}>
-                    {prog.goal}
-                  </Text>
+
+                <Text style={styles.progCardTitle} numberOfLines={2}>
+                  {prog.name}
+                </Text>
+                <Text style={styles.progCardTagline} numberOfLines={2}>
+                  {prog.description || 'Targeted training routine'}
+                </Text>
+
+                <View style={styles.progCardMeta}>
+                  <View style={styles.metaItem}>
+                    <Clock size={12} color={Colors.textSecondary} />
+                    <Text style={styles.metaText}>
+                      {prog.durationWeeks ? `${prog.durationWeeks} Weeks` : '4 Weeks'}
+                    </Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Target size={12} color={Colors.primaryNeon} />
+                    <Text style={[styles.metaText, { color: Colors.primaryNeon }]}>
+                      {prog.goal || 'Fitness'}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Selected Program Details */}
       {selectedProgram && (
@@ -151,31 +187,23 @@ export default function ProgramsTab() {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 <View style={styles.levelBadge}>
-                  <Text style={styles.levelBadgeText}>{selectedProgram.level}</Text>
+                  <Text style={styles.levelBadgeText}>{selectedProgram.level || 'ALL LEVELS'}</Text>
                 </View>
-                {user.activeProgramId === selectedProgram.id && (
+                {activeProgramId === (selectedProgram._id || selectedProgram.id) && (
                   <View style={styles.activeTag}>
                     <Text style={styles.activeTagText}>Enrolled & Active</Text>
                   </View>
                 )}
               </View>
-              <Text style={styles.detailTitle}>
-                {lang === 'kn' && selectedProgram.nameKn
-                  ? selectedProgram.nameKn
-                  : selectedProgram.name}
-              </Text>
-              <Text style={styles.detailTagline}>
-                {lang === 'kn' && selectedProgram.taglineKn
-                  ? selectedProgram.taglineKn
-                  : selectedProgram.tagline}
-              </Text>
+              <Text style={styles.detailTitle}>{selectedProgram.name}</Text>
+              <Text style={styles.detailTagline}>{selectedProgram.description}</Text>
             </View>
           </View>
 
           {/* Quick Metrics */}
           <View style={styles.metricStrip}>
             <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>{selectedProgram.durationWeeks}</Text>
+              <Text style={styles.metricVal}>{selectedProgram.durationWeeks || 4}</Text>
               <Text style={styles.metricLbl}>Weeks Total</Text>
             </View>
             <View style={styles.metricDivider} />
@@ -185,57 +213,36 @@ export default function ProgramsTab() {
             </View>
             <View style={styles.metricDivider} />
             <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>{selectedProgram.level}</Text>
+              <Text style={styles.metricVal}>{selectedProgram.level || 'INTERMEDIATE'}</Text>
               <Text style={styles.metricLbl}>Difficulty</Text>
             </View>
           </View>
 
           {/* Start Program Action */}
-          {user.activeProgramId === selectedProgram.id ? (
+          {activeProgramId === (selectedProgram._id || selectedProgram.id) ? (
             <View style={styles.enrolledBox}>
               <CheckCircle2 size={18} color={Colors.primaryNeon} />
               <Text style={styles.enrolledText}>
-                You are currently following Week {user.activeProgramWeek || 1} of this program
+                You are currently enrolled in this program!
               </Text>
             </View>
           ) : (
             <Pressable
               style={styles.startBtn}
-              onPress={() => handleStartProgram(selectedProgram.id)}
+              onPress={() => handleStartProgram(selectedProgram._id || selectedProgram.id)}
             >
               <Sparkles size={16} color="#000" />
               <Text style={styles.startBtnText}>Start This Program</Text>
             </Pressable>
           )}
 
-          {/* Weekly Schedule Breakdown */}
-          <Text style={styles.scheduleTitle}>7-Day Routine Breakdown</Text>
-          <View style={styles.scheduleList}>
-            {selectedProgram.schedule?.map((item, idx) => {
-              const isRest = item.activity.toLowerCase().includes('rest');
-              return (
-                <View key={idx} style={[styles.dayRow, isRest && styles.dayRowRest]}>
-                  <View style={styles.dayBadge}>
-                    <Text style={styles.dayBadgeText}>Day {item.day}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.dayActivity, isRest && styles.dayActivityRest]}>
-                      {item.activity}
-                    </Text>
-                    {item.focus && (
-                      <Text style={styles.dayFocus}>Focus: {item.focus}</Text>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-
-          {/* Highlights & Requirements */}
-          {selectedProgram.description && (
-            <View style={styles.descBox}>
-              <Text style={styles.descTitle}>Program Overview</Text>
-              <Text style={styles.descText}>{selectedProgram.description}</Text>
+          {/* Equipment needed */}
+          {selectedProgram.equipment?.length > 0 && (
+            <View style={{ marginTop: 16 }}>
+              <Text style={styles.scheduleTitle}>Equipment Required</Text>
+              <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 4 }}>
+                {selectedProgram.equipment.join(' • ')}
+              </Text>
             </View>
           )}
         </View>
@@ -250,65 +257,55 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgDarkBase,
   },
   contentContainer: {
-    padding: 16,
-    paddingTop: 48,
-    paddingBottom: 90,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Colors.bgDarkBase,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: Colors.textSecondary,
-    marginTop: 10,
+    paddingHorizontal: 20,
+    paddingTop: 54,
+    paddingBottom: 40,
   },
   header: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '900',
     color: Colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 13,
     color: Colors.textSecondary,
-    marginTop: 2,
+    marginTop: 4,
     lineHeight: 18,
   },
   sectionHeader: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.textPrimary,
     marginBottom: 12,
   },
   progCard: {
-    width: 230,
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
+    width: 220,
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 18,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
+    borderColor: Colors.borderGlass,
+    padding: 16,
     justifyContent: 'space-between',
   },
   progCardSelected: {
     borderColor: Colors.primaryNeon,
-    backgroundColor: 'rgba(204, 255, 0, 0.04)',
+    backgroundColor: 'rgba(0, 245, 155, 0.04)',
   },
   progCardActive: {
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.secondaryCyan,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primaryNeon,
   },
   cardBadgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   levelBadge: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -316,38 +313,39 @@ const styles = StyleSheet.create({
   levelBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.secondaryCyan,
+    color: Colors.textSecondary,
+    letterSpacing: 0.5,
   },
   activeTag: {
-    backgroundColor: Colors.secondaryCyan,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: 'rgba(0, 245, 155, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   activeTagText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#000',
+    color: Colors.primaryNeon,
   },
   progCardTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   progCardTagline: {
-    fontSize: 11,
+    fontSize: 12,
     color: Colors.textSecondary,
-    lineHeight: 15,
-    marginBottom: 12,
+    lineHeight: 16,
+    marginBottom: 14,
   },
   progCardMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 8,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   metaItem: {
     flexDirection: 'row',
@@ -355,37 +353,38 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   detailCard: {
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
+    backgroundColor: Colors.bgCardGlass,
+    borderRadius: 24,
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 18,
+    borderColor: Colors.borderGlass,
+    padding: 20,
     marginTop: 16,
   },
   detailHeader: {
-    flexDirection: 'row',
     marginBottom: 16,
   },
   detailTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: Colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   detailTagline: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.textSecondary,
-    lineHeight: 17,
+    lineHeight: 18,
   },
   metricStrip: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
     paddingVertical: 12,
     marginBottom: 16,
   },
@@ -393,113 +392,54 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  metricDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
   metricVal: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.primaryNeon,
+    color: Colors.textPrimary,
+    marginBottom: 2,
   },
   metricLbl: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  metricDivider: {
-    width: 1,
-    height: '60%',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   startBtn: {
-    backgroundColor: Colors.primaryNeon,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 13,
-    borderRadius: 12,
-    marginBottom: 20,
+    backgroundColor: Colors.primaryNeon,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
   startBtnText: {
-    color: '#000',
-    fontSize: 13,
+    color: Colors.bgDarkBase,
     fontWeight: '800',
+    fontSize: 14,
   },
   enrolledBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(204, 255, 0, 0.08)',
-    borderColor: Colors.primaryNeon,
+    backgroundColor: 'rgba(0, 245, 155, 0.1)',
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 20,
+    borderColor: 'rgba(0, 245, 155, 0.25)',
+    borderRadius: 14,
+    padding: 14,
   },
   enrolledText: {
-    flex: 1,
-    fontSize: 12,
     color: Colors.primaryNeon,
-    fontWeight: '700',
-  },
-  scheduleTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 12,
-  },
-  scheduleList: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  dayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 10,
-    padding: 10,
-  },
-  dayRowRest: {
-    opacity: 0.6,
-  },
-  dayBadge: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  dayBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  dayActivity: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  dayActivityRest: {
-    color: Colors.textSecondary,
-  },
-  dayFocus: {
-    fontSize: 10,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  descBox: {
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 12,
-  },
-  descTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 6,
+    flex: 1,
   },
-  descText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    lineHeight: 18,
+  scheduleTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginTop: 8,
   },
 });

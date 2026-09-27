@@ -1,45 +1,104 @@
-// FitMitra Design Tokens — mirrors frontend CSS custom properties
+// FitMitra Design Tokens — Design Authority: DESIGN.md (v2.1.0) & Material 3
 
+export const DarkTheme = {
+  isDark: true,
+  bgBase: '#080A0F',
+  surface: '#10131A',
+  surfaceElevated: '#171B24',
+  border: '#252B36',
+  borderLight: 'rgba(255, 255, 255, 0.08)',
+  borderFocus: '#B7FF00',
+
+  primary: '#B7FF00', // Athletic fluorescent lime
+  primaryStrong: '#9BE600',
+  primaryGlow: 'rgba(183, 255, 0, 0.25)',
+  primaryDim: 'rgba(183, 255, 0, 0.1)',
+
+  secondaryCyan: '#00F0FF',
+  accentPurple: '#A855F7',
+  accentRose: '#F43F5E',
+  accentAmber: '#FFB800',
+
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A8AFBA',
+  textMuted: '#6F7783',
+
+  cardBg: '#10131A',
+  cardElevation: 0,
+  cardShadow: 'none',
+
+  success: '#35D07F',
+  warning: '#FFC857',
+  error: '#FF5C69',
+  info: '#4DA3FF',
+};
+
+export const LightTheme = {
+  isDark: false,
+  bgBase: '#F8F9FA',
+  surface: '#FFFFFF',
+  surfaceElevated: '#F1F3F5',
+  border: '#E5E7EB',
+  borderLight: 'rgba(0, 0, 0, 0.06)',
+  borderFocus: '#10B981',
+
+  primary: '#10B981', // Clean vibrant emerald
+  primaryStrong: '#059669',
+  primaryGlow: 'rgba(16, 185, 129, 0.25)',
+  primaryDim: 'rgba(16, 185, 129, 0.1)',
+
+  secondaryCyan: '#0284C7',
+  accentPurple: '#7C3AED',
+  accentRose: '#E11D48',
+  accentAmber: '#D97706',
+
+  textPrimary: '#111827',
+  textSecondary: '#4B5563',
+  textMuted: '#9CA3AF',
+
+  cardBg: '#FFFFFF',
+  cardElevation: 2,
+  cardShadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+
+  success: '#10B981',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  info: '#3B82F6',
+};
+
+// Backward-compatible default Colors (pointing to athletic dark theme tokens)
 export const Colors = {
-  bgDarkBase: '#060913',
-  bgDarkCard: '#0d1222',
-  bgGlass: 'rgba(13, 18, 34, 0.7)',
-  bgGlassHover: 'rgba(22, 30, 56, 0.8)',
-  borderGlass: 'rgba(255, 255, 255, 0.08)',
-  borderGlassBright: 'rgba(255, 255, 255, 0.15)',
-
-  primaryNeon: '#ccff00',
-  primaryNeonGlow: 'rgba(204, 255, 0, 0.35)',
-  primaryNeonDim: 'rgba(204, 255, 0, 0.1)',
-
-  secondaryCyan: '#00f0ff',
-  secondaryCyanGlow: 'rgba(0, 240, 255, 0.35)',
-  secondaryCyanDim: 'rgba(0, 240, 255, 0.1)',
-
-  accentPurple: '#a855f7',
-  accentRose: '#f43f5e',
-  accentOrange: '#f97316',
-
-  textPrimary: '#f8fafc',
-  textSecondary: '#94a3b8',
-  textMuted: '#64748b',
-
+  ...DarkTheme,
+  bgDarkBase: DarkTheme.bgBase,
+  bgDarkCard: DarkTheme.surface,
+  bgGlass: DarkTheme.surface,
+  bgGlassHover: DarkTheme.surfaceElevated,
+  borderGlass: DarkTheme.borderLight,
+  borderGlassBright: DarkTheme.border,
+  primaryNeon: DarkTheme.primary,
+  primaryNeonGlow: DarkTheme.primaryGlow,
+  primaryNeonDim: DarkTheme.primaryDim,
   white: '#FFFFFF',
   black: '#000000',
 
-  // Auth screen specific colors (light theme)
-  authBg: '#F4F7FB',
-  authText: '#1A202C',
-  authSubtext: '#4A5568',
-  authMuted: '#718096',
-  authBorder: '#CBD5E0',
-  authBorderLight: '#E2E8F0',
-  authGold: '#D4AF37',
-  authGoldLight: '#F4D024',
-  authBlue: '#3182CE',
-  authError: '#C53030',
-  authErrorBg: '#FFF5F5',
-  authErrorBorder: '#FEB2B2',
+  // Auth screen specifics
+  authBg: '#080A0F',
+  authText: '#FFFFFF',
+  authSubtext: '#A8AFBA',
+  authMuted: '#6F7783',
+  authBorder: '#252B36',
+  authBorderLight: 'rgba(255, 255, 255, 0.1)',
+  authGold: '#FFB800',
+  authBlue: '#3B82F6',
+  authError: '#FF5C69',
+  authErrorBg: 'rgba(255, 92, 105, 0.1)',
+  authErrorBorder: 'rgba(255, 92, 105, 0.3)',
 };
 
 export const Spacing = {
@@ -67,6 +126,5 @@ export const FontSize = {
   lg: 17,
   xl: 20,
   xxl: 24,
-  xxxl: 32,
-  hero: 40,
+  xxxl: 30,
 };
