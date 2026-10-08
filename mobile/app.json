@@ -19,7 +19,8 @@
       "package": "com.fitmitra.app"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-splash-screen"
     ]
   }
 }

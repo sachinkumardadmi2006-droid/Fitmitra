@@ -59,9 +59,13 @@ const request = async (path, options = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
   const fetchOptions = {
     method: options.method || 'GET',
     headers,
+    signal: controller.signal,
   };
 
   if (options.body !== undefined) {
@@ -70,6 +74,7 @@ const request = async (path, options = {}) => {
 
   try {
     const response = await fetch(`${API_URL}${path}`, fetchOptions);
+    clearTimeout(timeoutId);
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -82,12 +87,17 @@ const request = async (path, options = {}) => {
 
     return data?.data !== undefined ? data.data : data;
   } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Connection timed out. Server taking too long to respond.');
+    }
     if (err instanceof TypeError) {
       throw new Error('Cannot reach the server. Please check your connection.');
     }
     throw err;
   }
 };
+
 
 // ─── Convenience Methods ──────────────────────────────────────────────────────
 

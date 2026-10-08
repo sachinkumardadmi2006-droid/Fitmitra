@@ -1,31 +1,47 @@
-// Backend API URL configuration
-// Change this to your machine's LAN IP when testing on a physical device
-// e.g., 'http://192.168.1.100:5000/api/v1'
-// For Android emulator, use 10.0.2.2 instead of localhost
-// For iOS simulator, localhost works fine
-
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-const getBaseUrl = () => {
-  if (__DEV__) {
-    // When running on a physical device, debuggerHost/hostUri contains the dev machine IP
-    const hostUri = Constants.expoConfig?.hostUri;
-    const hostIp = hostUri ? hostUri.split(':')[0] : null;
+// Current developer machine LAN IP
+const DEV_MACHINE_LAN_IP = '10.251.205.93';
 
-    if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
-      return `http://${hostIp}:5000/api/v1`;
+const getBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:5000/api/v1';
+  }
+
+  if (__DEV__) {
+    // 1. Try hostUri from Expo Constants
+    const hostUri =
+      Constants.expoConfig?.hostUri ||
+      Constants.manifest2?.extra?.expoGo?.debuggerHost ||
+      Constants.manifest?.debuggerHost;
+
+    if (hostUri) {
+      const sanitized = hostUri
+        .replace(/^https?:\/\//, '')
+        .replace(/^exp:\/\//, '');
+      const parts = sanitized.split(':');
+      const ip = parts[0];
+
+      if (ip && ip !== 'localhost' && ip !== '127.0.0.1' && ip !== 'http' && ip !== 'https') {
+        return `http://${ip}:5000/api/v1`;
+      }
     }
 
-    // Android emulator uses 10.0.2.2 to reach host machine's localhost
+    // 2. Android emulator fallback
     if (Platform.OS === 'android') {
       return 'http://10.0.2.2:5000/api/v1';
     }
-    return 'http://localhost:5000/api/v1';
+
+    // 3. Physical Device on Wi-Fi fallback (use actual PC LAN IP)
+    return `http://${DEV_MACHINE_LAN_IP}:5000/api/v1`;
   }
-  // Production URL
-  return 'http://localhost:5000/api/v1';
+
+  // Production fallback
+  return `http://${DEV_MACHINE_LAN_IP}:5000/api/v1`;
 };
 
 export const API_URL = getBaseUrl();
+
+
 
