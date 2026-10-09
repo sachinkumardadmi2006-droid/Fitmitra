@@ -8,6 +8,10 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const getBaseUrl = () => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
   if (__DEV__) {
     // When running on a physical device, debuggerHost/hostUri contains the dev machine IP
     const hostUri = Constants.expoConfig?.hostUri;

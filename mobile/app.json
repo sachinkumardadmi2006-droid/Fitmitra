@@ -6,20 +6,23 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "fitmitra",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fitmitra.app"
+      "bundleIdentifier": "fitmitra.in"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#060913"
+        "backgroundColor": "#F8F9FA"
       },
-      "package": "com.fitmitra.app"
+      "package": "fitmitra.in"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-splash-screen",
+      "expo-web-browser",
+      "expo-dev-client"
     ]
   }
 }

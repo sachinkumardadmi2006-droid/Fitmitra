@@ -9,6 +9,7 @@ const AuthContext = createContext({
   lifetimePoints: 0,
   isLoading: true,
   isAuthenticated: false,
+  isOnboarded: false,
   refreshProfile: async () => {},
   logout: async () => {},
 });
@@ -16,6 +17,7 @@ const AuthContext = createContext({
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [isOnboarded, setIsOnboarded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSession = useCallback(async () => {
@@ -23,14 +25,23 @@ export function AuthProvider({ children }) {
       const localUser = await authService.getLocalUser();
       setUser(localUser);
 
+      const localOnboarded = await authService.getOnboardedStatus();
+
       // Fetch live server profile (points, biometrics)
       try {
         const p = await profileService.getProfile();
         if (p) {
           setProfile(p);
+          const hasBiometrics = Boolean(p?.heightCm && p?.weightKg);
+          setIsOnboarded(hasBiometrics || localOnboarded);
+          if (hasBiometrics && !localOnboarded) {
+            await authService.setOnboardedStatus(true);
+          }
+        } else {
+          setIsOnboarded(localOnboarded);
         }
       } catch (_) {
-        // Dev fallback or offline
+        setIsOnboarded(localOnboarded);
       }
     } catch (e) {
       console.warn('Auth context loadSession error:', e);
@@ -48,7 +59,14 @@ export function AuthProvider({ children }) {
   const refreshProfile = async () => {
     try {
       const p = await profileService.getProfile();
-      if (p) setProfile(p);
+      if (p) {
+        setProfile(p);
+        const hasBiometrics = Boolean(p?.heightCm && p?.weightKg);
+        if (hasBiometrics) {
+          setIsOnboarded(true);
+          await authService.setOnboardedStatus(true);
+        }
+      }
       return p;
     } catch (_) {
       return null;
@@ -59,6 +77,7 @@ export function AuthProvider({ children }) {
     await authService.logout();
     setUser(null);
     setProfile(null);
+    setIsOnboarded(false);
   };
 
   const points = profile?.points ?? 0;
@@ -73,6 +92,7 @@ export function AuthProvider({ children }) {
         lifetimePoints,
         isLoading,
         isAuthenticated: !!user,
+        isOnboarded,
         refreshProfile,
         logout,
       }}

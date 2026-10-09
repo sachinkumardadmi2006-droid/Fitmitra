@@ -19,10 +19,10 @@ function RootNavigator() {
     try {
       const token = await AsyncStorage.getItem('fitmitra_token');
       const userStr = await AsyncStorage.getItem('fitmitra_user');
-      const isAuthenticated = !!token || !!userStr || __DEV__;
+      const isAuthenticated = Boolean(token && userStr);
       setIsLoggedIn(isAuthenticated);
     } catch (e) {
-      setIsLoggedIn(__DEV__);
+      setIsLoggedIn(false);
     }
     setIsReady(true);
   }, []);
@@ -33,7 +33,7 @@ function RootNavigator() {
     return unsub;
   }, [checkAuth]);
 
-  // Protect routes — redirect to login if not authenticated
+  // Protect routes — redirect appropriately based on auth & onboarding status
   useEffect(() => {
     if (!isReady) return;
 
@@ -47,6 +47,15 @@ function RootNavigator() {
 
     if (!isLoggedIn && inProtectedGroup) {
       router.replace('/login');
+    } else if (isLoggedIn && (segments[1] === 'login' || segments[1] === 'signup')) {
+      // Check onboarding status
+      AsyncStorage.getItem('fitmitra_onboarded').then((onboarded) => {
+        if (onboarded === 'true') {
+          router.replace('/(tabs)');
+        } else {
+          router.replace('/onboarding');
+        }
+      });
     }
   }, [isReady, isLoggedIn, segments]);
 

@@ -72,33 +72,33 @@ export const LightTheme = {
   info: '#3B82F6',
 };
 
-// Backward-compatible default Colors (pointing to athletic dark theme tokens)
+// Backward-compatible default Colors (pointing to light theme tokens)
 export const Colors = {
-  ...DarkTheme,
-  bgDarkBase: DarkTheme.bgBase,
-  bgDarkCard: DarkTheme.surface,
-  bgGlass: DarkTheme.surface,
-  bgGlassHover: DarkTheme.surfaceElevated,
-  borderGlass: DarkTheme.borderLight,
-  borderGlassBright: DarkTheme.border,
-  primaryNeon: DarkTheme.primary,
-  primaryNeonGlow: DarkTheme.primaryGlow,
-  primaryNeonDim: DarkTheme.primaryDim,
+  ...LightTheme,
+  bgDarkBase: LightTheme.bgBase,
+  bgDarkCard: LightTheme.surface,
+  bgGlass: LightTheme.surface,
+  bgGlassHover: LightTheme.surfaceElevated,
+  borderGlass: LightTheme.borderLight,
+  borderGlassBright: LightTheme.border,
+  primaryNeon: LightTheme.primary,
+  primaryNeonGlow: LightTheme.primaryGlow,
+  primaryNeonDim: LightTheme.primaryDim,
   white: '#FFFFFF',
   black: '#000000',
 
   // Auth screen specifics
-  authBg: '#080A0F',
-  authText: '#FFFFFF',
-  authSubtext: '#A8AFBA',
-  authMuted: '#6F7783',
-  authBorder: '#252B36',
-  authBorderLight: 'rgba(255, 255, 255, 0.1)',
-  authGold: '#FFB800',
-  authBlue: '#3B82F6',
-  authError: '#FF5C69',
-  authErrorBg: 'rgba(255, 92, 105, 0.1)',
-  authErrorBorder: 'rgba(255, 92, 105, 0.3)',
+  authBg: LightTheme.bgBase,
+  authText: LightTheme.textPrimary,
+  authSubtext: LightTheme.textSecondary,
+  authMuted: LightTheme.textMuted,
+  authBorder: LightTheme.border,
+  authBorderLight: LightTheme.borderLight,
+  authGold: LightTheme.accentAmber,
+  authBlue: LightTheme.info,
+  authError: LightTheme.error,
+  authErrorBg: 'rgba(239, 68, 68, 0.1)',
+  authErrorBorder: 'rgba(239, 68, 68, 0.3)',
 };
 
 export const Spacing = {

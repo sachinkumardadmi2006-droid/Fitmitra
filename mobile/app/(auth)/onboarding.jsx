@@ -65,12 +65,14 @@ export default function Onboarding() {
     const currentUser = (await authService.getLocalUser()) || {};
     const updatedUser = {
       ...currentUser,
+      isOnboarded: true,
       fitnessGoal: goal, experienceLevel: experience,
       age: a, height: h, weight: w, currentWeight: w, startingWeight: w,
       goalWeight: goal === 'Fat Loss' ? Math.round(w * 0.9) : goal === 'Muscle Gain' ? Math.round(w * 1.08) : w,
       gender, activityLevel: activity, targetCal, targetProtein, targetCarbs, targetFats,
     };
     await authService.saveLocalUser(updatedUser);
+    await authService.setOnboardedStatus(true);
     emitDbUpdate();
     router.replace('/(tabs)');
   };

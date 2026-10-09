@@ -9,3 +9,4 @@ export { subscriptionService } from './subscriptionService';
 export { profileService } from './profileService';
 export { notificationService } from './notificationService';
 export { leaderboardService } from './leaderboardService';
+export { auth as firebaseAuth, isFirebaseConfigured } from './firebase';

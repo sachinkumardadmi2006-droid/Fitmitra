@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,16 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Mail, Lock, Dumbbell, ArrowRight } from 'lucide-react-native';
-import { syncAuth, setStoredToken } from '../../services/api';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { Mail, Lock, Dumbbell, ArrowRight, AlertTriangle } from 'lucide-react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { authService } from '../../services/authService';
 import { useTheme } from '../../context/ThemeContext';
-import { FontSize, BorderRadius, Spacing } from '../../constants/theme';
+import { FontSize, BorderRadius } from '../../constants/theme';
+
+// Complete any pending browser auth redirect session
+WebBrowser.maybeCompleteAuthSession();
 
 export default function Login() {
   const router = useRouter();
@@ -27,20 +32,84 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+  const androidClientId = isExpoGo
+    ? (process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID)
+    : process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+
+  // Google OAuth Hook via expo-auth-session
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    androidClientId,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    scopes: ['profile', 'email'],
+  });
+
+  // Handle Google OAuth callback response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token, access_token } = response.params || {};
+      const googleIdToken = id_token || response.authentication?.idToken;
+      const accessToken = access_token || response.authentication?.accessToken;
+
+      if (googleIdToken) {
+        handleGoogleAuthSuccess(googleIdToken, accessToken);
+      } else {
+        setError('No ID token received from Google.');
+        setLoading(false);
+      }
+    } else if (response?.type === 'error') {
+      setError(response.error?.message || 'Google Sign-In failed.');
+      setLoading(false);
+    } else if (response?.type === 'cancel' || response?.type === 'dismiss') {
+      setLoading(false);
+    }
+  }, [response]);
+
+  const handleGoogleAuthSuccess = async (googleIdToken, accessToken) => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await authService.signInWithGoogleCredential(googleIdToken, accessToken);
+      if (result.isOnboarded) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/onboarding');
+      }
+    } catch (err) {
+      setError(err.message || 'Google authentication failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setError('');
+    if (!authService.isConfigured()) {
+      setError(
+        'Firebase is not configured. Please add your EXPO_PUBLIC_FIREBASE_* keys to your .env file, or use Quick Dev Login below.'
+      );
+      return;
+    }
+
+    if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID && !process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID) {
+      setError(
+        'Google Client IDs are missing in .env. Please set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID.'
+      );
+      return;
+    }
+
+    if (!request) {
+      setError('Google Sign-In is initializing. Please try again in a moment.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // In development / Expo Go, authenticate with dev token for instant testing
-      // In production native build, prompt Google Sign-In client and pass Google IdToken
-      const result = await syncAuth('dev-token');
-      if (result?.user) {
-        await AsyncStorage.setItem('fitmitra_user', JSON.stringify(result.user));
-      }
-      router.replace('/(tabs)');
+      await promptAsync();
     } catch (err) {
-      setError(err.message || 'Google Sign-In failed. Please try again.');
-    } finally {
+      setError(err.message || 'Failed to launch Google Sign-In.');
       setLoading(false);
     }
   };
@@ -50,15 +119,16 @@ export default function Login() {
       setError('Please enter both email and password.');
       return;
     }
+
     setError('');
     setLoading(true);
     try {
-      // Sync with server session
-      const result = await syncAuth('dev-token', { email: email.trim().toLowerCase() });
-      if (result?.user) {
-        await AsyncStorage.setItem('fitmitra_user', JSON.stringify(result.user));
+      const result = await authService.loginWithEmail(email.trim(), password);
+      if (result.isOnboarded) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/onboarding');
       }
-      router.replace('/(tabs)');
     } catch (err) {
       setError(err.message || 'Invalid email or password.');
     } finally {
@@ -68,11 +138,9 @@ export default function Login() {
 
   const handleDevQuickLogin = async () => {
     setLoading(true);
+    setError('');
     try {
-      const result = await syncAuth('dev-token');
-      if (result?.user) {
-        await AsyncStorage.setItem('fitmitra_user', JSON.stringify(result.user));
-      }
+      await authService.devLogin();
       router.replace('/(tabs)');
     } catch (err) {
       setError(err.message || 'Dev login failed.');
@@ -80,6 +148,8 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  const isConfigured = authService.isConfigured();
 
   return (
     <KeyboardAvoidingView
@@ -104,6 +174,21 @@ export default function Login() {
           </Text>
         </View>
 
+        {/* Missing Keys Notice in Development */}
+        {__DEV__ && !isConfigured && (
+          <View style={[styles.configNotice, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '40' }]}>
+            <AlertTriangle size={18} color={colors.warning || '#f59e0b'} style={{ marginTop: 2 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.configNoticeTitle, { color: colors.warning || '#f59e0b' }]}>
+                Firebase Keys Pending in .env
+              </Text>
+              <Text style={[styles.configNoticeText, { color: colors.textSecondary }]}>
+                Add your Firebase & Google OAuth credentials to .env to enable production authentication. Use Quick Dev Login below for testing.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Auth Card */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {error ? (
@@ -118,15 +203,21 @@ export default function Login() {
             onPress={handleGoogleSignIn}
             disabled={loading}
           >
-            <Svg width={20} height={20} viewBox="0 0 24 24">
-              <Path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-              <Path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.33 24 12 24z"/>
-              <Path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"/>
-              <Path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-            </Svg>
-            <Text style={[styles.googleBtnText, { color: colors.textPrimary }]}>
-              Continue with Google
-            </Text>
+            {loading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Svg width={20} height={20} viewBox="0 0 24 24">
+                  <Path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                  <Path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.33 24 12 24z"/>
+                  <Path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"/>
+                  <Path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </Svg>
+                <Text style={[styles.googleBtnText, { color: colors.textPrimary }]}>
+                  Continue with Google
+                </Text>
+              </>
+            )}
           </Pressable>
 
           {/* Divider */}
@@ -151,6 +242,7 @@ export default function Login() {
                 autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
+                editable={!loading}
               />
             </View>
           </View>
@@ -167,6 +259,7 @@ export default function Login() {
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
+                editable={!loading}
               />
             </View>
           </View>
@@ -194,6 +287,7 @@ export default function Login() {
               <Pressable
                 style={[styles.devBtn, { borderColor: colors.primary + '55', backgroundColor: colors.primary + '10' }]}
                 onPress={handleDevQuickLogin}
+                disabled={loading}
               >
                 <Text style={[styles.devBtnText, { color: colors.primary }]}>
                   ⚡ Quick Dev Mode Login (__DEV__ only)
@@ -207,7 +301,7 @@ export default function Login() {
             <Text style={[styles.footerText, { color: colors.textSecondary }]}>
               Don't have an account?{' '}
             </Text>
-            <Pressable onPress={() => router.push('/signup')}>
+            <Pressable onPress={() => router.push('/signup')} disabled={loading}>
               <Text style={[styles.linkText, { color: colors.primary }]}>Sign Up</Text>
             </Pressable>
           </View>
@@ -225,7 +319,7 @@ const styles = StyleSheet.create({
   },
   brandHero: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
   brandIconWrap: {
     width: 64,
@@ -247,6 +341,24 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 20,
     maxWidth: 280,
+  },
+  configNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  configNoticeTitle: {
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  configNoticeText: {
+    fontSize: 11,
+    lineHeight: 16,
   },
   card: {
     borderRadius: BorderRadius.xl,

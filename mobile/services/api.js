@@ -15,6 +15,7 @@ import { API_URL } from '../constants/api';
 
 const TOKEN_KEY = 'fitmitra_token';
 const USER_KEY = 'fitmitra_user';
+const ONBOARDED_KEY = 'fitmitra_onboarded';
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -23,9 +24,6 @@ export const getStoredToken = async () => {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
     if (token) return token;
   } catch (_) {}
-  if (__DEV__) {
-    return 'dev-token';
-  }
   return null;
 };
 
@@ -41,7 +39,7 @@ export const setStoredToken = async (token) => {
 
 export const clearAuthData = async () => {
   try {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, ONBOARDED_KEY]);
   } catch (_) {}
 };
 
@@ -111,7 +109,11 @@ export const api = {
 
 export const syncAuth = async (idToken, profileData = {}) => {
   await setStoredToken(idToken);
-  const result = await api.post('/auth/sync', profileData);
+  const sanitized = { ...profileData };
+  if (sanitized.photoUrl === '') {
+    delete sanitized.photoUrl;
+  }
+  const result = await api.post('/auth/sync', sanitized);
   return result;
 };
 
