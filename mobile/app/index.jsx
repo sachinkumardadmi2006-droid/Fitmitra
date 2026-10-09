@@ -1,207 +1,282 @@
-// Welcome / Landing Screen — Theme-aware
-import React from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
+// Welcome / Landing Screen — Dribbble Onboarding Style with gym_hero background
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ImageBackground,
+  Dimensions,
+  SafeAreaView,
+  StatusBar,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { Dumbbell, ArrowRight, Zap, Target, Apple, BarChart3, Sparkles, Heart } from 'lucide-react-native';
+import { Dumbbell } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { FontSize, BorderRadius } from '../constants/theme';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function Landing() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
+  const [activeSlide, setActiveSlide] = useState(0);
 
-  const features = [
+  const heroSlides = [
     {
-      icon: Dumbbell,
-      color: colors.primary,
-      title: 'Smart Workouts',
-      desc: 'Follow guided workout sessions with real-time timers, set tracking, and burn calculations.',
+      title: 'FITMITRA EVENTS\nCOMMUNITY',
+      subtitle: 'Achieve your peak fitness with smart AI coaching & real-time tracking',
     },
     {
-      icon: Apple,
-      color: colors.secondaryCyan,
-      title: 'Nutrition Logger',
-      desc: 'Log meals, track macros, and hit your daily protein targets effortlessly.',
+      title: 'TRAIN. TRANSFORM.\nELEVATE.',
+      subtitle: 'Personalized programs tailored for muscle gain, fat loss, and strength',
     },
     {
-      icon: BarChart3,
-      color: colors.accentPurple,
-      title: 'Visual Progress',
-      desc: 'Track body weight changes over time with interactive graphs and milestone markers.',
-    },
-    {
-      icon: Sparkles,
-      color: colors.primary,
-      title: 'AI Coach',
-      desc: 'Get instant personalized workout tips, diet advice, and offline-style coaching answers.',
-    },
-    {
-      icon: Target,
-      color: colors.secondaryCyan,
-      title: 'Training Programs',
-      desc: 'Curated 4, 8, and 12-week programs tailored to muscle building, fat loss, or strength.',
-    },
-    {
-      icon: Heart,
-      color: colors.accentRose,
-      title: 'Wellness Focus',
-      desc: 'Track rest days, recovery prompts, and water intake to stay at your peak.',
+      title: 'YOUR ULTIMATE\nFITNESS PARTNER',
+      subtitle: 'Log daily workouts, monitor macros, and track every milestone',
     },
   ];
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.bgBase }]}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Hero */}
-      <View style={styles.hero}>
-        <View style={styles.brandRow}>
-          <Dumbbell size={28} color={colors.primary} />
-          <Text style={[styles.brandText, { color: colors.textPrimary }]}>
-            FIT<Text style={{ color: colors.primary }}>MITRA</Text>
-          </Text>
-        </View>
+    <View style={[styles.container, { backgroundColor: '#000000' }]}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-        <View style={[styles.chip, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '33' }]}>
-          <Zap size={12} color={colors.primary} />
-          <Text style={[styles.chipText, { color: colors.primary }]}>#1 FITNESS COMPANION</Text>
-        </View>
+      {/* Top ~65% Height Hero Background Image */}
+      <ImageBackground
+        source={require('../assets/gym_hero.jpg')}
+        style={styles.heroBackground}
+        resizeMode="cover"
+      >
+        {/* Dark Overlay Gradients */}
+        <View style={styles.topVignette} />
+        <View style={styles.bottomVignette} />
 
-        <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
-          TRANSFORM{'\n'}YOUR{' '}
-          <Text style={{ color: colors.primary }}>BODY.</Text>
-          {'\n'}
-          <Text style={{ color: colors.secondaryCyan }}>ELEVATE</Text> YOUR LIFE.
-        </Text>
-
-        <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
-          Train smarter, eat better, and track every rep of your transformation. FitMitra is the all-in-one fitness platform built for real results.
-        </Text>
-
-        <Pressable
-          style={[styles.btnPrimary, { backgroundColor: colors.primary }]}
-          onPress={() => router.push('/signup')}
-        >
-          <Text style={styles.btnPrimaryText}>Start Free Today</Text>
-          <ArrowRight size={18} color="#000" />
-        </Pressable>
-
-        <Pressable
-          style={[styles.btnGhost, { borderColor: colors.border, backgroundColor: colors.surface }]}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={[styles.btnGhostText, { color: colors.textPrimary }]}>Log In</Text>
-        </Pressable>
-      </View>
-
-      {/* Core Features */}
-      <View style={[styles.featuresSection, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
-        <View style={styles.sectionHeader}>
-          <View style={[styles.chip, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '33', marginBottom: 12 }]}>
-            <Target size={12} color={colors.primary} />
-            <Text style={[styles.chipText, { color: colors.primary }]}>CORE FEATURES</Text>
+        {/* Top Floating Header */}
+        <SafeAreaView style={styles.safeHeader}>
+          <View style={styles.headerRow}>
+            <View style={styles.brandBadge}>
+              <Dumbbell size={20} color="#B7FF00" />
+              <Text style={styles.brandText}>
+                fit<Text style={{ color: '#B7FF00' }}>mitra</Text>
+              </Text>
+            </View>
           </View>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-            Everything You Need to <Text style={{ color: colors.primary }}>Crush It</Text>
-          </Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-            One platform to replace your workout tracker, calorie counter, and fitness coach.
-          </Text>
-        </View>
+        </SafeAreaView>
 
-        <View style={styles.featuresGrid}>
-          {features.map((item, index) => {
-            const IconComp = item.icon;
-            return (
-              <View
-                key={index}
+        {/* Hero Headline Overlay on Image */}
+        <View style={styles.heroContent}>
+          <Text style={styles.heroTitle}>{heroSlides[activeSlide].title}</Text>
+
+          {/* Carousel Pagination Dots */}
+          <View style={styles.indicatorRow}>
+            {heroSlides.map((_, idx) => (
+              <Pressable
+                key={idx}
+                onPress={() => setActiveSlide(idx)}
                 style={[
-                  styles.featureCard,
-                  {
-                    backgroundColor: colors.surfaceElevated,
-                    borderColor: colors.border,
-                  },
+                  styles.indicatorDot,
+                  activeSlide === idx ? styles.indicatorActive : styles.indicatorInactive,
                 ]}
-              >
-                <View style={[styles.iconWrapper, { backgroundColor: item.color + '18', borderColor: item.color + '33' }]}>
-                  <IconComp size={24} color={item.color} />
-                </View>
-                <Text style={[styles.featureTitle, { color: colors.textPrimary }]}>{item.title}</Text>
-                <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{item.desc}</Text>
-              </View>
-            );
-          })}
+              />
+            ))}
+          </View>
+        </View>
+      </ImageBackground>
+
+      {/* Bottom Sheet Card with Rounded Top Corners */}
+      <View style={[styles.bottomCard, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}>
+        <View style={styles.cardContent}>
+          {/* Black Pill Log In Button */}
+          <Pressable
+            style={[
+              styles.btnLogIn,
+              { backgroundColor: isDark ? '#B7FF00' : '#111111' },
+            ]}
+            onPress={() => router.push('/login')}
+          >
+            <Text
+              style={[
+                styles.btnLogInText,
+                { color: isDark ? '#000000' : '#FFFFFF' },
+              ]}
+            >
+              Log in
+            </Text>
+          </Pressable>
+
+          {/* Light / Secondary Pill Sign Up Button */}
+          <Pressable
+            style={[
+              styles.btnSignUp,
+              {
+                backgroundColor: isDark ? '#171B24' : '#F5F5F7',
+                borderColor: isDark ? '#252B36' : '#E5E7EB',
+              },
+            ]}
+            onPress={() => router.push('/signup')}
+          >
+            <Text
+              style={[
+                styles.btnSignUpText,
+                { color: isDark ? '#FFFFFF' : '#111111' },
+              ]}
+            >
+              Sign up
+            </Text>
+          </Pressable>
+
+          {/* Footer Terms */}
+          <Text style={[styles.footerText, { color: isDark ? '#A8AFBA' : '#6B7280' }]}>
+            By continuing, you agree to FitMitra's{' '}
+            <Text style={[styles.legalLink, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+              Privacy Policy
+            </Text>{' '}
+            and{' '}
+            <Text style={[styles.legalLink, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+              Terms of Use
+            </Text>
+            .
+          </Text>
         </View>
       </View>
-
-      {/* CTA */}
-      <View style={styles.cta}>
-        <Text style={[styles.ctaTitle, { color: colors.textPrimary }]}>
-          Ready to Start Your <Text style={{ color: colors.primary }}>Transformation?</Text>
-        </Text>
-        <Pressable
-          style={[styles.btnPrimary, { backgroundColor: colors.primary }]}
-          onPress={() => router.push('/signup')}
-        >
-          <Text style={styles.btnPrimaryText}>Create Free Account</Text>
-          <ArrowRight size={18} color="#000" />
-        </Pressable>
-      </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  contentContainer: { paddingBottom: 40 },
-  hero: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 36 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 },
-  brandText: { fontWeight: '900', fontSize: FontSize.xxl, letterSpacing: 1.5 },
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1, borderRadius: BorderRadius.full, paddingVertical: 6, paddingHorizontal: 14,
-    alignSelf: 'flex-start', marginBottom: 20,
+  container: {
+    flex: 1,
   },
-  chipText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
-  heroTitle: { fontSize: 34, fontWeight: '900', lineHeight: 40, marginBottom: 16 },
-  heroSubtitle: { fontSize: FontSize.md, lineHeight: 24, marginBottom: 28 },
-  btnPrimary: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 16, paddingHorizontal: 28, borderRadius: BorderRadius.md, marginBottom: 12, width: '100%',
+  heroBackground: {
+    width: '100%',
+    height: SCREEN_HEIGHT * 0.65,
+    justifyContent: 'space-between',
   },
-  btnPrimaryText: { fontWeight: '800', fontSize: FontSize.lg, color: '#000' },
-  btnGhost: {
-    alignItems: 'center', paddingVertical: 14, borderRadius: BorderRadius.md,
-    borderWidth: 1, width: '100%',
+  topVignette: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    height: '40%',
   },
-  btnGhostText: { fontWeight: '700', fontSize: FontSize.md },
-
-  /* Features Section */
-  featuresSection: { paddingHorizontal: 24, paddingVertical: 32, borderTopWidth: 1, borderBottomWidth: 1 },
-  sectionHeader: { marginBottom: 24 },
-  sectionTitle: { fontSize: 26, fontWeight: '900', lineHeight: 32, marginBottom: 8 },
-  sectionSubtitle: { fontSize: FontSize.md, lineHeight: 22 },
-  featuresGrid: { gap: 16 },
-  featureCard: {
-    padding: 20,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
+  bottomVignette: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '60%',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
-  iconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
+  safeHeader: {
+    paddingTop: 40,
+    paddingHorizontal: 24,
+  },
+  headerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
   },
-  featureTitle: { fontSize: FontSize.lg, fontWeight: '800', marginBottom: 6 },
-  featureDesc: { fontSize: FontSize.sm, lineHeight: 20 },
-
-  /* CTA */
-  cta: { padding: 24, paddingTop: 40, alignItems: 'center' },
-  ctaTitle: { fontSize: FontSize.xxl, fontWeight: '900', textAlign: 'center', marginBottom: 20, lineHeight: 30 },
+  brandBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  brandText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  heroContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 1.5,
+    lineHeight: 36,
+    marginBottom: 20,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  indicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  indicatorDot: {
+    height: 6,
+    borderRadius: 3,
+  },
+  indicatorActive: {
+    width: 24,
+    backgroundColor: '#FFFFFF',
+  },
+  indicatorInactive: {
+    width: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  bottomCard: {
+    flex: 1,
+    marginTop: -28,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 24,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  cardContent: {
+    gap: 14,
+    alignItems: 'center',
+  },
+  btnLogIn: {
+    width: '100%',
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnLogInText: {
+    fontSize: FontSize.lg,
+    fontWeight: '800',
+  },
+  btnSignUp: {
+    width: '100%',
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  btnSignUpText: {
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+  },
+  footerText: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 8,
+    paddingHorizontal: 12,
+  },
+  legalLink: {
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
 });
+

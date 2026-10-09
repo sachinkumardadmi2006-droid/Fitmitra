@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,23 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Image,
+  ImageBackground,
+  Dimensions,
+  SafeAreaView,
   Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Mail, Lock, Dumbbell, ArrowRight, AlertTriangle, Eye, EyeOff, KeyRound, X, CheckCircle2 } from 'lucide-react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { authService } from '../../services/authService';
-import { syncAuth } from '../../services/api';
+import { ArrowLeft, Dumbbell, Mail, Lock, Eye, EyeOff, KeyRound, X, CheckCircle2 } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { FontSize, BorderRadius } from '../../constants/theme';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Complete any pending browser auth redirect session
 WebBrowser.maybeCompleteAuthSession();
@@ -37,12 +40,17 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Forgot Password modal state
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
   const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
   const androidClientId = isExpoGo
     ? (process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID)
     : process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
 
-  // Google OAuth Hook via expo-auth-session
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     androidClientId,
@@ -51,13 +59,11 @@ export default function Login() {
     scopes: ['profile', 'email'],
   });
 
-  // Handle Google OAuth callback response
-  useEffect(() => {
+  React.useEffect(() => {
     if (response?.type === 'success') {
       const { id_token, access_token } = response.params || {};
       const googleIdToken = id_token || response.authentication?.idToken;
       const accessToken = access_token || response.authentication?.accessToken;
-
       if (googleIdToken) {
         handleGoogleAuthSuccess(googleIdToken, accessToken);
       } else {
@@ -89,33 +95,22 @@ export default function Login() {
     }
   };
 
-  // Forgot Password modal state
-  const [forgotModalVisible, setForgotModalVisible] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetSuccess, setResetSuccess] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
+  const isConfigured = authService.isConfigured();
 
   const handleGoogleSignIn = async () => {
     setError('');
     if (!authService.isConfigured()) {
-      setError(
-        'Firebase is not configured. Please add your EXPO_PUBLIC_FIREBASE_* keys to your .env file, or use Quick Dev Login below.'
-      );
+      setError('Firebase is not configured. Please add your EXPO_PUBLIC_FIREBASE_* keys to your .env file, or use Quick Dev Login below.');
       return;
     }
-
     if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID && !process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID) {
-      setError(
-        'Google Client IDs are missing in .env. Please set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID.'
-      );
+      setError('Google Client IDs are missing in .env.');
       return;
     }
-
     if (!request) {
       setError('Google Sign-In is initializing. Please try again in a moment.');
       return;
     }
-
     setLoading(true);
     try {
       await promptAsync();
@@ -130,7 +125,6 @@ export default function Login() {
       setError('Please enter both email and password.');
       return;
     }
-
     setError('');
     setLoading(true);
     try {
@@ -149,7 +143,6 @@ export default function Login() {
 
   const handleDevQuickLogin = async () => {
     setLoading(true);
-    setError('');
     try {
       await authService.devLogin();
       router.replace('/(tabs)');
@@ -159,8 +152,6 @@ export default function Login() {
       setLoading(false);
     }
   };
-
-  const isConfigured = authService.isConfigured();
 
   const handleSendPasswordReset = () => {
     if (!resetEmail.trim() || !resetEmail.includes('@')) {
@@ -175,133 +166,144 @@ export default function Login() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: colors.bgBase }}
+      style={{ flex: 1, backgroundColor: '#000000' }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        {/* 1. Header / Logo Section */}
-        <View style={styles.topHeader}>
-          <View style={[styles.logoIconWrap, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
-            <Dumbbell size={24} color={colors.primary} />
-          </View>
-          <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>
-            FIT<Text style={{ color: colors.primary }}>MITRA</Text>
-          </Text>
-        </View>
+        {/* Top Header Image Area with gym_hero background */}
+        <ImageBackground
+          source={require('../../assets/gym_hero.jpg')}
+          style={styles.heroBackground}
+          resizeMode="cover"
+        >
+          <View style={styles.topVignette} />
+          <View style={styles.bottomVignette} />
 
-        {/* Missing Keys Notice in Development */}
-        {__DEV__ && !isConfigured && (
-          <View style={[styles.configNotice, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '40' }]}>
-            <AlertTriangle size={18} color={colors.warning || '#f59e0b'} style={{ marginTop: 2 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.configNoticeTitle, { color: colors.warning || '#f59e0b' }]}>
-                Firebase Keys Pending in .env
-              </Text>
-              <Text style={[styles.configNoticeText, { color: colors.textSecondary }]}>
-                Add your Firebase & Google OAuth credentials to .env to enable production authentication. Use Quick Dev Login below for testing.
-              </Text>
+          <SafeAreaView style={styles.safeHeader}>
+            <View style={styles.headerRow}>
+              {/* Circular Back Button */}
+              <Pressable
+                style={styles.backBtn}
+                onPress={() => router.back()}
+                hitSlop={10}
+              >
+                <ArrowLeft size={18} color="#FFFFFF" />
+              </Pressable>
+
+              {/* Brand Logo */}
+              <View style={styles.brandRow}>
+                <Dumbbell size={18} color="#B7FF00" />
+                <Text style={styles.brandText}>
+                  fit<Text style={{ color: '#B7FF00' }}>mitra</Text>
+                </Text>
+              </View>
+              <View style={{ width: 36 }} />
             </View>
-          </View>
-        )}
+          </SafeAreaView>
+        </ImageBackground>
 
-        {/* 2. Gym Photo Hero Section with Motivational Text */}
-        <View style={[styles.gymPhotoCard, { borderColor: colors.border }]}>
-          <Image
-            source={require('../../assets/gym_hero.jpg')}
-            style={styles.gymPhoto}
-            resizeMode="cover"
-          />
-          <View style={styles.gymPhotoOverlay}>
-            <Text style={styles.heroTaglineMain}>Train. Transform.</Text>
-            <Text style={[styles.heroTaglineSub, { color: colors.primary }]}>Become Stronger.</Text>
-          </View>
-        </View>
-
-        {/* 3. Auth Form Card Container */}
-
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.cardHeading, { color: colors.textPrimary }]}>
-            Welcome back <Text style={{ color: colors.primary }}>👋</Text>
-          </Text>
-          <Text style={[styles.cardSubheading, { color: colors.textSecondary }]}>
-            Sign in to access your workout plans and progress
+        {/* Bottom Sheet Modal Card Overlay */}
+        <View style={[styles.bottomCard, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}>
+          <Text style={[styles.cardTitle, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+            Log in to account
           </Text>
 
           {error ? (
-            <View style={[styles.errorBox, { backgroundColor: colors.error + '18', borderColor: colors.error + '44' }]}>
-              <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
-
-          {/* Email Input */}
+          {/* Email input field */}
           <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Email</Text>
-            <View style={[styles.inputField, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-              <Mail size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <Text style={[styles.inputLabel, { color: isDark ? '#A8AFBA' : '#4B5563' }]}>
+              Email address
+            </Text>
+            <View
+              style={[
+                styles.inputField,
+                {
+                  backgroundColor: isDark ? '#171B24' : '#F9FAFB',
+                  borderColor: isDark ? '#252B36' : '#E5E7EB',
+                },
+              ]}
+            >
+              <Mail size={18} color={isDark ? '#6F7783' : '#9CA3AF'} style={styles.fieldIcon} />
               <TextInput
-                style={[styles.textInput, { color: colors.textPrimary }]}
-                placeholder="athlete@fitmitra.com"
-                placeholderTextColor={colors.textMuted}
+                style={[styles.textInput, { color: isDark ? '#FFFFFF' : '#111111' }]}
+                placeholder="alexsmith.mobbin@gmail.com"
+                placeholderTextColor={isDark ? '#6F7783' : '#9CA3AF'}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
-                editable={!loading}
               />
             </View>
           </View>
 
-          {/* Password Input with Visibility Toggle */}
+          {/* Password input field */}
           <View style={[styles.inputGroup, { marginTop: 14 }]}>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Password</Text>
-            <View style={[styles.inputField, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-              <Lock size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <Text style={[styles.inputLabel, { color: isDark ? '#A8AFBA' : '#4B5563' }]}>
+              Password
+            </Text>
+            <View
+              style={[
+                styles.inputField,
+                {
+                  backgroundColor: isDark ? '#171B24' : '#F9FAFB',
+                  borderColor: isDark ? '#252B36' : '#E5E7EB',
+                },
+              ]}
+            >
+              <Lock size={18} color={isDark ? '#6F7783' : '#9CA3AF'} style={styles.fieldIcon} />
               <TextInput
-                style={[styles.textInput, { color: colors.textPrimary }]}
+                style={[styles.textInput, { color: isDark ? '#FFFFFF' : '#111111' }]}
                 placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={isDark ? '#6F7783' : '#9CA3AF'}
                 secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
-                editable={!loading}
               />
-              <Pressable
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeBtn}
-                hitSlop={8}
-              >
+              <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
                 {showPassword ? (
                   <EyeOff size={18} color={colors.primary} />
                 ) : (
-                  <Eye size={18} color={colors.textMuted} />
+                  <Eye size={18} color={isDark ? '#6F7783' : '#9CA3AF'} />
                 )}
               </Pressable>
             </View>
           </View>
 
-          {/* Login Primary Button */}
+          {/* Black Pill Continue Button */}
           <Pressable
-            style={[styles.loginBtn, { backgroundColor: colors.primary }]}
+            style={[
+              styles.primaryBtn,
+              { backgroundColor: isDark ? '#B7FF00' : '#111111' },
+            ]}
             onPress={handleEmailLogin}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#000" />
+              <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
             ) : (
-              <View style={styles.btnRow}>
-                <Text style={styles.loginBtnText}>Login</Text>
-                <ArrowRight size={18} color="#000" />
-              </View>
+              <Text
+                style={[
+                  styles.primaryBtnText,
+                  { color: isDark ? '#000000' : '#FFFFFF' },
+                ]}
+              >
+                Continue
+              </Text>
             )}
           </Pressable>
 
-          {/* Forgot Password Link */}
+          {/* Forgot password */}
           <Pressable
             style={styles.forgotBtn}
             onPress={() => {
@@ -310,61 +312,78 @@ export default function Login() {
               setForgotModalVisible(true);
             }}
           >
-            <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
+            <Text style={[styles.forgotText, { color: isDark ? '#A8AFBA' : '#6B7280' }]}>
+              Forgot password?
+            </Text>
           </Pressable>
 
           {/* OR Divider */}
           <View style={styles.dividerRow}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.textMuted }]}>
-              ─── OR ───
-            </Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? '#252B36' : '#E5E7EB' }]} />
+            <Text style={[styles.dividerText, { color: isDark ? '#6F7783' : '#9CA3AF' }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? '#252B36' : '#E5E7EB' }]} />
           </View>
 
-          {/* Google Login Button */}
-          <Pressable
-            style={[styles.googleBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF' }]}
-            onPress={handleGoogleSignIn}
-            disabled={loading}
-          >
-            <Svg width={20} height={20} viewBox="0 0 24 24">
-              <Path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-              <Path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.33 24 12 24z"/>
-              <Path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"/>
-              <Path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-            </Svg>
-            <Text style={[styles.googleBtnText, { color: colors.textPrimary }]}>
-              Google Login
-            </Text>
-          </Pressable>
+          {/* Social Buttons */}
+          <View style={styles.socialCol}>
+            {/* Google */}
+            <Pressable
+              style={[
+                styles.socialBtn,
+                {
+                  backgroundColor: isDark ? '#171B24' : '#FFFFFF',
+                  borderColor: isDark ? '#252B36' : '#E5E7EB',
+                },
+              ]}
+              onPress={handleGoogleSignIn}
+              disabled={loading}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24">
+                <Path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                <Path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.33 24 12 24z"/>
+                <Path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"/>
+                <Path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </Svg>
+              <Text style={[styles.socialBtnText, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+                Continue with Google
+              </Text>
+            </Pressable>
 
-          {/* Create Account Link */}
-          <View style={styles.footerRow}>
-            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-              Don't have an account?{' '}
-            </Text>
-            <Pressable onPress={() => router.push('/signup')}>
-              <Text style={[styles.createAccountText, { color: colors.primary }]}>Create Account</Text>
+            {/* Apple / Dev Quick Login */}
+            <Pressable
+              style={[
+                styles.socialBtn,
+                {
+                  backgroundColor: isDark ? '#171B24' : '#FFFFFF',
+                  borderColor: isDark ? '#252B36' : '#E5E7EB',
+                },
+              ]}
+              onPress={handleDevQuickLogin}
+              disabled={loading}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24">
+                <Path
+                  fill={isDark ? '#FFFFFF' : '#000000'}
+                  d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.32c.67-.82 1.13-1.97.99-3.12-1 .04-2.2.67-2.91 1.5-.63.73-1.18 1.91-1.03 3.04 1.12.09 2.26-.59 2.95-1.42z"
+                />
+              </Svg>
+              <Text style={[styles.socialBtnText, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+                Continue with Apple
+              </Text>
             </Pressable>
           </View>
 
-          {/* Development Quick Login (__DEV__ only) */}
-          {__DEV__ && (
-            <View style={styles.devSection}>
-              <View style={[styles.devDivider, { backgroundColor: colors.borderLight }]} />
-              <Pressable
-                style={[styles.devBtn, { borderColor: colors.primary + '55', backgroundColor: colors.primary + '10' }]}
-                onPress={handleDevQuickLogin}
-                disabled={loading}
-              >
-                <Text style={[styles.devBtnText, { color: colors.primary }]}>
-                  ⚡ Quick Dev Mode Login (__DEV__ only)
-                </Text>
-              </Pressable>
-            </View>
-          )}
-
+          {/* Footer prompt */}
+          <View style={styles.footerRow}>
+            <Text style={[styles.footerText, { color: isDark ? '#A8AFBA' : '#6B7280' }]}>
+              Don't have an account?{' '}
+            </Text>
+            <Pressable onPress={() => router.push('/signup')}>
+              <Text style={[styles.signupLink, { color: isDark ? '#B7FF00' : '#111111' }]}>
+                Sign up
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
 
@@ -376,42 +395,76 @@ export default function Login() {
         onRequestClose={() => setForgotModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: isDark ? '#10131A' : '#FFFFFF' },
+            ]}
+          >
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <KeyRound size={20} color={colors.primary} />
-                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Reset Password</Text>
+                <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+                  Reset Password
+                </Text>
               </View>
               <Pressable onPress={() => setForgotModalVisible(false)} style={styles.modalCloseBtn}>
-                <X size={20} color={colors.textMuted} />
+                <X size={20} color={isDark ? '#6F7783' : '#9CA3AF'} />
               </Pressable>
             </View>
 
             {resetSuccess ? (
               <View style={styles.modalSuccessBody}>
                 <CheckCircle2 size={44} color={colors.primary} style={{ alignSelf: 'center', marginBottom: 12 }} />
-                <Text style={[styles.successTitle, { color: colors.textPrimary }]}>Reset Link Sent!</Text>
-                <Text style={[styles.successDesc, { color: colors.textSecondary }]}>
-                  We emailed instructions to <Text style={{ color: colors.primary, fontWeight: '700' }}>{resetEmail}</Text>. Check your inbox to set a new password.
+                <Text style={[styles.successTitle, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+                  Reset Link Sent!
+                </Text>
+                <Text style={[styles.successDesc, { color: isDark ? '#A8AFBA' : '#4B5563' }]}>
+                  We emailed instructions to{' '}
+                  <Text style={{ color: isDark ? '#B7FF00' : '#111111', fontWeight: '700' }}>
+                    {resetEmail}
+                  </Text>
+                  . Check your inbox to set a new password.
                 </Text>
                 <Pressable
-                  style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => setForgotModalVisible(false)}
+                  style={[
+                    styles.primaryBtn,
+                    { backgroundColor: isDark ? '#B7FF00' : '#111111', marginTop: 16 },
+                  ]}
+                  onPress={() => {
+                    setForgotModalVisible(false);
+                    router.push('/otp');
+                  }}
                 >
-                  <Text style={styles.modalPrimaryBtnText}>Back to Login</Text>
+                  <Text
+                    style={[
+                      styles.primaryBtnText,
+                      { color: isDark ? '#000000' : '#FFFFFF' },
+                    ]}
+                  >
+                    Enter 6-Digit Code
+                  </Text>
                 </Pressable>
               </View>
             ) : (
-              <View style={styles.modalBody}>
-                <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
+              <View style={{ gap: 12 }}>
+                <Text style={[styles.modalDesc, { color: isDark ? '#A8AFBA' : '#4B5563' }]}>
                   Enter your email address below to receive password recovery instructions.
                 </Text>
-                <View style={[styles.inputField, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, marginTop: 14 }]}>
-                  <Mail size={18} color={colors.textMuted} style={styles.inputIcon} />
+                <View
+                  style={[
+                    styles.inputField,
+                    {
+                      backgroundColor: isDark ? '#171B24' : '#F9FAFB',
+                      borderColor: isDark ? '#252B36' : '#E5E7EB',
+                    },
+                  ]}
+                >
+                  <Mail size={18} color={isDark ? '#6F7783' : '#9CA3AF'} style={styles.fieldIcon} />
                   <TextInput
-                    style={[styles.textInput, { color: colors.textPrimary }]}
-                    placeholder="athlete@fitmitra.com"
-                    placeholderTextColor={colors.textMuted}
+                    style={[styles.textInput, { color: isDark ? '#FFFFFF' : '#111111' }]}
+                    placeholder="alexsmith.mobbin@gmail.com"
+                    placeholderTextColor={isDark ? '#6F7783' : '#9CA3AF'}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     value={resetEmail}
@@ -419,14 +472,24 @@ export default function Login() {
                   />
                 </View>
                 <Pressable
-                  style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary, marginTop: 16 }]}
+                  style={[
+                    styles.primaryBtn,
+                    { backgroundColor: isDark ? '#B7FF00' : '#111111', marginTop: 8 },
+                  ]}
                   onPress={handleSendPasswordReset}
                   disabled={resetLoading}
                 >
                   {resetLoading ? (
-                    <ActivityIndicator size="small" color="#000" />
+                    <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                   ) : (
-                    <Text style={styles.modalPrimaryBtnText}>Send Reset Link</Text>
+                    <Text
+                      style={[
+                        styles.primaryBtnText,
+                        { color: isDark ? '#000000' : '#FFFFFF' },
+                      ]}
+                    >
+                      Send Reset Link
+                    </Text>
                   )}
                 </Pressable>
               </View>
@@ -439,113 +502,78 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 48,
-    paddingBottom: 36,
+  heroBackground: {
+    width: '100%',
+    height: SCREEN_HEIGHT * 0.32,
+    justifyContent: 'space-between',
   },
-  topHeader: {
+  topVignette: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    height: '60%',
+  },
+  bottomVignette: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '40%',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  safeHeader: {
+    paddingTop: 36,
+    paddingHorizontal: 20,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    marginBottom: 16,
+    justifyContent: 'space-between',
   },
-  logoIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  brandTitle: {
-    fontSize: 26,
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  brandText: {
+    fontSize: 20,
     fontWeight: '900',
-    letterSpacing: 2,
-  },
-  gymPhotoCard: {
-    height: 190,
-    borderRadius: BorderRadius.xl,
-    overflow: 'hidden',
-    borderWidth: 1,
-    marginBottom: 20,
-    position: 'relative',
-    backgroundColor: '#10131A',
-  },
-  gymPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  gymPhotoOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8, 10, 15, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  heroTaglineMain: {
     color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  bottomCard: {
+    flex: 1,
+    marginTop: -28,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 32,
+  },
+  cardTitle: {
     fontSize: 24,
     fontWeight: '900',
-    letterSpacing: 1.2,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-  },
-  heroTaglineSub: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-    textAlign: 'center',
-    marginTop: 4,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-  },
-  configNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    padding: 12,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  configNoticeTitle: {
-    fontSize: FontSize.xs,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  configNoticeText: {
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  card: {
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    padding: 22,
-  },
-  cardHeading: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-  },
-  cardSubheading: {
-    fontSize: FontSize.sm,
-    marginTop: 4,
-    marginBottom: 18,
-    lineHeight: 18,
+    marginBottom: 20,
+    letterSpacing: -0.3,
   },
   errorBox: {
     padding: 12,
-    borderRadius: BorderRadius.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255, 92, 105, 0.15)',
     borderWidth: 1,
+    borderColor: 'rgba(255, 92, 105, 0.3)',
     marginBottom: 16,
   },
   errorText: {
-    fontSize: FontSize.sm,
+    color: '#FF5C69',
+    fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -553,115 +581,90 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   inputLabel: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
   },
   inputField: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
-    borderRadius: BorderRadius.md,
+    height: 50,
+    borderRadius: 16,
     borderWidth: 1,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
   },
-  inputIcon: {
+  fieldIcon: {
     marginRight: 10,
   },
   textInput: {
     flex: 1,
-    fontSize: FontSize.md,
+    fontSize: 15,
     height: '100%',
   },
   eyeBtn: {
     padding: 6,
   },
-  loginBtn: {
-    height: 50,
-    borderRadius: BorderRadius.md,
+  primaryBtn: {
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
   },
-  btnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  loginBtnText: {
-    fontSize: FontSize.lg,
+  primaryBtnText: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#000',
   },
   forgotBtn: {
     alignSelf: 'center',
     marginTop: 14,
-    paddingVertical: 4,
   },
   forgotText: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
   },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 18,
-    gap: 10,
+    marginVertical: 20,
+    gap: 12,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   dividerText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 13,
+    fontWeight: '600',
   },
-  googleBtn: {
+  socialCol: {
+    gap: 12,
+  },
+  socialBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
     height: 50,
-    borderRadius: BorderRadius.md,
+    borderRadius: 26,
     borderWidth: 1,
   },
-  googleBtnText: {
-    fontSize: FontSize.md,
+  socialBtnText: {
+    fontSize: 15,
     fontWeight: '700',
   },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 24,
   },
   footerText: {
-    fontSize: FontSize.sm,
+    fontSize: 14,
   },
-  createAccountText: {
-    fontSize: FontSize.sm,
+  signupLink: {
+    fontSize: 14,
     fontWeight: '800',
   },
-  devSection: {
-    marginTop: 18,
-  },
-  devDivider: {
-    height: 1,
-    marginBottom: 14,
-  },
-  devBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  devBtnText: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-  },
-
-  /* Modal Styles */
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -671,15 +674,14 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    padding: 20,
+    borderRadius: 24,
+    padding: 24,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   modalTitleRow: {
     flexDirection: 'row',
@@ -687,44 +689,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modalTitle: {
-    fontSize: FontSize.lg,
+    fontSize: 18,
     fontWeight: '800',
   },
   modalCloseBtn: {
     padding: 4,
   },
-  modalBody: {
-    gap: 10,
-  },
   modalDesc: {
-    fontSize: FontSize.sm,
+    fontSize: 14,
     lineHeight: 20,
-  },
-  modalPrimaryBtn: {
-    height: 48,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalPrimaryBtnText: {
-    fontSize: FontSize.md,
-    fontWeight: '800',
-    color: '#000',
   },
   modalSuccessBody: {
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   successTitle: {
-    fontSize: FontSize.xl,
+    fontSize: 20,
     fontWeight: '800',
     marginBottom: 8,
   },
   successDesc: {
-    fontSize: FontSize.sm,
+    fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 20,
   },
 });
 
