@@ -44,12 +44,14 @@ export default function HomeDashboard() {
   const [waterMl, setWaterMl] = useState(1500);
   const [targetWaterMl] = useState(3000);
   const [todayRoutine, setTodayRoutine] = useState({
-    title: 'Full Body Athletic Conditioning',
-    duration: '45 mins',
+    title: 'Push Day',
+    duration: '~45 min',
     exercisesCount: 6,
-    target: 'Full Body',
-    routineId: 'full-body-1',
+    target: 'Chest & Triceps',
+    routineId: 'push-day-1',
   });
+  const [isCompletedLocally, setIsCompletedLocally] = useState(false);
+
 
   const loadData = useCallback(async () => {
     try {
@@ -90,7 +92,12 @@ export default function HomeDashboard() {
 
   useEffect(() => {
     loadData();
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+    return () => clearTimeout(safetyTimer);
   }, [loadData]);
+
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -115,8 +122,20 @@ export default function HomeDashboard() {
   const todayWorkout = dashboardData?.todayWorkout || {};
   const todayNutrition = dashboardData?.todayNutrition || { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const points = profile?.points || 0;
-  const streak = dashboardData?.stats?.workoutsLast7Days || 1;
-  const isWorkoutCompleted = todayWorkout?.hasCompletedToday;
+  const streak = dashboardData?.stats?.workoutsLast7Days || 7;
+  const isWorkoutCompleted = isCompletedLocally || !!todayWorkout?.hasCompletedToday;
+
+  const handleToggleComplete = async () => {
+    const nextVal = !isWorkoutCompleted;
+    setIsCompletedLocally(nextVal);
+    try {
+      if (nextVal && workoutService?.completeWorkout) {
+        await workoutService.completeWorkout('push-day-1');
+      }
+    } catch (err) {
+      console.warn('Complete workout toggle:', err.message);
+    }
+  };
 
   // Calorie & macro targets based on profile or standard athlete target
   const targetCalories = 2200;
@@ -197,7 +216,7 @@ export default function HomeDashboard() {
           </View>
         </View>
 
-        {/* 3. TODAY'S WORKOUT HERO CARD (DOMINANT / PRIMARY VISUAL FOCUS - BIG) */}
+        {/* 3. TODAY'S WORKOUT HERO CARD (PUSH DAY DESIGN) */}
         <MaterialCard
           elevated
           style={[
@@ -208,75 +227,102 @@ export default function HomeDashboard() {
             },
           ]}
         >
-          {/* Header Row with Tag & Points Badge */}
-          <View style={styles.workoutHeaderRow}>
-            <View style={[styles.tagBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '44' }]}>
-              <Dumbbell size={13} color={colors.primary} />
-              <Text style={[styles.tagText, { color: colors.primary }]}>
-                TODAY'S WORKOUT
+          {isWorkoutCompleted ? (
+            /* COMPLETED STATE */
+            <View style={styles.heroContentContainer}>
+              <View style={styles.workoutHeaderRow}>
+                <View style={[styles.completedBadge, { backgroundColor: colors.success + '20', borderColor: colors.success + '44' }]}>
+                  <Text style={[styles.completedBadgeText, { color: colors.success }]}>
+                    🎉 Workout Complete!
+                  </Text>
+                </View>
+                <View style={[styles.rewardBadge, { backgroundColor: colors.success + '18' }]}>
+                  <Zap size={13} color={colors.success} />
+                  <Text style={[styles.rewardBadgeText, { color: colors.success }]}>
+                    ⚡ +5 pts Earned
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={[styles.workoutTitle, { color: colors.textPrimary }]}>
+                {todayRoutine.title || 'Push Day'}
               </Text>
-            </View>
 
-            <View style={[styles.rewardBadge, { backgroundColor: isWorkoutCompleted ? colors.success + '18' : colors.primary + '18' }]}>
-              <Zap size={13} color={isWorkoutCompleted ? colors.success : colors.primary} />
-              <Text
-                style={[
-                  styles.rewardBadgeText,
-                  { color: isWorkoutCompleted ? colors.success : colors.primary },
-                ]}
-              >
-                {isWorkoutCompleted ? '⚡ +5 pts Earned' : '⚡ +5 pts Available'}
+              <Text style={[styles.workoutSubMeta, { color: colors.textSecondary }]}>
+                {todayRoutine.exercisesCount || 6} exercises • 43 min
               </Text>
-            </View>
-          </View>
 
-          {/* Routine Title */}
-          <Text style={[styles.workoutTitle, { color: colors.textPrimary }]}>
-            {todayRoutine.title}
-          </Text>
-
-          {/* Meta Information */}
-          <View style={styles.workoutMetaRow}>
-            <Text style={[styles.workoutMetaText, { color: colors.textSecondary }]}>
-              ⏱️ {todayRoutine.duration}
-            </Text>
-            <Text style={[styles.metaBullet, { color: colors.textMuted }]}>•</Text>
-            <Text style={[styles.workoutMetaText, { color: colors.textSecondary }]}>
-              🏋️ {todayRoutine.exercisesCount} Exercises
-            </Text>
-            <Text style={[styles.metaBullet, { color: colors.textMuted }]}>•</Text>
-            <Text style={[styles.workoutMetaText, { color: colors.textSecondary }]}>
-              🎯 {todayRoutine.target}
-            </Text>
-          </View>
-
-          {/* Big High-Contrast Action Button */}
-          <Pressable
-            style={[
-              styles.startWorkoutBtn,
-              {
-                backgroundColor: isWorkoutCompleted ? colors.surface : colors.primary,
-                borderColor: isWorkoutCompleted ? colors.success : 'transparent',
-                borderWidth: isWorkoutCompleted ? 1.5 : 0,
-              },
-            ]}
-            onPress={() => router.push(`/workout/${todayRoutine.routineId}`)}
-          >
-            {isWorkoutCompleted ? (
-              <View style={styles.btnContentRow}>
-                <CheckCircle2 size={20} color={colors.success} />
-                <Text style={[styles.btnTextCompleted, { color: colors.success }]}>
-                  Workout Completed • Review Session
+              <View style={styles.streakRow}>
+                <Flame size={16} color="#FF7A00" />
+                <Text style={[styles.streakText, { color: '#FF7A00' }]}>
+                  {streak || 7} Day Streak
                 </Text>
               </View>
-            ) : (
-              <View style={styles.btnContentRow}>
-                <Play size={20} color="#000" fill="#000" />
-                <Text style={styles.btnTextPrimary}>Start Workout Now</Text>
-                <ArrowRight size={18} color="#000" />
+
+              <Pressable
+                style={[styles.completedStatusBtn, { backgroundColor: colors.success + '18', borderColor: colors.success }]}
+                onPress={handleToggleComplete}
+              >
+                <CheckCircle2 size={18} color={colors.success} />
+                <Text style={[styles.completedStatusBtnText, { color: colors.success }]}>
+                  Completed today ✓
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            /* NOT COMPLETED STATE */
+            <View style={styles.heroContentContainer}>
+              <View style={styles.workoutHeaderRow}>
+                <View style={[styles.tagBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '44' }]}>
+                  <Dumbbell size={13} color={colors.primary} />
+                  <Text style={[styles.tagText, { color: colors.primary }]}>
+                    TODAY'S WORKOUT
+                  </Text>
+                </View>
+                <View style={[styles.rewardBadge, { backgroundColor: colors.primary + '18' }]}>
+                  <Zap size={13} color={colors.primary} />
+                  <Text style={[styles.rewardBadgeText, { color: colors.primary }]}>
+                    ⚡ +5 pts Available
+                  </Text>
+                </View>
               </View>
-            )}
-          </Pressable>
+
+              <Text style={[styles.workoutTitle, { color: colors.textPrimary }]}>
+                {todayRoutine.title || 'Push Day'}
+              </Text>
+
+              <Text style={[styles.workoutSubMeta, { color: colors.textSecondary }]}>
+                {todayRoutine.exercisesCount || 6} exercises • {todayRoutine.duration || '~45 min'}
+              </Text>
+
+              <View style={styles.notCompletedRow}>
+                <View style={[styles.emptyRadioCircle, { borderColor: colors.textMuted }]} />
+                <Text style={[styles.notCompletedText, { color: colors.textSecondary }]}>
+                  Not completed
+                </Text>
+              </View>
+
+              <View style={styles.heroBtnRow}>
+                <Pressable
+                  style={[styles.heroStartBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => router.push(`/workout/${todayRoutine.routineId || 'push-day-1'}`)}
+                >
+                  <Play size={16} color="#000" fill="#000" />
+                  <Text style={styles.heroStartBtnText}>Start WorkOut</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.heroDoneBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+                  onPress={handleToggleComplete}
+                >
+                  <CheckCircle2 size={16} color={colors.primary} />
+                  <Text style={[styles.heroDoneBtnText, { color: colors.textPrimary }]}>
+                    ✓ Mark as Done
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
         </MaterialCard>
 
         {/* 4. TODAY'S NUTRITION & MACROS OVERVIEW (MEDIUM) */}
@@ -649,18 +695,21 @@ const styles = StyleSheet.create({
     height: 12,
   },
 
-  /* Workout Hero Card (DOMINANT - BIG) */
+  /* Workout Hero Card (PUSH DAY DESIGN) */
   workoutHero: {
-    padding: 20,
+    padding: 18,
     borderRadius: BorderRadius.xl,
     borderWidth: 1.5,
     marginBottom: 16,
+  },
+  heroContentContainer: {
+    gap: 8,
   },
   workoutHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 2,
   },
   tagBadge: {
     flexDirection: 'row',
@@ -670,6 +719,19 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
+  },
+  completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  completedBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   tagText: {
     fontSize: 10,
@@ -689,44 +751,88 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   workoutTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
-    lineHeight: 28,
-    marginBottom: 8,
+    letterSpacing: -0.3,
+    marginTop: 2,
   },
-  workoutMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  workoutMetaText: {
-    fontSize: FontSize.xs,
+  workoutSubMeta: {
+    fontSize: FontSize.sm,
     fontWeight: '600',
   },
-  metaBullet: {
-    marginHorizontal: 8,
-    fontSize: 10,
-  },
-  startWorkoutBtn: {
-    height: 52,
-    borderRadius: BorderRadius.lg,
+  notCompletedRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    marginVertical: 4,
   },
-  btnContentRow: {
+  emptyRadioCircle: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1.5,
+  },
+  notCompletedText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+  },
+  heroBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 6,
+  },
+  heroStartBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: BorderRadius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
   },
-  btnTextPrimary: {
+  heroStartBtnText: {
     color: '#000',
-    fontSize: FontSize.md,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  btnTextCompleted: {
     fontSize: FontSize.sm,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  heroDoneBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  heroDoneBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+  },
+  streakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginVertical: 4,
+  },
+  streakText: {
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+  },
+  completedStatusBtn: {
+    height: 48,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  completedStatusBtnText: {
+    fontSize: FontSize.md,
     fontWeight: '800',
   },
 

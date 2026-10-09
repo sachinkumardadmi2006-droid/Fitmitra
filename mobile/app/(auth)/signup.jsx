@@ -14,9 +14,11 @@ import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import { User, Mail, Lock, CheckSquare, Square, ArrowRight, Dumbbell, AlertTriangle } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { User, Mail, Lock, CheckSquare, Square, ArrowRight, Dumbbell, Eye, EyeOff, AlertTriangle } from 'lucide-react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { authService } from '../../services/authService';
+import { syncAuth } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 import { FontSize, BorderRadius } from '../../constants/theme';
 
@@ -31,6 +33,8 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -169,17 +173,15 @@ export default function Signup() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         {/* Brand Header */}
-        <View style={styles.brandHero}>
-          <View style={[styles.brandIconWrap, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '33' }]}>
-            <Dumbbell size={30} color={colors.primary} />
+        <View style={styles.topHeader}>
+          <View style={[styles.logoIconWrap, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
+            <Dumbbell size={24} color={colors.primary} />
           </View>
           <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>
-            JOIN <Text style={{ color: colors.primary }}>FITMITRA</Text>
-          </Text>
-          <Text style={[styles.brandSubtitle, { color: colors.textSecondary }]}>
-            Start your personalized fitness transformation today.
+            FIT<Text style={{ color: colors.primary }}>MITRA</Text>
           </Text>
         </View>
 
@@ -200,43 +202,19 @@ export default function Signup() {
 
         {/* Signup Card */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.cardHeading, { color: colors.textPrimary }]}>
+            Create Account <Text style={{ color: colors.primary }}>💪</Text>
+          </Text>
+          <Text style={[styles.cardSubheading, { color: colors.textSecondary }]}>
+            Start your personalized fitness transformation today
+          </Text>
+
           {error ? (
             <View style={[styles.errorBox, { backgroundColor: colors.error + '18', borderColor: colors.error + '44' }]}>
               <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
             </View>
           ) : null}
 
-          {/* Google Sign-In */}
-          <Pressable
-            style={[styles.googleBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF' }]}
-            onPress={handleGoogleSignIn}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <Svg width={20} height={20} viewBox="0 0 24 24">
-                  <Path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-                  <Path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.33 24 12 24z"/>
-                  <Path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"/>
-                  <Path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-                </Svg>
-                <Text style={[styles.googleBtnText, { color: colors.textPrimary }]}>
-                  Sign Up with Google
-                </Text>
-              </>
-            )}
-          </Pressable>
-
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.textMuted }]}>
-              OR REGISTER WITH EMAIL
-            </Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
 
           {/* Full Name */}
           <View style={styles.inputGroup}>
@@ -281,11 +259,14 @@ export default function Signup() {
                 style={[styles.textInput, { color: colors.textPrimary }]}
                 placeholder="•••••••• (min. 6 characters)"
                 placeholderTextColor={colors.textMuted}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
                 editable={!loading}
               />
+              <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn} hitSlop={8}>
+                {showPassword ? <EyeOff size={18} color={colors.primary} /> : <Eye size={18} color={colors.textMuted} />}
+              </Pressable>
             </View>
           </View>
 
@@ -298,11 +279,14 @@ export default function Signup() {
                 style={[styles.textInput, { color: colors.textPrimary }]}
                 placeholder="••••••••"
                 placeholderTextColor={colors.textMuted}
-                secureTextEntry
+                secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 editable={!loading}
               />
+              <Pressable onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn} hitSlop={8}>
+                {showConfirmPassword ? <EyeOff size={18} color={colors.primary} /> : <Eye size={18} color={colors.textMuted} />}
+              </Pressable>
             </View>
           </View>
 
@@ -340,6 +324,32 @@ export default function Signup() {
             )}
           </Pressable>
 
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.textMuted }]}>
+              ─── OR ───
+            </Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
+
+          {/* Google Sign-In */}
+          <Pressable
+            style={[styles.googleBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF' }]}
+            onPress={handleGoogleSignIn}
+            disabled={loading}
+          >
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+              <Path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.33 24 12 24z"/>
+              <Path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"/>
+              <Path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+            </Svg>
+            <Text style={[styles.googleBtnText, { color: colors.textPrimary }]}>
+              Sign Up with Google
+            </Text>
+          </Pressable>
+
           {/* Footer to Login */}
           <View style={styles.footerRow}>
             <Text style={[styles.footerText, { color: colors.textSecondary }]}>
@@ -357,22 +367,24 @@ export default function Signup() {
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 36,
+    paddingHorizontal: 20,
+    paddingTop: 48,
     paddingBottom: 36,
   },
-  brandHero: {
+  topHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
     marginBottom: 20,
   },
-  brandIconWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: BorderRadius.xl,
+  logoIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
   },
   brandTitle: {
     fontSize: 26,
@@ -408,6 +420,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 22,
   },
+  cardHeading: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  cardSubheading: {
+    fontSize: FontSize.sm,
+    marginTop: 4,
+    marginBottom: 18,
+    lineHeight: 18,
+  },
   errorBox: {
     padding: 10,
     borderRadius: BorderRadius.sm,
@@ -418,34 +441,6 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '600',
     textAlign: 'center',
-  },
-  googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    height: 50,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-  },
-  googleBtnText: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 18,
-    gap: 10,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
   },
   inputGroup: {
     gap: 5,
@@ -469,6 +464,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: FontSize.sm,
     height: '100%',
+  },
+  eyeBtn: {
+    padding: 6,
   },
   termsRow: {
     flexDirection: 'row',
@@ -498,6 +496,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#000',
   },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    height: 50,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  googleBtnText: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+  },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -512,3 +538,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+

@@ -9,8 +9,8 @@ export const DarkTheme = {
   borderLight: 'rgba(255, 255, 255, 0.08)',
   borderFocus: '#B7FF00',
 
-  primary: '#B7FF00', // Athletic fluorescent lime
-  primaryStrong: '#9BE600',
+  primary: '#add810ff', // Athletic fluorescent lime
+  primaryStrong: '#b3d810ff',
   primaryGlow: 'rgba(183, 255, 0, 0.25)',
   primaryDim: 'rgba(183, 255, 0, 0.1)',
 

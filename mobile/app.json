@@ -19,10 +19,7 @@
       "package": "fitmitra.in"
     },
     "plugins": [
-      "expo-router",
-      "expo-splash-screen",
-      "expo-web-browser",
-      "expo-dev-client"
+      "expo-router"
     ]
   }
 }
