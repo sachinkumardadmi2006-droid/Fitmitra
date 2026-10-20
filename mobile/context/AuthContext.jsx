@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { authService, profileService } from '../services';
-import { onDbUpdate } from '../utils/events';
+import { clearUserCache } from '../services/queryClient';
 
 const AuthContext = createContext({
   user: null,
@@ -12,6 +12,7 @@ const AuthContext = createContext({
   isOnboarded: false,
   refreshProfile: async () => {},
   logout: async () => {},
+  retrySession: async () => {},
 });
 
 export function AuthProvider({ children }) {
@@ -22,84 +23,100 @@ export function AuthProvider({ children }) {
 
   const loadSession = useCallback(async () => {
     try {
+      const token = await authService.getStoredToken();
       const localUser = await authService.getLocalUser();
+
+      if (!token || !localUser) {
+        setUser(null);
+        setProfile(null);
+        setIsOnboarded(false);
+        await clearUserCache();
+        return;
+      }
+
       setUser(localUser);
+      const onboarded = await authService.getOnboardedStatus();
+      setIsOnboarded(onboarded);
 
-      const localOnboarded = await authService.getOnboardedStatus();
-
-      // Fetch live server profile (points, biometrics)
+      // Fetch live server profile once on mount/login
       try {
         const p = await profileService.getProfile();
         if (p) {
           setProfile(p);
           const hasBiometrics = Boolean(p?.heightCm && p?.weightKg);
-          setIsOnboarded(hasBiometrics || localOnboarded);
-          if (hasBiometrics && !localOnboarded) {
-            await authService.setOnboardedStatus(true);
-          }
-        } else {
-          setIsOnboarded(localOnboarded);
+          setIsOnboarded(hasBiometrics);
+          await authService.setOnboardedStatus(hasBiometrics, false);
         }
-      } catch (_) {
-        setIsOnboarded(localOnboarded);
+      } catch (profErr) {
+        // If 401 / session expired, unrecoverable authentication failure -> clear session
+        if (profErr?.status === 401 || /session expired|unauthorized/i.test(String(profErr?.message || ''))) {
+          await authService.logout().catch(() => {});
+          await clearUserCache();
+          setUser(null);
+          setProfile(null);
+          setIsOnboarded(false);
+        } else {
+          // Network / offline error: retain cached localUser and onboarded status
+          console.warn('[AuthContext] Profile live fetch deferred (offline/network):', profErr?.message || profErr);
+        }
       }
     } catch (e) {
       console.warn('Auth context loadSession error:', e);
+      setUser(null);
+      setProfile(null);
+      setIsOnboarded(false);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
+  // Run initial session load ONCE on app startup
   useEffect(() => {
     loadSession();
-    const unsub = onDbUpdate(loadSession);
-    return unsub;
   }, [loadSession]);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     try {
       const p = await profileService.getProfile();
       if (p) {
         setProfile(p);
         const hasBiometrics = Boolean(p?.heightCm && p?.weightKg);
-        if (hasBiometrics) {
-          setIsOnboarded(true);
-          await authService.setOnboardedStatus(true);
-        }
+        setIsOnboarded(hasBiometrics);
+        await authService.setOnboardedStatus(hasBiometrics, false);
       }
       return p;
     } catch (_) {
       return null;
     }
-  };
+  }, []);
 
-  const logout = async () => {
-    await authService.logout();
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout();
+    } catch (_) {}
+    await clearUserCache();
     setUser(null);
     setProfile(null);
     setIsOnboarded(false);
-  };
+  }, []);
 
-  const points = profile?.points ?? 0;
-  const lifetimePoints = profile?.lifetimePoints ?? 0;
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        profile,
-        points,
-        lifetimePoints,
-        isLoading,
-        isAuthenticated: !!user,
-        isOnboarded,
-        refreshProfile,
-        logout,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      profile,
+      points: profile?.points ?? 0,
+      lifetimePoints: profile?.lifetimePoints ?? 0,
+      isLoading,
+      isAuthenticated: Boolean(user),
+      isOnboarded,
+      refreshProfile,
+      logout,
+      retrySession: loadSession,
+    }),
+    [user, profile, isLoading, isOnboarded, refreshProfile, logout, loadSession]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

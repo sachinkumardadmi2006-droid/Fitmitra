@@ -1,6 +1,4 @@
-// FitMitra Premium Subscription Screen & Checkout Modal
-// Powered by live backend API: GET /api/v1/subscriptions/plans & POST /api/v1/subscriptions/create
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,80 +6,104 @@ import {
   ScrollView,
   StyleSheet,
   Modal,
-  ActivityIndicator,
   Alert,
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronLeft,
   Check,
   Shield,
   X,
   Sparkles,
-  Star,
   Crown,
-  Flame,
-  Gem,
   CheckCircle2,
+  Lock,
+  Zap,
 } from 'lucide-react-native';
-import { Colors } from '../constants/theme';
-import { subscriptionService } from '../services';
+import { subscriptionService } from '../services/subscriptionService';
+import { api } from '../services/api';
+import { queryKeys } from '../constants/queryKeys';
 import { useAuth } from '../context/AuthContext';
-import { onDbUpdate, emitDbUpdate } from '../utils/events';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { useAppTheme } from '../theme/ThemeContext';
+import AppHeader from '../components/ui/AppHeader';
+import AppCard from '../components/ui/AppCard';
+import AppButton from '../components/ui/AppButton';
+import Skeleton from '../components/ui/Skeleton';
 
 export default function PremiumScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { user, refreshProfile } = useAuth();
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
 
-  const [plans, setPlans] = useState([]);
-  const [currentSub, setCurrentSub] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const loadSubscriptionData = useCallback(async () => {
-    try {
-      // 1. Fetch real plans from server
+  // Payment order details when checkout required
+  const [paymentOrder, setPaymentOrder] = useState(null);
+
+  // 1. Subscription Plans Query
+  const plansQuery = useQuery({
+    queryKey: queryKeys.subscriptionPlans,
+    queryFn: async () => {
       const plansRes = await subscriptionService.getPlans();
-      const planItems = Array.isArray(plansRes)
-        ? plansRes
-        : plansRes?.plans || plansRes?.items || [];
-      setPlans(planItems);
+      const planItems = Array.isArray(plansRes?.data)
+        ? plansRes.data
+        : Array.isArray(plansRes)
+          ? plansRes
+          : Array.isArray(plansRes?.plans)
+            ? plansRes.plans
+            : [];
+      return planItems;
+    },
+    staleTime: 60 * 1000,
+  });
 
-      // 2. Fetch user's current subscription
-      try {
-        const sub = await subscriptionService.getMySubscription();
-        setCurrentSub(sub && sub.status !== 'INACTIVE' ? sub : null);
-      } catch (_) {
-        setCurrentSub(null);
-      }
-    } catch (e) {
-      console.warn('Error loading subscription plans:', e.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  // 2. Current Active Subscription Query
+  const subQuery = useQuery({
+    queryKey: queryKeys.subscriptionCurrent,
+    queryFn: async () => {
+      const subRes = await subscriptionService.getMySubscription();
+      const s = subRes?.data || subRes;
+      return s && s.status !== 'INACTIVE' ? s : null;
+    },
+    staleTime: 60 * 1000,
+  });
 
-  useEffect(() => {
-    setLoading(true);
-    loadSubscriptionData();
-    const unsub = onDbUpdate(loadSubscriptionData);
-    return unsub;
-  }, [loadSubscriptionData]);
+  const plans = plansQuery.data || [];
+  const currentSub = subQuery.data || null;
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadSubscriptionData();
-  };
+  const loading = plansQuery.isLoading && !plansQuery.data;
+  const refreshing = plansQuery.isRefetching || subQuery.isRefetching;
 
-  const handleOpenPlanModal = (plan) => {
+  const onRefresh = useCallback(async () => {
+    refreshProfile?.();
+    await Promise.all([
+      plansQuery.refetch(),
+      subQuery.refetch(),
+    ]);
+  }, [plansQuery, subQuery, refreshProfile]);
+
+  const handleOpenPlanModal = async (plan) => {
     setSelectedPlan(plan);
+    setPaymentOrder(null);
     setModalVisible(true);
+
+    // If plan has no trial, prepare the payment order from real backend
+    if (!plan.trialDays || plan.trialDays <= 0) {
+      try {
+        const orderRes = await api.post('/payments/create-order', {
+          subscriptionPlanId: plan._id || plan.id,
+        });
+        const orderData = orderRes?.data || orderRes;
+        setPaymentOrder(orderData);
+      } catch (err) {
+        console.warn('[Premium] Failed to prepare payment order:', err.message);
+      }
+    }
   };
 
   const handleConfirmSubscription = async () => {
@@ -90,27 +112,44 @@ export default function PremiumScreen() {
       setSubmitting(true);
       const planId = selectedPlan._id || selectedPlan.id;
       const res = await subscriptionService.createSubscription({ planId });
+      const resData = res?.data || res;
 
-      emitDbUpdate();
-      setModalVisible(false);
-      Alert.alert(
-        'Subscription Activated! 🎉',
-        `Welcome to ${selectedPlan.name}! You now have full access to all workouts, recipes, and features.`
-      );
-      loadSubscriptionData();
+      if (resData?.type === 'TRIAL_STARTED') {
+        setModalVisible(false);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionCurrent }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
+        ]);
+        refreshProfile?.();
+        Alert.alert(
+          'Free Trial Activated! 🎉',
+          `Your ${selectedPlan.trialDays}-day trial of ${selectedPlan.name} is now active. All Pro programs are unlocked!`
+        );
+      } else if (resData?.type === 'PAYMENT_REQUIRED') {
+        // Real payment requirement
+        Alert.alert(
+          'Payment Required',
+          `This plan requires an active Razorpay payment of ₹${Math.round((selectedPlan.priceInPaise || 0) / 100)}. Online payment gateway integration is processing server-side.`
+        );
+      } else {
+        setModalVisible(false);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionCurrent }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
+        ]);
+        refreshProfile?.();
+      }
     } catch (err) {
       Alert.alert(
-        'Subscription Failed',
-        err.message || 'Unable to activate subscription right now. Please try again.'
+        'Subscription Request',
+        err.message || 'Unable to complete subscription request right now.'
       );
     } finally {
       setSubmitting(false);
     }
   };
-
-  if (loading) {
-    return <LoadingSpinner message="Loading subscription plans..." fullScreen />;
-  }
 
   const isCurrentPlanActive = (plan) => {
     const planId = plan._id || plan.id;
@@ -119,472 +158,426 @@ export default function PremiumScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
-      }
-    >
-      {/* Header bar */}
-      <View style={styles.navBar}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <ChevronLeft size={22} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.navTitle}>FitMitra PRO</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <AppHeader title="FitMitra PRO" onBack={() => router.back()} />
 
-      {/* Hero Badge */}
-      <View style={styles.heroSection}>
-        <View style={styles.iconCircle}>
-          <Crown size={36} color="#FFB800" />
-        </View>
-        <Text style={styles.heroTitle}>Unlock Your Full Potential</Text>
-        <Text style={styles.heroSubtitle}>
-          Choose your plan for personalized coaching, complete workout libraries, and customized meal plans.
-        </Text>
-      </View>
-
-      {/* Active Subscription Banner if already subscribed */}
-      {currentSub && (
-        <View style={styles.activeBanner}>
-          <CheckCircle2 size={20} color={Colors.primaryNeon} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.activeBannerTitle}>Active Membership</Text>
-            <Text style={styles.activeBannerSub}>
-              {currentSub.planId?.name || currentSub.tier || 'PRO'} • Status:{' '}
-              {currentSub.status}
-            </Text>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={custom.primaryStrong}
+            progressBackgroundColor={colors.surface}
+          />
+        }
+      >
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: colors.secondaryContainer, borderColor: colors.secondary },
+            ]}
+          >
+            <Crown size={36} color={colors.secondary} />
           </View>
+          <Text style={[styles.heroTitle, { color: colors.onSurface }]}>
+            Upgrade to FitMitra PRO
+          </Text>
+          <Text style={[styles.heroSubtitle, { color: colors.onSurfaceVariant }]}>
+            Unlock structured fitness programs, full exercise libraries, and unrestricted AI Coach guidance.
+          </Text>
         </View>
-      )}
 
-      {/* Plans List */}
-      <View style={styles.plansContainer}>
-        {plans.map((plan) => {
-          const planId = plan._id || plan.id;
-          const priceRupees = Math.round((plan.priceInPaise || 0) / 100);
-          const regularRupees = Math.round((plan.regularPriceInPaise || 0) / 100);
-          const isActive = isCurrentPlanActive(plan);
-
-          return (
-            <View
-              key={planId}
-              style={[
-                styles.planCard,
-                isActive && styles.planCardActive,
-                plan.tier === 'ADVANCED' && styles.planCardAdvanced,
-              ]}
-            >
-              <View style={styles.planHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.planTier}>{plan.tier}</Text>
-                  <Text style={styles.planName}>{plan.name}</Text>
-                </View>
-                <View style={styles.priceWrap}>
-                  <Text style={styles.priceText}>₹{priceRupees}</Text>
-                  <Text style={styles.periodText}>/{plan.billingPeriod?.toLowerCase() || 'mo'}</Text>
-                </View>
+        {/* Current Active Subscription Banner */}
+        {currentSub && (
+          <AppCard variant="elevated" style={styles.activeBanner}>
+            <View style={styles.activeBannerRow}>
+              <CheckCircle2 size={22} color={colors.primary} />
+              <View style={styles.activeMetaCol}>
+                <Text style={[styles.activeBannerTitle, { color: colors.onSurface }]}>
+                  Active Membership
+                </Text>
+                <Text style={[styles.activeBannerSub, { color: colors.onSurfaceVariant }]}>
+                  {currentSub.planId?.name || currentSub.tier || 'PRO Member'} • Status: {currentSub.status}
+                </Text>
+                {currentSub.currentPeriodEnd && (
+                  <Text style={[styles.activeExpiryText, { color: colors.onSurfaceVariant }]}>
+                    Valid until: {new Date(currentSub.currentPeriodEnd).toLocaleDateString()}
+                  </Text>
+                )}
+                {currentSub.trialEndsAt && (
+                  <Text style={[styles.activeExpiryText, { color: colors.secondary }]}>
+                    Trial ends: {new Date(currentSub.trialEndsAt).toLocaleDateString()}
+                  </Text>
+                )}
               </View>
-
-              {regularRupees > priceRupees && (
-                <Text style={styles.regularPriceText}>Regular: ₹{regularRupees}</Text>
-              )}
-
-              {plan.trialDays > 0 && (
-                <View style={styles.trialPill}>
-                  <Text style={styles.trialPillText}>{plan.trialDays}-Day Free Trial Included</Text>
-                </View>
-              )}
-
-              {/* Features list */}
-              <View style={styles.featuresList}>
-                {(plan.features || []).map((feat, idx) => (
-                  <View key={idx} style={styles.featureRow}>
-                    <Check size={14} color={Colors.primaryNeon} />
-                    <Text style={styles.featureText}>{feat}</Text>
-                  </View>
-                ))}
-              </View>
-
-              {/* Action Button */}
-              {isActive ? (
-                <View style={styles.activeBtn}>
-                  <CheckCircle2 size={16} color={Colors.primaryNeon} />
-                  <Text style={styles.activeBtnText}>Current Active Plan</Text>
-                </View>
-              ) : (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.chooseBtn,
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  onPress={() => handleOpenPlanModal(plan)}
-                >
-                  <Sparkles size={16} color={Colors.bgDarkBase} />
-                  <Text style={styles.chooseBtnText}>Select {plan.name}</Text>
-                </Pressable>
-              )}
             </View>
-          );
-        })}
-      </View>
+          </AppCard>
+        )}
 
-      {/* Trust Guarantee */}
-      <View style={styles.trustBox}>
-        <Shield size={20} color={Colors.primaryNeon} />
-        <Text style={styles.trustText}>
-          Secure payments powered by Razorpay. Cancel anytime with zero questions asked.
+        {/* Plans List */}
+        <Text style={[styles.sectionHeading, { color: colors.onSurface }]}>
+          Available Membership Tiers
         </Text>
-      </View>
 
-      {/* Confirmation Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.backdrop}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Confirm Subscription</Text>
-              <Pressable onPress={() => setModalVisible(false)} style={styles.modalClose}>
-                <X size={20} color={Colors.textSecondary} />
-              </Pressable>
-            </View>
+        {loading && plans.length === 0 ? (
+          <View style={styles.skeletonWrap}>
+            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbLg} />
+            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbLg} />
+          </View>
+        ) : plans.length > 0 ? (
+          plans.map((plan) => {
+            const planId = plan._id || plan.id;
+            const priceRupees = Math.round((plan.priceInPaise || 0) / 100);
+            const regularRupees = Math.round((plan.regularPriceInPaise || 0) / 100);
+            const isActive = isCurrentPlanActive(plan);
 
-            {selectedPlan && (
-              <>
-                <View style={styles.summaryBox}>
-                  <View>
-                    <Text style={styles.summaryName}>{selectedPlan.name}</Text>
-                    <Text style={styles.summaryPeriod}>
-                      Billed {selectedPlan.billingPeriod?.toLowerCase()}
+            return (
+              <AppCard
+                key={planId}
+                variant="elevated"
+                style={[
+                  styles.planCard,
+                  isActive ? { borderColor: colors.primary, borderWidth: 2 } : null,
+                ]}
+              >
+                <View style={styles.planHeaderRow}>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.planBadgeRow}>
+                      <View style={[styles.tierBadge, { backgroundColor: colors.surfaceVariant }]}>
+                        <Text style={[styles.tierBadgeText, { color: colors.onSurfaceVariant }]}>
+                          {plan.tier}
+                        </Text>
+                      </View>
+                      {isActive && (
+                        <View style={[styles.activePill, { backgroundColor: colors.primaryContainer }]}>
+                          <Text style={[styles.activePillText, { color: colors.onPrimaryContainer }]}>
+                            CURRENT PLAN
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <Text style={[styles.planTitle, { color: colors.onSurface }]}>
+                      {plan.name}
                     </Text>
                   </View>
-                  <Text style={styles.summaryPrice}>
-                    ₹{Math.round((selectedPlan.priceInPaise || 0) / 100)}
-                  </Text>
+
+                  <View style={styles.planPriceCol}>
+                    <Text style={[styles.priceRupees, { color: colors.onSurface }]}>
+                      ₹{priceRupees}
+                    </Text>
+                    <Text style={[styles.billingPeriod, { color: colors.onSurfaceVariant }]}>
+                      /{plan.billingPeriod?.toLowerCase() || 'mo'}
+                    </Text>
+                  </View>
                 </View>
 
-                {selectedPlan.trialDays > 0 && (
-                  <Text style={styles.trialNotice}>
-                    ⚡ Your first {selectedPlan.trialDays} days are 100% free! You can cancel anytime before the trial ends.
+                {regularRupees > priceRupees && (
+                  <Text style={[styles.regularPrice, { color: colors.onSurfaceVariant }]}>
+                    Regular: ₹{regularRupees}
                   </Text>
                 )}
 
-                <Pressable
-                  disabled={submitting}
-                  style={({ pressed }) => [
-                    styles.confirmBtn,
-                    submitting && { opacity: 0.6 },
-                    pressed && { opacity: 0.8 },
-                  ]}
-                  onPress={handleConfirmSubscription}
-                >
-                  {submitting ? (
-                    <ActivityIndicator color={Colors.bgDarkBase} />
+                {plan.trialDays > 0 && (
+                  <View style={[styles.trialBadge, { backgroundColor: colors.secondaryContainer }]}>
+                    <Zap size={13} color={colors.onSecondaryContainer} />
+                    <Text style={[styles.trialBadgeText, { color: colors.onSecondaryContainer }]}>
+                      {plan.trialDays}-Day Free Trial Included
+                    </Text>
+                  </View>
+                )}
+
+                {/* Features list */}
+                {Array.isArray(plan.features) && plan.features.length > 0 && (
+                  <View style={styles.featuresList}>
+                    {plan.features.map((feat, fIdx) => (
+                      <View key={fIdx} style={styles.featureItemRow}>
+                        <Check size={14} color={colors.primary} />
+                        <Text style={[styles.featureItemText, { color: colors.onSurface }]}>
+                          {feat}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <View style={styles.planActionWrap}>
+                  {isActive ? (
+                    <AppButton mode="outlined" label="Active Plan" disabled />
                   ) : (
-                    <>
-                      <Sparkles size={18} color={Colors.bgDarkBase} />
-                      <Text style={styles.confirmBtnText}>
-                        {selectedPlan.trialDays > 0
-                          ? `Start ${selectedPlan.trialDays}-Day Free Trial`
-                          : `Subscribe for ₹${Math.round((selectedPlan.priceInPaise || 0) / 100)}`}
-                      </Text>
-                    </>
+                    <AppButton
+                      tone={plan.trialDays > 0 ? 'accent' : 'primary'}
+                      label={plan.trialDays > 0 ? `Start ${plan.trialDays}-Day Free Trial` : `Select Plan (₹${priceRupees})`}
+                      onPress={() => handleOpenPlanModal(plan)}
+                    />
                   )}
-                </Pressable>
-              </>
+                </View>
+              </AppCard>
+            );
+          })
+        ) : (
+          <AppCard variant="outlined" style={styles.noPlansCard}>
+            <Text style={[styles.noPlansText, { color: colors.onSurfaceVariant }]}>
+              No subscription plans currently listed on the server.
+            </Text>
+          </AppCard>
+        )}
+      </ScrollView>
+
+      {/* Subscription Confirmation Modal */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.outlineVariant }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                {selectedPlan?.name || 'Membership'}
+              </Text>
+              <Pressable onPress={() => setModalVisible(false)} hitSlop={8}>
+                <X size={20} color={colors.onSurfaceVariant} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.modalSub, { color: colors.onSurfaceVariant }]}>
+              {selectedPlan?.trialDays > 0
+                ? `You will receive a ${selectedPlan.trialDays}-day full-access trial. After the trial, membership renews at ₹${Math.round((selectedPlan?.priceInPaise || 0) / 100)}/${selectedPlan?.billingPeriod?.toLowerCase() || 'month'}.`
+                : `Plan pricing: ₹${Math.round((selectedPlan?.priceInPaise || 0) / 100)} per ${selectedPlan?.billingPeriod?.toLowerCase() || 'month'}.`}
+            </Text>
+
+            {paymentOrder && (
+              <View style={[styles.paymentOrderBox, { backgroundColor: colors.surfaceVariant }]}>
+                <Text style={[styles.paymentOrderLabel, { color: colors.onSurfaceVariant }]}>
+                  Razorpay Order: {paymentOrder.razorpayOrderId || 'Pending gateway'}
+                </Text>
+                <Text style={[styles.paymentOrderAmount, { color: colors.onSurface }]}>
+                  Amount: ₹{Math.round((paymentOrder.amountInPaise || selectedPlan?.priceInPaise || 0) / 100)}
+                </Text>
+              </View>
             )}
+
+            <View style={styles.modalActionWrap}>
+              <AppButton
+                tone="primary"
+                label={selectedPlan?.trialDays > 0 ? 'Activate Free Trial' : 'Confirm Order'}
+                loading={submitting}
+                onPress={handleConfirmSubscription}
+              />
+            </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
   },
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 54,
+  flex: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 40,
-  },
-  navBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  navTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.textPrimary,
   },
   heroSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    paddingVertical: 16,
+    marginBottom: 8,
   },
   iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255, 184, 0, 0.12)',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 184, 0, 0.4)',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   heroTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '900',
-    color: Colors.textPrimary,
+    letterSpacing: -0.3,
+    marginBottom: 6,
     textAlign: 'center',
-    marginBottom: 8,
   },
   heroSubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: 'center',
     lineHeight: 19,
-    paddingHorizontal: 10,
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
   activeBanner: {
+    marginBottom: 16,
+  },
+  activeBannerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(0, 245, 155, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 245, 155, 0.3)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
+  },
+  activeMetaCol: {
+    flex: 1,
   },
   activeBannerTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    color: Colors.primaryNeon,
+    marginBottom: 2,
   },
   activeBannerSub: {
+    fontSize: 13,
+  },
+  activeExpiryText: {
     fontSize: 12,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
-  plansContainer: {
-    gap: 16,
-    marginBottom: 24,
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  skeletonWrap: {
+    paddingVertical: 12,
+  },
+  mbLg: {
+    marginBottom: 16,
   },
   planCard: {
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    padding: 20,
+    marginBottom: 16,
   },
-  planCardActive: {
-    borderColor: Colors.primaryNeon,
-    backgroundColor: 'rgba(0, 245, 155, 0.04)',
-  },
-  planCardAdvanced: {
-    borderColor: 'rgba(255, 184, 0, 0.4)',
-  },
-  planHeader: {
+  planHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  planTier: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.primaryNeon,
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  planName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  priceWrap: {
+  planBadgeRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
   },
-  priceText: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-  },
-  periodText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  regularPriceText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textDecorationLine: 'line-through',
-    marginBottom: 10,
-  },
-  trialPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0, 216, 246, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 216, 246, 0.3)',
-    borderRadius: 8,
+  tierBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    marginBottom: 14,
+    borderRadius: 6,
   },
-  trialPillText: {
+  tierBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  activePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  activePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  planTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  planPriceCol: {
+    alignItems: 'flex-end',
+  },
+  priceRupees: {
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  billingPeriod: {
+    fontSize: 12,
+  },
+  regularPrice: {
+    fontSize: 12,
+    textDecorationLine: 'line-through',
+    marginBottom: 6,
+  },
+  trialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  trialBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#00D8F6',
   },
   featuresList: {
-    gap: 8,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    marginBottom: 16,
+    gap: 6,
+    marginVertical: 10,
   },
-  featureRow: {
+  featureItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  featureText: {
+  featureItemText: {
     fontSize: 13,
-    color: Colors.textSecondary,
   },
-  chooseBtn: {
-    flexDirection: 'row',
+  planActionWrap: {
+    marginTop: 10,
+  },
+  noPlansCard: {
+    padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 14,
-    borderRadius: 14,
   },
-  chooseBtnText: {
-    color: Colors.bgDarkBase,
-    fontWeight: '800',
-    fontSize: 14,
+  noPlansText: {
+    fontSize: 13,
   },
-  activeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0, 245, 155, 0.12)',
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 245, 155, 0.3)',
-  },
-  activeBtnText: {
-    color: Colors.primaryNeon,
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  trustBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 16,
-    padding: 16,
-  },
-  trustText: {
+  modalBackdrop: {
     flex: 1,
-    fontSize: 12,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(6, 9, 19, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
   },
-  modalSheet: {
-    backgroundColor: '#0D1222',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
+  modalCard: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: Colors.borderGlass,
+    padding: 20,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: Colors.textPrimary,
   },
-  modalClose: {
-    padding: 4,
-  },
-  summaryBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
+  modalSub: {
+    fontSize: 13,
+    lineHeight: 18,
     marginBottom: 16,
   },
-  summaryName: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
+  paymentOrderBox: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
   },
-  summaryPeriod: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 2,
+  paymentOrderLabel: {
+    fontSize: 11,
+    marginBottom: 2,
   },
-  summaryPrice: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: Colors.textPrimary,
+  paymentOrderAmount: {
+    fontSize: 14,
+    fontWeight: '700',
   },
-  trialNotice: {
-    fontSize: 12,
-    color: '#00D8F6',
-    lineHeight: 18,
-    marginBottom: 20,
-    paddingHorizontal: 4,
-  },
-  confirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 15,
-    borderRadius: 14,
-    marginBottom: 20,
-  },
-  confirmBtnText: {
-    color: Colors.bgDarkBase,
-    fontWeight: '800',
-    fontSize: 15,
+  modalActionWrap: {
+    marginBottom: 16,
   },
 });

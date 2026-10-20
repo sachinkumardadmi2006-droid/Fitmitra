@@ -1,12 +1,15 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Dumbbell, Utensils, TrendingUp, LayoutGrid } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useAppTheme } from '../../theme/ThemeContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { theme } = useAppTheme();
 
   // Android Navigation bar inset fix: ensure bottom padding clears system buttons/gesture bar
   const bottomPadding = Math.max(insets.bottom, 10);
@@ -16,12 +19,12 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarActiveTintColor: theme.custom.primaryStrong,
+        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.outlineVariant,
+          borderTopWidth: StyleSheet.hairlineWidth,
           height: barHeight,
           paddingBottom: bottomPadding,
           paddingTop: 8,
@@ -33,9 +36,7 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '700',
-          letterSpacing: 0.2,
-          marginTop: 2,
+          fontWeight: '600',
         },
       }}
     >
@@ -48,11 +49,11 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 2. WORKOUT TAB */}
+      {/* 2. WORKOUTS TAB */}
       <Tabs.Screen
         name="workouts"
         options={{
-          title: 'Workout',
+          title: 'Workouts',
           tabBarIcon: ({ color, size }) => <Dumbbell size={size} color={color} />,
         }}
       />

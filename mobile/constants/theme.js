@@ -1,82 +1,57 @@
-// FitMitra Design Tokens — Design Authority: DESIGN.md (v2.1.0) & Material 3
+// FitMitra Design Tokens — Design Authority: Material 3 & New Palette
+import { lightColors, darkColors, lightCustom, darkCustom } from '../theme/colors';
 
-export const DarkTheme = {
-  isDark: true,
-  bgBase: '#080A0F',
-  surface: '#10131A',
-  surfaceElevated: '#171B24',
-  border: '#252B36',
-  borderLight: 'rgba(255, 255, 255, 0.08)',
-  borderFocus: '#B7FF00',
+export function mapThemeColors(colors, custom, isDark) {
+  return {
+    isDark,
+    bgBase: colors.background,
+    surface: colors.surface,
+    surfaceElevated: colors.elevation ? colors.elevation.level2 : colors.surface,
+    border: colors.outlineVariant,
+    borderLight: colors.outlineVariant,
+    borderFocus: custom.primaryStrong,
 
-  primary: '#add810ff', // Athletic fluorescent lime
-  primaryStrong: '#b3d810ff',
-  primaryGlow: 'rgba(183, 255, 0, 0.25)',
-  primaryDim: 'rgba(183, 255, 0, 0.1)',
+    primary: colors.primary,
+    primaryStrong: custom.primaryStrong,
+    primaryGlow: colors.primaryContainer,
+    primaryDim: colors.surfaceVariant,
 
-  secondaryCyan: '#00F0FF',
-  accentPurple: '#A855F7',
-  accentRose: '#F43F5E',
-  accentAmber: '#FFB800',
+    secondaryCyan: colors.tertiary,
+    accentPurple: custom.chart ? custom.chart[4] : '#7E57C2',
+    accentRose: colors.error,
+    accentAmber: colors.secondary,
 
-  textPrimary: '#FFFFFF',
-  textSecondary: '#A8AFBA',
-  textMuted: '#6F7783',
+    textPrimary: colors.onSurface,
+    textSecondary: colors.onSurfaceVariant,
+    textMuted: colors.outline,
 
-  cardBg: '#10131A',
-  cardElevation: 0,
-  cardShadow: 'none',
+    cardBg: colors.surface,
+    cardElevation: isDark ? 0 : 2,
+    cardShadow: isDark
+      ? 'none'
+      : {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 2,
+        },
 
-  success: '#35D07F',
-  warning: '#FFC857',
-  error: '#FF5C69',
-  info: '#4DA3FF',
-};
+    success: custom.success,
+    warning: custom.warning,
+    error: colors.error,
+    info: colors.tertiary,
+  };
+}
 
-export const LightTheme = {
-  isDark: false,
-  bgBase: '#F8F9FA',
-  surface: '#FFFFFF',
-  surfaceElevated: '#F1F3F5',
-  border: '#E5E7EB',
-  borderLight: 'rgba(0, 0, 0, 0.06)',
-  borderFocus: '#10B981',
-
-  primary: '#10B981', // Clean vibrant emerald
-  primaryStrong: '#059669',
-  primaryGlow: 'rgba(16, 185, 129, 0.25)',
-  primaryDim: 'rgba(16, 185, 129, 0.1)',
-
-  secondaryCyan: '#0284C7',
-  accentPurple: '#7C3AED',
-  accentRose: '#E11D48',
-  accentAmber: '#D97706',
-
-  textPrimary: '#111827',
-  textSecondary: '#4B5563',
-  textMuted: '#9CA3AF',
-
-  cardBg: '#FFFFFF',
-  cardElevation: 2,
-  cardShadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-
-  success: '#10B981',
-  warning: '#F59E0B',
-  error: '#EF4444',
-  info: '#3B82F6',
-};
+export const DarkTheme = mapThemeColors(darkColors, darkCustom, true);
+export const LightTheme = mapThemeColors(lightColors, lightCustom, false);
 
 // Backward-compatible default Colors (pointing to light theme tokens)
 export const Colors = {
   ...LightTheme,
-  bgDarkBase: LightTheme.bgBase,
-  bgDarkCard: LightTheme.surface,
+  bgDarkBase: DarkTheme.bgBase,
+  bgDarkCard: DarkTheme.surface,
   bgGlass: LightTheme.surface,
   bgGlassHover: LightTheme.surfaceElevated,
   borderGlass: LightTheme.borderLight,
@@ -97,8 +72,8 @@ export const Colors = {
   authGold: LightTheme.accentAmber,
   authBlue: LightTheme.info,
   authError: LightTheme.error,
-  authErrorBg: 'rgba(239, 68, 68, 0.1)',
-  authErrorBorder: 'rgba(239, 68, 68, 0.3)',
+  authErrorBg: 'rgba(186, 26, 26, 0.1)',
+  authErrorBorder: 'rgba(186, 26, 26, 0.3)',
 };
 
 export const Spacing = {

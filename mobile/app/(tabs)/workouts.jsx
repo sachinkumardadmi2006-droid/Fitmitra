@@ -1,1232 +1,760 @@
-// Workouts Tab — Exercises, Tutorials & Routines
-// Designed to match exact photo layout with instant preview and live backend API integration (GET /api/v1/exercises & GET /api/v1/programs)
-// Uploaded exercise videos from Admin Dashboard are rendered & playable directly.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
+  StyleSheet,
   Pressable,
   ScrollView,
-  StyleSheet,
-  Modal,
-  Image,
-  ActivityIndicator,
   RefreshControl,
-  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Search,
   Dumbbell,
+  Play,
+  RotateCcw,
+  CheckCircle2,
   Clock,
   Flame,
-  ChevronRight,
-  BookOpen,
-  AlertTriangle,
-  Lightbulb,
-  Lock,
-  Sparkles,
-  CheckCircle,
-  Crown,
   Calendar,
-  Play,
-  Edit3,
+  Lock,
+  ChevronRight,
+  TrendingUp,
+  Filter,
+  Sparkles,
+  Award,
   Zap,
-  Bell,
-  X,
-  Check,
 } from 'lucide-react-native';
-import { Colors, FontSize, BorderRadius, Spacing } from '../../constants/theme';
-import { workoutService, subscriptionService } from '../../services';
-import { onDbUpdate } from '../../utils/events';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { Chip } from 'react-native-paper';
+import { workoutService, normalizeTodayWorkout } from '../../services/workoutService';
+import { queryKeys } from '../../constants/queryKeys';
 import { TopBar } from '../../components/common/TopBar';
-import { useTheme } from '../../context/ThemeContext';
+import { useAppTheme } from '../../theme/ThemeContext';
+import AppCard from '../../components/ui/AppCard';
+import AppButton from '../../components/ui/AppButton';
+import SectionHeader from '../../components/ui/SectionHeader';
+import EmptyState from '../../components/ui/EmptyState';
+import Skeleton from '../../components/ui/Skeleton';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Default Exercise Data matching user photo (used as instant preview & fallback if server API is empty)
-const PHOTO_EXERCISES = [
-  {
-    id: 'ex-1',
-    name: 'Barbell Bench Press',
-    muscleGroups: ['CHEST', 'TRICEPS', 'SHOULDERS'],
-    equipment: ['BARBELL'],
-    difficulty: 'INTERMEDIATE',
-    defaultSets: 3,
-    defaultReps: '8–12',
-    duration: '4:32',
-    subtitle: 'Correct Form & Tips',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=600&q=80',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    instructions: [
-      'Lie flat on bench with feet planted firmly on floor.',
-      'Grasp barbell slightly wider than shoulder-width.',
-      'Lower bar to mid-chest with elbows at 45° angle.',
-      'Press explosively back up to starting position.',
-    ],
-    tips: ['Keep shoulder blades retracted and depressed.', 'Do not bounce bar off your chest.'],
-  },
-  {
-    id: 'ex-2',
-    name: 'Incline Dumbbell Press',
-    muscleGroups: ['CHEST', 'SHOULDERS', 'TRICEPS'],
-    equipment: ['DUMBBELL'],
-    difficulty: 'INTERMEDIATE',
-    defaultSets: 3,
-    defaultReps: '8–12',
-    duration: '3:58',
-    subtitle: 'Step by Step Guide',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    instructions: [
-      'Set bench to 30–45 degree incline.',
-      'Press dumbbells directly upwards until arms are fully extended.',
-      'Lower under control to chest level.',
-    ],
-    tips: ['Focus on squeezing upper chest at top of movement.'],
-  },
-  {
-    id: 'ex-3',
-    name: 'Chest Fly',
-    muscleGroups: ['CHEST'],
-    equipment: ['DUMBBELL'],
-    difficulty: 'BEGINNER',
-    defaultSets: 3,
-    defaultReps: '10–15',
-    duration: '4:10',
-    subtitle: 'Form & Common Mistakes',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1534367507873-d2d7e24c797f?auto=format&fit=crop&w=600&q=80',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
-    instructions: [
-      'Lie on flat bench holding dumbbells above chest with slight elbow bend.',
-      'Lower weights in wide arc until chest stretch is felt.',
-      'Bring dumbbells back together at top.',
-    ],
-    tips: ['Maintain constant elbow angle throughout movement.'],
-  },
-  {
-    id: 'ex-4',
-    name: 'Push Ups',
-    muscleGroups: ['CHEST', 'TRICEPS', 'CORE'],
-    equipment: ['BODYWEIGHT'],
-    difficulty: 'BEGINNER',
-    defaultSets: 3,
-    defaultReps: '12–20',
-    duration: '3:15',
-    subtitle: 'Beginner Form Guide',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1598971639058-fab3c3109a00?auto=format&fit=crop&w=600&q=80',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoylikes.mp4',
-    instructions: [
-      'Place hands shoulder-width apart in plank position.',
-      'Lower chest until nearly touching floor.',
-      'Push body back up in straight line.',
-    ],
-    tips: ['Keep core engaged to prevent lower back sagging.'],
-  },
-  {
-    id: 'ex-5',
-    name: 'Cable Crossover',
-    muscleGroups: ['CHEST'],
-    equipment: ['CABLE'],
-    difficulty: 'INTERMEDIATE',
-    defaultSets: 3,
-    defaultReps: '10–15',
-    duration: '4:45',
-    subtitle: 'Isolation Technique',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
-    instructions: [
-      'Stand in center of cable station with high pulleys.',
-      'Pull handles down and across body until hands meet in front.',
-      'Squeeze chest muscles at bottom of movement.',
-    ],
-    tips: ['Keep slight bend in elbows and control eccentric phase.'],
-  },
-  {
-    id: 'ex-6',
-    name: 'Chest Dips',
-    muscleGroups: ['CHEST', 'TRICEPS'],
-    equipment: ['BODYWEIGHT'],
-    difficulty: 'ADVANCED',
-    defaultSets: 3,
-    defaultReps: '8–12',
-    duration: '3:40',
-    subtitle: 'Lower Chest Builder',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=600&q=80',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-    instructions: [
-      'Grasp parallel dip bars and suspend body.',
-      'Lean forward slightly to emphasize chest.',
-      'Lower body until elbows are at 90° angle, then push up.',
-    ],
-    tips: ['Leaning forward targets lower chest over triceps.'],
-  },
+const GOAL_FILTERS = [
+  { key: 'ALL', label: 'All' },
+  { key: 'MUSCLE_GAIN', label: 'Muscle Gain' },
+  { key: 'WEIGHT_LOSS', label: 'Weight Loss' },
+  { key: 'GENERAL_FITNESS', label: 'General Fitness' },
 ];
 
-export default function Workouts() {
+export default function WorkoutsScreen() {
   const router = useRouter();
-  const { colors, isDark } = useTheme();
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
 
-  // State
-  const [query, setQuery] = useState('');
-  const [activeCat, setActiveCat] = useState('Chest');
-  const [activeDiff, setActiveDiff] = useState('All');
+  const [selectedFilter, setSelectedFilter] = useState('ALL');
 
-  // Backend API data merged with photo defaults
-  const [exercises, setExercises] = useState(PHOTO_EXERCISES);
-  const [programs, setPrograms] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-
-  // Video & Detail Modal state
-  const [activeVideoModal, setActiveVideoModal] = useState(null);
-  const [selectedEx, setSelectedEx] = useState(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeItemName, setUpgradeItemName] = useState('');
-  const [selectedRoutineId, setSelectedRoutineId] = useState('c1');
-
-  const categories = ['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
-  const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced'];
-
-  // Load backend data and merge uploaded exercises from Admin
-  const loadData = useCallback(async () => {
-    try {
-      // 1. Fetch live exercises from API
-      const exRes = await workoutService.getExercises({ limit: 100 }).catch(() => null);
-      const exItems = Array.isArray(exRes) ? exRes : exRes?.exercises || exRes?.items || [];
-
-      if (exItems.length > 0) {
-        // Merge API exercises with photo defaults so uploaded admin items appear alongside
-        const combined = [...exItems, ...PHOTO_EXERCISES];
-        // Deduplicate by name
-        const unique = Array.from(new Map(combined.map((item) => [item.name.toLowerCase(), item])).values());
-        setExercises(unique);
-      } else {
-        setExercises(PHOTO_EXERCISES);
-      }
-
-      // 2. Fetch live workout programs from API
-      const progRes = await workoutService.getPrograms({ limit: 50 }).catch(() => null);
-      const progItems = Array.isArray(progRes) ? progRes : progRes?.programs || progRes?.items || [];
-      if (progItems.length > 0) {
-        setPrograms(progItems);
-      }
-
-      // 3. Subscription check
-      try {
-        const sub = await subscriptionService.getMySubscription().catch(() => null);
-        setIsPremium(!!sub?.isActive);
-      } catch (_) {
-        setIsPremium(false);
-      }
-    } catch (err) {
-      console.warn('API fetch warning:', err.message);
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-    const unsub = onDbUpdate(loadData);
-    return unsub;
-  }, [loadData]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadData();
-  };
-
-  const isLocked = (diff) => {
-    if (isPremium) return false;
-    const d = (diff || '').toUpperCase();
-    return d === 'INTERMEDIATE' || d === 'ADVANCED' || diff === 'Intermediate' || diff === 'Advanced';
-  };
-
-  // Filter exercises by Category, Difficulty & Search
-  const filteredExercises = exercises.filter((ex) => {
-    const muscles = (ex.muscleGroups || []).map((m) => m.toLowerCase()).join(' ');
-    const diff = (ex.difficulty || '').toLowerCase();
-    const name = (ex.name || '').toLowerCase();
-    const equip = (ex.equipment || []).map((e) => e.toLowerCase()).join(' ');
-    const q = query.toLowerCase();
-
-    const matchesCat =
-      activeCat === 'All' ||
-      muscles.includes(activeCat.toLowerCase()) ||
-      (activeCat === 'Core' && muscles.includes('abs')) ||
-      (ex.name && ex.name.toLowerCase().includes(activeCat.toLowerCase()));
-
-    const matchesDiff = activeDiff === 'All' || diff.includes(activeDiff.toLowerCase());
-    const matchesSearch = !q || name.includes(q) || muscles.includes(q) || equip.includes(q);
-
-    return matchesCat && matchesDiff && matchesSearch;
+  // 1. Today's Workout Query
+  const todayQuery = useQuery({
+    queryKey: queryKeys.todayWorkout,
+    queryFn: async () => {
+      const res = await workoutService.getTodayWorkout();
+      return res ? normalizeTodayWorkout(res) : null;
+    },
+    staleTime: 60 * 1000,
   });
 
-  // Dynamic values
-  const activeWorkoutTitle = activeCat === 'All' ? 'Full Body Day' : `${activeCat} Day`;
-  const currentWorkoutExercises = filteredExercises.slice(0, 6);
+  // 2. Current Program Query
+  const currentProgramQuery = useQuery({
+    queryKey: queryKeys.currentProgram,
+    queryFn: async () => {
+      const res = await workoutService.getCurrentProgram();
+      const progData = res?.data || res;
+      return progData?.program ? progData : null;
+    },
+    staleTime: 60 * 1000,
+  });
 
-  const handleStartWorkout = () => {
-    if (programs.length > 0) {
-      const prog = programs[0];
-      router.push(`/workout/${prog._id || prog.id}`);
-    } else {
-      router.push('/workout/start');
+  // 3. Programs Query (cached per goal filter)
+  const programsQuery = useQuery({
+    queryKey: queryKeys.programs(selectedFilter),
+    queryFn: async () => {
+      const programParams = {};
+      if (selectedFilter && selectedFilter !== 'ALL') {
+        programParams.goal = selectedFilter;
+      }
+      const res = await workoutService.getPrograms(programParams);
+      return Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray(res)
+        ? res
+        : [];
+    },
+    staleTime: 60 * 1000,
+  });
+
+  // 4. Workout History Query
+  const historyQuery = useQuery({
+    queryKey: queryKeys.workoutHistory(10),
+    queryFn: async () => {
+      const res = await workoutService.getWorkoutHistory({ limit: 10 });
+      return Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray(res)
+        ? res
+        : [];
+    },
+    staleTime: 60 * 1000,
+  });
+
+  const todayWorkout = todayQuery.data || null;
+  const currentProgram = currentProgramQuery.data || null;
+  const programs = programsQuery.data || [];
+  const history = historyQuery.data || [];
+
+  const loading =
+    (todayQuery.isLoading && !todayQuery.data) ||
+    (programsQuery.isLoading && !programsQuery.data);
+
+  const refreshing =
+    todayQuery.isRefetching ||
+    currentProgramQuery.isRefetching ||
+    programsQuery.isRefetching ||
+    historyQuery.isRefetching;
+
+  const errorMessage =
+    todayQuery.isError && programsQuery.isError
+      ? 'Failed to load workouts. Pull down to retry.'
+      : null;
+
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      todayQuery.refetch(),
+      currentProgramQuery.refetch(),
+      programsQuery.refetch(),
+      historyQuery.refetch(),
+    ]);
+  }, [todayQuery, currentProgramQuery, programsQuery, historyQuery]);
+
+  const handleFilterChange = (key) => {
+    setSelectedFilter(key);
+  };
+
+  const formatGoal = (goal) => {
+    switch (goal) {
+      case 'MUSCLE_GAIN':
+        return 'Muscle Gain';
+      case 'WEIGHT_LOSS':
+        return 'Weight Loss';
+      case 'GENERAL_FITNESS':
+        return 'General Fitness';
+      default:
+        return goal || 'Fitness';
     }
   };
 
-  const handleExerciseClick = (ex) => {
-    if (isLocked(ex.difficulty)) {
-      setUpgradeItemName(ex.name);
-      setShowUpgradeModal(true);
-    } else {
-      setSelectedEx(ex);
-    }
+  const formatLevel = (level) => {
+    if (!level) return 'All Levels';
+    return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
   };
 
-  const handleVideoClick = (tut) => {
-    setActiveVideoModal(tut);
-  };
+  const sessionStatus = todayWorkout?.session?.status || 'not_started';
+  const isWorkoutCompleted = Boolean(todayWorkout?.hasCompletedToday || sessionStatus === 'completed');
+  const isWorkoutInProgress = sessionStatus === 'in_progress';
+  const isRestDay = Boolean(todayWorkout?.isRest || todayWorkout?.type === 'rest');
+  const todayWorkoutId = todayWorkout?.workout?.id || 'today';
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.bgBase }]}>
-      {/* Top Bar with Title & Notification Bell */}
-      <TopBar
-        title="Workouts"
-        subtitle="Exercises & Routines"
-        icon={Dumbbell}
-        rightAction={
-          <Pressable
-            style={[styles.bellBtn, { backgroundColor: isDark ? '#171B24' : '#F1F3F5' }]}
-            onPress={() => router.push('/notifications')}
-          >
-            <Bell size={19} color={colors.textPrimary} />
-            <View style={styles.bellBadge} />
-          </Pressable>
-        }
-      />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <TopBar title="Workouts" subtitle="Structured plans & training tracking" />
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 16, paddingTop: 8 }}
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A3E635" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={custom.primaryStrong}
+            progressBackgroundColor={colors.surface}
+          />
         }
       >
-        {/* 1. Search Bar */}
-        <View style={[styles.searchBox, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}>
-          <Search size={18} color="#6F7783" style={{ marginRight: 10 }} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.textPrimary }]}
-            placeholder="Search workouts or exercises..."
-            placeholderTextColor="#6F7783"
-            value={query}
-            onChangeText={setQuery}
-          />
-        </View>
-
-        {/* 2. Muscle Group Category Chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-          {categories.map((c) => {
-            const isActive = activeCat === c;
-            return (
-              <Pressable
-                key={c}
-                style={[
-                  styles.catChip,
-                  isActive
-                    ? styles.catChipActive
-                    : { backgroundColor: isDark ? '#171B24' : '#F1F3F5' },
-                ]}
-                onPress={() => setActiveCat(c)}
-              >
-                <Text
-                  style={[
-                    styles.catChipText,
-                    isActive ? styles.catChipTextActive : { color: colors.textSecondary },
-                  ]}
-                >
-                  {c}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* 3. Difficulty Chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRowDiff}>
-          {difficulties.map((d) => {
-            const isActive = activeDiff === d;
-            const locked = isLocked(d);
-            return (
-              <Pressable
-                key={d}
-                style={[
-                  styles.diffChip,
-                  isActive
-                    ? styles.diffChipActive
-                    : { backgroundColor: isDark ? '#171B24' : '#F1F3F5' },
-                ]}
-                onPress={() => setActiveDiff(d)}
-              >
-                <Text
-                  style={[
-                    styles.diffChipText,
-                    isActive ? styles.diffChipTextActive : { color: colors.textSecondary },
-                  ]}
-                >
-                  {d} {locked ? '🔒' : ''}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* 4. TODAY'S WORKOUT CARD */}
-        <View style={styles.todayCardContainer}>
-          <View style={styles.todayHeaderRow}>
-            <View style={styles.todayTitleGroup}>
-              <Calendar size={18} color="#A3E635" style={{ marginRight: 8 }} />
-              <Text style={[styles.todayHeaderText, { color: colors.textPrimary }]}>
-                Today's Workout
-              </Text>
-            </View>
-            <Pressable
-              style={styles.viewPlanBtn}
-              onPress={() => router.push('/(tabs)/programs')}
-            >
-              <Text style={styles.viewPlanText}>View Plan ›</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.bannerCard}>
-            <View style={styles.bannerLeft}>
-              <Text style={styles.bannerTitle}>{activeWorkoutTitle}</Text>
-              <Text style={styles.bannerMeta}>
-                {currentWorkoutExercises.length || 6} exercises • ~ 45 min • {activeDiff === 'All' ? 'Intermediate' : activeDiff}
-              </Text>
-              <Text style={styles.bannerDesc} numberOfLines={2}>
-                Build a stronger {activeCat.toLowerCase()} with compound and isolation exercises.
-              </Text>
-
-              <Pressable style={styles.startBtn} onPress={handleStartWorkout}>
-                <Play size={16} color="#000000" fill="#000000" style={{ marginRight: 8 }} />
-                <Text style={styles.startBtnText}>Start Workout</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.bannerRight}>
-              <Image
-                source={{
-                  uri: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80',
-                }}
-                style={styles.bannerImg}
-                resizeMode="cover"
-              />
-              <View style={styles.bannerOverlay} />
-            </View>
-          </View>
-        </View>
-
-        {/* 5. WORKOUT TUTORIAL VIDEOS SECTION */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <Play size={18} color="#A3E635" fill="#A3E635" style={{ marginRight: 8 }} />
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-              Workout Tutorial Videos
-            </Text>
-          </View>
-          <Pressable onPress={() => setActiveCat('All')}>
-            <Text style={styles.viewAllText}>View All →</Text>
-          </Pressable>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.videoRow}>
-          {filteredExercises.map((ex, idx) => (
-            <Pressable
-              key={ex.id || ex._id || idx}
-              style={styles.videoCard}
-              onPress={() => handleVideoClick(ex)}
-            >
-              <View style={styles.videoThumbBox}>
-                <Image
-                  source={{ uri: ex.thumbnailUrl || 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=600&q=80' }}
-                  style={styles.videoThumb}
-                  resizeMode="cover"
-                />
-                <View style={styles.videoDarkOverlay} />
-                <View style={styles.playCircle}>
-                  <Play size={16} color="#FFFFFF" fill="#FFFFFF" style={{ marginLeft: 2 }} />
-                </View>
-                <View style={styles.durationTag}>
-                  <Text style={styles.durationText}>{ex.duration || '4:15'}</Text>
-                </View>
-              </View>
-
-              <Text style={[styles.videoTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-                {ex.name}
-              </Text>
-              <Text style={styles.videoSubtitle} numberOfLines={1}>
-                {ex.subtitle || 'Correct Form & Tips'}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* 6. EXERCISES IN THIS WORKOUT SECTION */}
-        <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-          <View style={styles.sectionTitleRow}>
-            <Dumbbell size={18} color="#A3E635" style={{ marginRight: 8 }} />
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-              Exercises in This Workout ({currentWorkoutExercises.length})
-            </Text>
-          </View>
-          <Pressable style={styles.editBtn}>
-            <Edit3 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.editBtnText}>Edit Workout</Text>
-          </Pressable>
-        </View>
-
-        {currentWorkoutExercises.map((ex, idx) => (
-          <Pressable
-            key={ex.id || ex._id || idx}
+        {/* 1. Today's Scheduled Training Card */}
+        {todayWorkout && (
+          <AppCard
+            variant="elevated"
             style={[
-              styles.exCardRow,
-              { backgroundColor: isDark ? '#10131A' : '#FFFFFF' },
+              styles.todayCard,
+              isWorkoutCompleted ? { borderColor: colors.primary, borderWidth: 1 } : null,
             ]}
-            onPress={() => handleExerciseClick(ex)}
           >
-            <View style={styles.numBadge}>
-              <Text style={styles.numText}>{idx + 1}</Text>
-            </View>
-
-            <Image
-              source={{ uri: ex.thumbnailUrl || 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=600&q=80' }}
-              style={styles.exThumb}
-              resizeMode="cover"
-            />
-
-            <View style={styles.exDetails}>
-              <Text style={[styles.exTitle, { color: colors.textPrimary }]}>{ex.name}</Text>
-              <Text style={styles.exSub}>
-                {ex.defaultSets || 3} sets × {ex.defaultReps || '8–12'} reps
-              </Text>
-            </View>
-
-            <ChevronRight size={18} color="#6F7783" />
-          </Pressable>
-        ))}
-
-        {/* 7. RELATED ROUTINES SECTION */}
-        <View style={[styles.sectionHeader, { marginTop: 28 }]}>
-          <View style={styles.sectionTitleRow}>
-            <Zap size={18} color="#A3E635" style={{ marginRight: 8 }} />
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-              Related Routines
-            </Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/programs')}>
-            <Text style={styles.viewAllText}>View All →</Text>
-          </Pressable>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routineRow}>
-          <Pressable
-            style={[
-              styles.routineCard,
-              selectedRoutineId === 'c1'
-                ? styles.routineCardActive
-                : { backgroundColor: isDark ? '#10131A' : '#FFFFFF' },
-            ]}
-            onPress={() => setSelectedRoutineId('c1')}
-          >
-            <View style={styles.routineHeader}>
-              <View style={styles.routineIconBox}>
-                <Dumbbell size={16} color="#A3E635" />
-              </View>
-              <View style={styles.checkBadge}>
-                <Check size={12} color="#000000" />
-              </View>
-            </View>
-            <Text style={styles.routineName}>{activeCat} Day</Text>
-            <Text style={styles.routineMeta}>
-              {currentWorkoutExercises.length || 6} exercises • 45 min
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.routineCard,
-              selectedRoutineId === 'c2'
-                ? styles.routineCardActive
-                : { backgroundColor: isDark ? '#10131A' : '#FFFFFF' },
-            ]}
-            onPress={() => setSelectedRoutineId('c2')}
-          >
-            <View style={styles.routineHeader}>
-              <View style={styles.routineIconBox}>
-                <Flame size={16} color="#00F0FF" />
-              </View>
-            </View>
-            <Text style={styles.routineName}>Push Day</Text>
-            <Text style={styles.routineMeta}>8 exercises • 60 min</Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.routineCard,
-              selectedRoutineId === 'c3'
-                ? styles.routineCardActive
-                : { backgroundColor: isDark ? '#10131A' : '#FFFFFF' },
-            ]}
-            onPress={() => setSelectedRoutineId('c3')}
-          >
-            <View style={styles.routineHeader}>
-              <View style={styles.routineIconBox}>
-                <Zap size={16} color="#A855F7" />
-              </View>
-            </View>
-            <Text style={styles.routineName}>Upper Body</Text>
-            <Text style={styles.routineMeta}>10 exercises • 70 min</Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.routineCard,
-              selectedRoutineId === 'c4'
-                ? styles.routineCardActive
-                : { backgroundColor: isDark ? '#10131A' : '#FFFFFF' },
-            ]}
-            onPress={() => setSelectedRoutineId('c4')}
-          >
-            <View style={styles.routineHeader}>
-              <View style={styles.routineIconBox}>
-                <Crown size={16} color="#FFB800" />
-              </View>
-            </View>
-            <Text style={styles.routineName}>Beginner Chest</Text>
-            <Text style={styles.routineMeta}>5 exercises • 35 min</Text>
-          </Pressable>
-        </ScrollView>
-      </ScrollView>
-
-      {/* 8. VIDEO TUTORIAL MODAL PLAYER */}
-      <Modal visible={!!activeVideoModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.videoModalContent, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}>
-            {activeVideoModal && (
-              <>
-                <View style={styles.modalTopHeader}>
-                  <Text style={[styles.modalTitleText, { color: colors.textPrimary }]}>
-                    {activeVideoModal.name}
-                  </Text>
-                  <Pressable onPress={() => setActiveVideoModal(null)} style={styles.modalCloseBtn}>
-                    <X size={20} color={colors.textPrimary} />
-                  </Pressable>
-                </View>
-
-                <View style={styles.playerBox}>
-                  <Image
-                    source={{ uri: activeVideoModal.thumbnailUrl || 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=600&q=80' }}
-                    style={styles.playerThumb}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.playerOverlay}>
-                    <View style={styles.bigPlayBtn}>
-                      <Play size={28} color="#000000" fill="#000000" style={{ marginLeft: 3 }} />
-                    </View>
-                    <Text style={styles.streamingText}>
-                      {activeVideoModal.videoUrl
-                        ? 'Streaming Uploaded Video Stream'
-                        : 'Playing Exercise Demonstration'}
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.tagWrap}>
+                {isWorkoutCompleted ? (
+                  <View style={[styles.statusTag, { backgroundColor: colors.primaryContainer }]}>
+                    <CheckCircle2 size={13} color={colors.onPrimaryContainer} />
+                    <Text style={[styles.statusTagText, { color: colors.onPrimaryContainer }]}>
+                      TODAY'S WORKOUT COMPLETED
                     </Text>
                   </View>
-                </View>
-
-                <ScrollView style={{ maxHeight: 220, marginTop: 16 }}>
-                  <Text style={styles.modalSectionHeading}>Execution Guide</Text>
-                  {activeVideoModal.instructions?.length > 0 ? (
-                    activeVideoModal.instructions.map((inst, i) => (
-                      <Text key={i} style={[styles.modalInstructionText, { color: colors.textSecondary }]}>
-                        {i + 1}. {inst}
-                      </Text>
-                    ))
-                  ) : (
-                    <Text style={[styles.modalInstructionText, { color: colors.textSecondary }]}>
-                      1. Maintain proper form and keep your core engaged throughout the set.
-                    </Text>
-                  )}
-                </ScrollView>
-
-                <Pressable
-                  style={styles.closeModalFullBtn}
-                  onPress={() => setActiveVideoModal(null)}
-                >
-                  <Text style={styles.closeModalFullBtnText}>Close Video Player</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* 9. EXERCISE DETAIL MODAL */}
-      <Modal visible={!!selectedEx} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <ScrollView
-            style={[styles.modalContent, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}
-            contentContainerStyle={{ paddingBottom: 40 }}
-          >
-            {selectedEx && (
-              <>
-                <View style={styles.modalHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.modalName, { color: colors.textPrimary }]}>{selectedEx.name}</Text>
-                    <Text style={styles.modalSub}>
-                      {(selectedEx.muscleGroups || []).join(', ')} • {(selectedEx.equipment || []).join(', ')}
+                ) : isRestDay ? (
+                  <View style={[styles.statusTag, { backgroundColor: colors.surfaceVariant }]}>
+                    <Sparkles size={13} color={colors.onSurfaceVariant} />
+                    <Text style={[styles.statusTagText, { color: colors.onSurfaceVariant }]}>
+                      REST & RECOVERY
                     </Text>
                   </View>
-                  <Pressable onPress={() => setSelectedEx(null)}>
-                    <Text style={styles.closeBtn}>×</Text>
-                  </Pressable>
-                </View>
-
-                <View style={styles.exStats}>
-                  <View style={styles.exStat}>
-                    <Text style={styles.exStatLabel}>Sets</Text>
-                    <Text style={styles.exStatVal}>{selectedEx.defaultSets || 3}</Text>
+                ) : isWorkoutInProgress ? (
+                  <View style={[styles.statusTag, { backgroundColor: colors.errorContainer }]}>
+                    <RotateCcw size={13} color={colors.onErrorContainer} />
+                    <Text style={[styles.statusTagText, { color: colors.onErrorContainer }]}>
+                      SESSION IN PROGRESS
+                    </Text>
                   </View>
-                  <View style={styles.exStat}>
-                    <Text style={styles.exStatLabel}>Reps</Text>
-                    <Text style={styles.exStatVal}>{selectedEx.defaultReps || 10}</Text>
-                  </View>
-                  <View style={styles.exStat}>
-                    <Text style={styles.exStatLabel}>Rest</Text>
-                    <Text style={styles.exStatVal}>{selectedEx.defaultRest || 60}s</Text>
-                  </View>
-                  <View style={styles.exStat}>
-                    <Text style={styles.exStatLabel}>Level</Text>
-                    <Text style={styles.exStatVal}>{selectedEx.difficulty || 'Beginner'}</Text>
-                  </View>
-                </View>
-
-                {selectedEx.instructions?.length > 0 && (
-                  <View style={styles.instrBox}>
-                    <Text style={styles.instrTitle}>Instructions</Text>
-                    {selectedEx.instructions.map((inst, i) => (
-                      <Text key={i} style={styles.instrItem}>
-                        {i + 1}. {inst}
-                      </Text>
-                    ))}
+                ) : (
+                  <View style={[styles.statusTag, { backgroundColor: colors.secondaryContainer }]}>
+                    <Dumbbell size={13} color={colors.onSecondaryContainer} />
+                    <Text style={[styles.statusTagText, { color: colors.onSecondaryContainer }]}>
+                      TODAY'S ROUTINE
+                    </Text>
                   </View>
                 )}
-              </>
+              </View>
+
+              <Text style={[styles.levelBadge, { color: colors.onSurfaceVariant }]}>
+                {todayWorkout.workout.level || 'Standard'}
+              </Text>
+            </View>
+
+            <Text style={[styles.todayTitle, { color: colors.onSurface }]}>
+              {isRestDay ? 'Rest & Muscle Recovery' : todayWorkout.workout.title}
+            </Text>
+
+            <Text style={[styles.todaySub, { color: colors.onSurfaceVariant }]}>
+              {isRestDay
+                ? 'Your muscles repair and strengthen during rest days. Hydrate and eat high-protein meals.'
+                : todayWorkout.workout.programName
+                ? `Part of ${todayWorkout.workout.programName}`
+                : 'Follow the exercise sets and log each exercise to track your performance.'}
+            </Text>
+
+            {!isRestDay && (
+              <View style={styles.metaRow}>
+                <View style={styles.metaItem}>
+                  <Clock size={15} color={colors.primary} />
+                  <Text style={[styles.metaText, { color: colors.onSurface }]}>
+                    ~{todayWorkout.workout.estimatedMin || 40} mins
+                  </Text>
+                </View>
+                <View style={styles.metaItem}>
+                  <Dumbbell size={15} color={colors.primary} />
+                  <Text style={[styles.metaText, { color: colors.onSurface }]}>
+                    {todayWorkout.workout.exercises?.length || 0} exercises
+                  </Text>
+                </View>
+                <View style={styles.metaItem}>
+                  <Zap size={15} color={colors.secondary} />
+                  <Text style={[styles.metaText, { color: colors.onSurface }]}>
+                    +5 reward pts
+                  </Text>
+                </View>
+              </View>
             )}
-          </ScrollView>
-        </View>
-      </Modal>
+
+            <View style={styles.todayActionWrap}>
+              {isWorkoutCompleted ? (
+                <AppButton
+                  mode="outlined"
+                  label="Review Completed Routine"
+                  icon="check-circle"
+                  onPress={() => router.push(`/workout/${todayWorkoutId}`)}
+                />
+              ) : isRestDay ? (
+                <AppButton
+                  mode="outlined"
+                  label="Explore Workout Programs"
+                  icon="compass"
+                  onPress={() => {}}
+                />
+              ) : isWorkoutInProgress ? (
+                <AppButton
+                  tone="primary"
+                  label="Resume Workout Session"
+                  icon="play"
+                  onPress={() => router.push(`/workout/${todayWorkoutId}`)}
+                />
+              ) : (
+                <AppButton
+                  tone="primary"
+                  label="Start Today's Workout"
+                  icon="play"
+                  onPress={() => router.push(`/workout/${todayWorkoutId}`)}
+                />
+              )}
+            </View>
+          </AppCard>
+        )}
+
+        {/* 2. Active Enrolled Program Banner */}
+        {currentProgram?.program && (
+          <AppCard variant="outlined" style={styles.activeProgramCard}>
+            <View style={styles.activeProgramHeader}>
+              <View style={styles.rowAlign}>
+                <Award size={18} color={colors.primary} />
+                <Text style={[styles.activeProgLabel, { color: colors.primary }]}>
+                  CURRENT ENROLLED PROGRAM
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.progressPill,
+                  { backgroundColor: colors.primaryContainer },
+                ]}
+              >
+                <Text style={[styles.progressPillText, { color: colors.onPrimaryContainer }]}>
+                  Week {currentProgram.weekNumber || 1} • Day {currentProgram.dayNumber || 1}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.activeProgTitle, { color: colors.onSurface }]}>
+              {currentProgram.program.title}
+            </Text>
+
+            <Text style={[styles.activeProgMeta, { color: colors.onSurfaceVariant }]}>
+              {formatGoal(currentProgram.program.goal)} • {formatLevel(currentProgram.program.level)} • {currentProgram.program.durationWeeks} Weeks
+            </Text>
+
+            <AppButton
+              mode="text"
+              label="View Program Details"
+              icon="arrow-right"
+              style={{ alignSelf: 'flex-start', marginTop: 4 }}
+              onPress={() => router.push(`/workout/${currentProgram.program.id}`)}
+            />
+          </AppCard>
+        )}
+
+        {/* 3. Program Discovery Section */}
+        <SectionHeader title="Explore Programs" />
+
+        {/* Filter Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterChipRow}
+        >
+          {GOAL_FILTERS.map((f) => {
+            const isSelected = selectedFilter === f.key;
+            return (
+              <Chip
+                key={f.key}
+                selected={isSelected}
+                onPress={() => handleFilterChange(f.key)}
+                style={[
+                  styles.filterChip,
+                  isSelected
+                    ? { backgroundColor: colors.primaryContainer }
+                    : { backgroundColor: colors.surfaceVariant },
+                ]}
+                textStyle={{
+                  color: isSelected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                  fontWeight: isSelected ? '700' : '500',
+                  fontSize: 13,
+                }}
+              >
+                {f.label}
+              </Chip>
+            );
+          })}
+        </ScrollView>
+
+        {/* Programs List */}
+        {loading && programs.length === 0 ? (
+          <View style={styles.skeletonWrap}>
+            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
+            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
+            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
+          </View>
+        ) : programs.length > 0 ? (
+          programs.map((prog) => {
+            const progId = prog._id || prog.id;
+            const isLocked = Boolean(prog.locked);
+
+            return (
+              <AppCard
+                key={progId}
+                variant="elevated"
+                onPress={() => router.push(`/workout/${progId}`)}
+                style={styles.programCard}
+              >
+                <View style={styles.programCardTop}>
+                  <View style={styles.programTitleCol}>
+                    <Text style={[styles.programTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                      {prog.name}
+                    </Text>
+                    <Text style={[styles.programDesc, { color: colors.onSurfaceVariant }]} numberOfLines={2}>
+                      {prog.description || 'Structured strength and conditioning plan tailored to build endurance and muscle.'}
+                    </Text>
+                  </View>
+
+                  {isLocked && (
+                    <View
+                      style={[
+                        styles.lockBadge,
+                        { backgroundColor: colors.surfaceVariant },
+                      ]}
+                    >
+                      <Lock size={14} color={colors.secondary} />
+                      <Text style={[styles.lockText, { color: colors.secondary }]}>PRO</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Metadata Pills */}
+                <View style={styles.progMetaRow}>
+                  <View style={[styles.progPill, { backgroundColor: colors.surfaceVariant }]}>
+                    <Text style={[styles.progPillText, { color: colors.onSurfaceVariant }]}>
+                      {formatGoal(prog.goal)}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.progPill, { backgroundColor: colors.surfaceVariant }]}>
+                    <Text style={[styles.progPillText, { color: colors.onSurfaceVariant }]}>
+                      {formatLevel(prog.level)}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.progPill, { backgroundColor: colors.surfaceVariant }]}>
+                    <Clock size={12} color={colors.onSurfaceVariant} style={{ marginRight: 4 }} />
+                    <Text style={[styles.progPillText, { color: colors.onSurfaceVariant }]}>
+                      {prog.durationWeeks ? `${prog.durationWeeks} Wks` : '4 Wks'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.progFooterRow}>
+                  <Text style={[styles.progDaysMeta, { color: colors.onSurfaceVariant }]}>
+                    {prog.daysPerWeek ? `${prog.daysPerWeek} days / week` : 'Structured schedule'}
+                  </Text>
+                  <View style={styles.rowAlign}>
+                    <Text style={[styles.viewDetailsText, { color: custom.primaryStrong }]}>
+                      {isLocked ? 'View Details' : 'Start Workout'}
+                    </Text>
+                    <ChevronRight size={16} color={custom.primaryStrong} />
+                  </View>
+                </View>
+              </AppCard>
+            );
+          })
+        ) : (
+          <EmptyState
+            icon="dumbbell"
+            title="No Programs Found"
+            description="No training programs match the selected filter. Try selecting 'All' to browse available routines."
+            actionLabel="Reset Filters"
+            onAction={() => handleFilterChange('ALL')}
+          />
+        )}
+
+        {/* 4. Workout History Section */}
+        <SectionHeader title="Workout History" />
+
+        {history.length > 0 ? (
+          history.map((session, index) => {
+            const dateStr = session.completedAt || session.startedAt;
+            const dateLabel = dateStr
+              ? new Date(dateStr).toLocaleDateString(undefined, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : 'Recent Session';
+
+            const durationMins = Math.max(1, Math.round((session.durationSeconds || 1800) / 60));
+            const calories = session.caloriesEstimate || Math.round(durationMins * 7.5);
+
+            return (
+              <AppCard
+                key={session._id || session.id || index}
+                variant="outlined"
+                style={styles.historyCard}
+              >
+                <View style={styles.historyRow}>
+                  <View
+                    style={[
+                      styles.historyIconWrap,
+                      { backgroundColor: colors.primaryContainer },
+                    ]}
+                  >
+                    <CheckCircle2 size={18} color={colors.onPrimaryContainer} />
+                  </View>
+
+                  <View style={styles.historyMetaCol}>
+                    <Text style={[styles.historyTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                      {session.title || session.routineName || 'Completed Workout'}
+                    </Text>
+                    <Text style={[styles.historySub, { color: colors.onSurfaceVariant }]}>
+                      {dateLabel} • {durationMins} mins • {calories} kcal
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.historyBadge,
+                      { backgroundColor: colors.surfaceVariant },
+                    ]}
+                  >
+                    <Zap size={13} color={colors.secondary} />
+                    <Text style={[styles.historyBadgeText, { color: colors.onSurface }]}>
+                      +5 pts
+                    </Text>
+                  </View>
+                </View>
+              </AppCard>
+            );
+          })
+        ) : (
+          <EmptyState
+            icon="calendar"
+            title="No Workout History"
+            description="Sessions you complete will appear here with duration, calories burned, and points earned."
+          />
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  root: {
     flex: 1,
   },
-  bellBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#FF5C69',
-  },
-  scrollView: {
+  flex: {
     flex: 1,
   },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 46,
-    borderWidth: 1,
-    borderColor: '#252B36',
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  catChip: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  catChipActive: {
-    backgroundColor: '#A3E635',
-  },
-  catChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  catChipTextActive: {
-    color: '#000000',
-    fontWeight: '700',
-  },
-  chipRowDiff: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  diffChip: {
+  scrollContent: {
     paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
-    marginRight: 8,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
-  diffChipActive: {
-    backgroundColor: '#00F0FF',
-  },
-  diffChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  diffChipTextActive: {
-    color: '#000000',
-    fontWeight: '700',
-  },
-  todayCardContainer: {
-    marginBottom: 20,
-  },
-  todayHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  todayTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  todayHeaderText: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  viewPlanBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(163, 230, 53, 0.12)',
-  },
-  viewPlanText: {
-    color: '#A3E635',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  bannerCard: {
-    backgroundColor: '#10131A',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#252B36',
-    flexDirection: 'row',
-    overflow: 'hidden',
-    padding: 16,
-    minHeight: 180,
-  },
-  bannerLeft: {
-    flex: 1,
-    paddingRight: 10,
-    justifyContent: 'space-between',
-  },
-  bannerTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  bannerMeta: {
-    color: '#A8AFBA',
-    fontSize: 12,
-    marginVertical: 4,
-  },
-  bannerDesc: {
-    color: '#6F7783',
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 14,
-  },
-  startBtn: {
-    backgroundColor: '#A3E635',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  startBtnText: {
-    color: '#000000',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  bannerRight: {
-    width: 110,
-    height: 150,
-    borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  bannerImg: {
-    width: '100%',
-    height: '100%',
-  },
-  bannerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  viewAllText: {
-    color: '#A3E635',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#252B36',
-    backgroundColor: '#171B24',
-  },
-  editBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  videoRow: {
-    flexDirection: 'row',
-  },
-  videoCard: {
-    width: 200,
-    marginRight: 14,
-  },
-  videoThumbBox: {
-    width: 200,
-    height: 115,
-    borderRadius: 14,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: 8,
-    backgroundColor: '#171B24',
-  },
-  videoThumb: {
-    width: '100%',
-    height: '100%',
-  },
-  videoDarkOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  playCircle: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    marginLeft: -18,
-    marginTop: -18,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  durationTag: {
-    position: 'absolute',
-    bottom: 6,
-    right: 6,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  durationText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  videoTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  videoSubtitle: {
-    color: '#6F7783',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  exCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#252B36',
-    marginBottom: 10,
-  },
-  numBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#171B24',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  numText: {
-    color: '#A8AFBA',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  exThumb: {
-    width: 50,
-    height: 40,
-    borderRadius: 8,
-    marginRight: 12,
-    backgroundColor: '#171B24',
-  },
-  exDetails: {
-    flex: 1,
-  },
-  exTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  exSub: {
-    color: '#6F7783',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  routineRow: {
-    flexDirection: 'row',
-  },
-  routineCard: {
-    width: 145,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#252B36',
-    marginRight: 12,
-    justifyContent: 'space-between',
-    minHeight: 90,
-  },
-  routineCardActive: {
-    borderColor: '#A3E635',
-    backgroundColor: 'rgba(163, 230, 53, 0.08)',
-  },
-  routineHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  routineIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#171B24',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#A3E635',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  routineName: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  routineMeta: {
-    color: '#6F7783',
-    fontSize: 10,
-    marginTop: 4,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'flex-end',
-  },
-  videoModalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '85%',
-  },
-  modalTopHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  modalTitleText: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  modalCloseBtn: {
-    padding: 4,
-  },
-  playerBox: {
-    width: '100%',
-    height: 190,
-    borderRadius: 16,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: '#000000',
-  },
-  playerThumb: {
-    width: '100%',
-    height: '100%',
-  },
-  playerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bigPlayBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#A3E635',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  streamingText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  modalSectionHeading: {
-    color: '#A3E635',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  modalInstructionText: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 6,
-  },
-  closeModalFullBtn: {
-    backgroundColor: '#171B24',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: '#252B36',
-  },
-  closeModalFullBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  todayCard: {
     marginBottom: 16,
   },
-  modalName: {
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  tagWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  levelBadge: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  todayTitle: {
     fontSize: 20,
     fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 4,
   },
-  modalSub: {
-    color: '#6F7783',
-    fontSize: 12,
-    marginTop: 2,
+  todaySub: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
   },
-  closeBtn: {
-    fontSize: 24,
-    color: '#6F7783',
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 16,
   },
-  exStats: {
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  metaText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  todayActionWrap: {
+    marginTop: 4,
+  },
+  activeProgramCard: {
+    marginBottom: 16,
+  },
+  activeProgramHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  activeProgLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  progressPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  progressPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  activeProgTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  activeProgMeta: {
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  filterChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: 12,
+    paddingTop: 4,
+  },
+  filterChip: {
+    borderRadius: 20,
+  },
+  skeletonWrap: {
+    paddingVertical: 8,
+  },
+  mbMd: {
+    marginBottom: 12,
+  },
+  programCard: {
+    marginBottom: 12,
+  },
+  programCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#171B24',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 16,
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
-  exStat: {
+  programTitleCol: {
+    flex: 1,
+    marginRight: 8,
+  },
+  programTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  programDesc: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  lockBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  exStatLabel: {
-    color: '#6F7783',
+  lockText: {
     fontSize: 11,
+    fontWeight: '800',
   },
-  exStatVal: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+  progMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  progPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  progPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  progFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.2)',
+    paddingTop: 10,
     marginTop: 2,
   },
-  instrBox: {
-    marginBottom: 16,
+  progDaysMeta: {
+    fontSize: 12,
   },
-  instrTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+  viewDetailsText: {
+    fontSize: 13,
     fontWeight: '700',
+  },
+  historyCard: {
     marginBottom: 8,
   },
-  instrItem: {
-    color: '#A8AFBA',
-    fontSize: 13,
-    marginBottom: 6,
-    lineHeight: 18,
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  historyMetaCol: {
+    flex: 1,
+  },
+  historyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  historySub: {
+    fontSize: 12,
+  },
+  historyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  historyBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rowAlign: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
 });

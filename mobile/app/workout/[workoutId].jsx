@@ -1,6 +1,3 @@
-// Interactive Workout Player & Session Detail Screen
-// Now connected to POST /api/v1/workouts/start, log-exercise, and complete
-// Awards +5 Reward Points on completion via server
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -8,8 +5,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Image,
-  Modal,
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +14,7 @@ import {
   Flame,
   Dumbbell,
   Play,
+  Pause,
   RotateCcw,
   CheckCircle2,
   ChevronRight,
@@ -26,211 +22,254 @@ import {
   X,
   Sparkles,
   Zap,
+  Info,
+  Check,
+  FastForward,
 } from 'lucide-react-native';
-import { Colors } from '../../constants/theme';
-import { workoutService } from '../../services';
+import { ProgressBar } from 'react-native-paper';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { workoutService, normalizeTodayWorkout } from '../../services/workoutService';
+import { emitDbUpdate } from '../../utils/events';
 import { PointsCelebrationModal } from '../../components/modals/PointsCelebrationModal';
+import AppCard from '../../components/ui/AppCard';
+import AppButton from '../../components/ui/AppButton';
+import AppHeader from '../../components/ui/AppHeader';
+import SectionHeader from '../../components/ui/SectionHeader';
+import EmptyState from '../../components/ui/EmptyState';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import Skeleton from '../../components/ui/Skeleton';
 
-export default function WorkoutDetailScreen() {
+export default function WorkoutDetailAndPlayerScreen() {
   const { workoutId } = useLocalSearchParams();
   const router = useRouter();
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
 
   const [workout, setWorkout] = useState(null);
-  const [loadingWorkout, setLoadingWorkout] = useState(true);
-
-  // Server session tracking
+  const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState(null);
 
-  // Player state
+  // Active Player State
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [currentExIndex, setCurrentExIndex] = useState(0);
   const [completedSets, setCompletedSets] = useState({}); // { '0_0': true }
   const [isResting, setIsResting] = useState(false);
   const [restTimeLeft, setRestTimeLeft] = useState(60);
+  const [initialRestDuration, setInitialRestDuration] = useState(60);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [isFinished, setIsFinished] = useState(false);
-  const [savingHistory, setSavingHistory] = useState(false);
+  const [savingSession, setSavingSession] = useState(false);
 
-  // +5 Points reward modal
+  // Dialogs
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+
+  // Points celebration
   const [showPointsModal, setShowPointsModal] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [newPointsBalance, setNewPointsBalance] = useState(null);
 
+  // Load workout routine
   useEffect(() => {
     let isMounted = true;
-    const fetchRoutine = async () => {
-      setLoadingWorkout(true);
+
+    const fetchWorkout = async () => {
+      setLoading(true);
       try {
-        // Try fetching as program
+        // 1. If "today" or matches today, check today's workout endpoint first
+        if (workoutId === 'today' || !workoutId) {
+          const todayRes = await workoutService.getTodayWorkout();
+          if (todayRes && isMounted) {
+            const norm = normalizeTodayWorkout(todayRes);
+            if (norm?.workout?.exercises?.length > 0) {
+              setWorkout({
+                id: norm.workout.id || 'today',
+                title: norm.workout.title,
+                programName: norm.workout.programName || 'Scheduled Routine',
+                level: norm.workout.level || 'Beginner',
+                estimatedMin: norm.workout.estimatedMin || 40,
+                exercises: norm.workout.exercises,
+              });
+              if (norm.session?.id) {
+                setSessionId(norm.session.id);
+              }
+              setLoading(false);
+              return;
+            }
+          }
+        }
+
+        // 2. Try fetching as Program by ID
         try {
-          const prog = await workoutService.getProgram(workoutId);
+          const progRes = await workoutService.getProgram(workoutId);
+          const prog = progRes?.data || progRes;
           if (prog && isMounted) {
+            const firstRoutine = prog.weeks?.[0]?.days?.[0] || prog.routines?.[0] || {};
+            const exercises = (firstRoutine.exercises || []).map((ex, idx) => ({
+              exerciseId: String(ex.exerciseId || ex._id || ex.id || `ex_${idx}`),
+              name: ex.name || 'Exercise',
+              sets: Number(ex.sets || ex.targetSets || 3),
+              reps: String(ex.reps || ex.targetReps || '10-12'),
+              restSec: Number(ex.restSec || ex.restSeconds || 60),
+              instructions: Array.isArray(ex.instructions) ? ex.instructions : [],
+              muscleGroups: Array.isArray(ex.muscleGroups) ? ex.muscleGroups : [],
+            }));
+
             setWorkout({
-              id: prog._id || prog.id,
-              name: prog.name,
-              tagline: prog.description,
-              category: prog.goal,
-              difficulty: prog.level,
-              duration: 45,
-              calories: 320,
-              exercises: prog.routines?.[0]?.exercises || [],
+              id: prog._id || prog.id || workoutId,
+              title: prog.name || 'Program Workout',
+              programName: prog.name,
+              level: prog.level || 'Beginner',
+              estimatedMin: Math.max(25, exercises.length * 8),
+              description: prog.description,
+              exercises,
             });
-            setLoadingWorkout(false);
+            setLoading(false);
             return;
           }
         } catch (_) {}
 
-        // Try fetching as single exercise
-        try {
-          const ex = await workoutService.getExercise(workoutId);
-          if (ex && isMounted) {
+        // 3. Fallback: check today's workout
+        const todayRes = await workoutService.getTodayWorkout();
+        if (todayRes && isMounted) {
+          const norm = normalizeTodayWorkout(todayRes);
+          if (norm?.workout?.exercises?.length > 0) {
             setWorkout({
-              id: ex._id || ex.id,
-              name: ex.name,
-              tagline: ex.description,
-              category: ex.muscleGroups?.[0] || 'Strength',
-              difficulty: ex.difficulty || 'Beginner',
-              duration: 30,
-              calories: 220,
-              exercises: [
-                {
-                  exerciseId: ex._id || ex.id,
-                  name: ex.name,
-                  sets: 4,
-                  reps: 12,
-                  rest: 60,
-                  instructions: ex.instructions || [],
-                },
-              ],
+              id: norm.workout.id || workoutId,
+              title: norm.workout.title,
+              programName: norm.workout.programName || 'Daily Routine',
+              level: norm.workout.level || 'Beginner',
+              estimatedMin: norm.workout.estimatedMin || 40,
+              exercises: norm.workout.exercises,
             });
-            setLoadingWorkout(false);
+            if (norm.session?.id) {
+              setSessionId(norm.session.id);
+            }
+            setLoading(false);
             return;
           }
-        } catch (_) {}
-
-        // Fallback: load general exercises list
-        const res = await workoutService.getExercises({ limit: 5 });
-        const items = Array.isArray(res) ? res : (res?.items || res?.exercises || []);
-        if (items.length > 0 && isMounted) {
-          setWorkout({
-            id: workoutId,
-            name: 'Full Body Activation',
-            tagline: 'High-intensity compound workout for strength and fat burn',
-            category: 'Full Body',
-            difficulty: 'Intermediate',
-            duration: 40,
-            calories: 300,
-            exercises: items.map((it) => ({
-              exerciseId: it._id || it.id,
-              name: it.name,
-              sets: 3,
-              reps: 12,
-              rest: 60,
-              instructions: it.instructions || [],
-            })),
-          });
         }
       } catch (err) {
-        console.warn('Failed to load workout routine:', err.message);
+        console.warn('[WorkoutDetail] Fetch error:', err.message);
       } finally {
-        if (isMounted) setLoadingWorkout(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    fetchRoutine();
-    return () => { isMounted = false; };
+    fetchWorkout();
+    return () => {
+      isMounted = false;
+    };
   }, [workoutId]);
 
-  // Elapsed timer
+  // Elapsed Session Timer
   useEffect(() => {
     let timer;
-    if (isPlaying && !isFinished) {
+    if (isPlaying && !isPaused) {
       timer = setInterval(() => {
         setElapsedSeconds((prev) => prev + 1);
       }, 1000);
     }
-    return () => clearInterval(timer);
-  }, [isPlaying, isFinished]);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isPlaying, isPaused]);
 
-  // Rest countdown
+  // Rest Countdown Timer
   useEffect(() => {
     let restTimer;
     if (isResting && restTimeLeft > 0) {
       restTimer = setInterval(() => {
         setRestTimeLeft((prev) => prev - 1);
       }, 1000);
-    } else if (isResting && restTimeLeft === 0) {
+    } else if (isResting && restTimeLeft <= 0) {
       setIsResting(false);
     }
-    return () => clearInterval(restTimer);
+    return () => {
+      if (restTimer) clearInterval(restTimer);
+    };
   }, [isResting, restTimeLeft]);
 
-  if (!workout) {
-    return (
-      <View style={styles.notFoundContainer}>
-        <Dumbbell size={48} color={Colors.accentRose} />
-        <Text style={styles.notFoundTitle}>Workout Not Found</Text>
-        <Text style={styles.notFoundSub}>
-          The workout routine you are looking for does not exist.
-        </Text>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Go Back</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  // Formatter for elapsed & rest time
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
-  const exerciseList = (workout?.exercises || []).map((exMeta) => ({
-    name: exMeta.name || 'Exercise',
-    sets: exMeta.sets || 3,
-    reps: exMeta.reps || 10,
-    rest: exMeta.rest || 60,
-    instructions: exMeta.instructions || [],
-    ...exMeta,
-  }));
-
+  const exerciseList = workout?.exercises || [];
   const currentEx = exerciseList[currentExIndex];
 
+  // Start workout session
   const handleStartWorkout = async () => {
     setIsPlaying(true);
+    setIsPaused(false);
     setCurrentExIndex(0);
     setCompletedSets({});
     setIsResting(false);
     setElapsedSeconds(0);
-    setIsFinished(false);
-    // Create server session
+
     try {
-      const session = await workoutService.startWorkout();
-      setSessionId(session?._id || session?.id || null);
+      if (!sessionId) {
+        const startRes = await workoutService.startWorkout({
+          programDayId: workout?.id !== 'today' ? workout?.id : undefined,
+          title: workout?.title || 'Workout Session',
+        });
+        const sess = startRes?.data || startRes;
+        if (sess?._id || sess?.id) {
+          setSessionId(sess._id || sess.id);
+          emitDbUpdate();
+        }
+      }
     } catch (err) {
-      // Continue offline — server session creation failed
-      console.warn('Could not create server workout session:', err.message);
+      console.warn('[WorkoutSession] Session start error:', err.message);
     }
   };
 
+  // Toggle set completion and trigger rest
   const handleToggleSet = async (setIdx) => {
     const key = `${currentExIndex}_${setIdx}`;
-    const nextState = !completedSets[key];
-    setCompletedSets((prev) => ({ ...prev, [key]: nextState }));
+    const nextCompleted = !completedSets[key];
 
-    if (nextState) {
-      setRestTimeLeft(currentEx?.rest || 60);
+    setCompletedSets((prev) => ({
+      ...prev,
+      [key]: nextCompleted,
+    }));
+
+    if (nextCompleted) {
+      // Trigger rest timer
+      const restPeriod = currentEx?.restSec || 60;
+      setInitialRestDuration(restPeriod);
+      setRestTimeLeft(restPeriod);
       setIsResting(true);
-      // Log exercise to server session
-      if (sessionId && currentEx) {
+
+      // Log exercise set to backend session
+      if (sessionId && currentEx?.exerciseId) {
         try {
+          const repsVal = parseInt(currentEx.reps, 10) || 10;
           await workoutService.logExercise(sessionId, {
-            exerciseId: currentEx.id || currentEx._id || 'unknown',
-            setNumber: setIdx + 1,
-            repsCompleted: currentEx.reps || 10,
-            weightKg: 0,
+            exerciseId: currentEx.exerciseId,
+            sets: [
+              {
+                setNumber: setIdx + 1,
+                reps: repsVal,
+                completed: true,
+              },
+            ],
           });
         } catch (err) {
-          // Non-critical — session continues offline
-          console.warn('Exercise log failed:', err.message);
+          console.warn('[WorkoutSession] Failed to log set:', err.message);
         }
       }
     }
+  };
+
+  const handleSkipRest = () => {
+    setIsResting(false);
+  };
+
+  const handleAddRestTime = () => {
+    setRestTimeLeft((prev) => prev + 30);
   };
 
   const handleNextExercise = () => {
@@ -238,7 +277,7 @@ export default function WorkoutDetailScreen() {
     if (currentExIndex < exerciseList.length - 1) {
       setCurrentExIndex(currentExIndex + 1);
     } else {
-      setIsFinished(true);
+      checkBeforeFinish();
     }
   };
 
@@ -249,771 +288,928 @@ export default function WorkoutDetailScreen() {
     }
   };
 
-  const handleFinishAndSave = async () => {
-    try {
-      setSavingHistory(true);
-      const minutes = Math.max(1, Math.round(elapsedSeconds / 60));
-
-      let pointsEarned = 0;
-      let newBalance = null;
-
-      if (sessionId) {
-        // Complete session on server — this awards +5 reward points atomically
-        try {
-          const result = await workoutService.completeWorkout(sessionId);
-          pointsEarned = result?.pointsAwarded || result?.points || 5;
-          newBalance = result?.newPointsBalance || result?.totalPoints || null;
-        } catch (err) {
-          console.warn('Server workout completion failed:', err.message);
-          pointsEarned = 5; // Show reward UI optimistically
+  const checkBeforeFinish = () => {
+    // Check if any sets are uncompleted
+    let allDone = true;
+    for (let eIdx = 0; eIdx < exerciseList.length; eIdx++) {
+      const setsCount = Number(exerciseList[eIdx].sets || 3);
+      for (let sIdx = 0; sIdx < setsCount; sIdx++) {
+        if (!completedSets[`${eIdx}_${sIdx}`]) {
+          allDone = false;
+          break;
         }
-      } else {
-        pointsEarned = 5;
       }
+      if (!allDone) break;
+    }
 
-      setIsFinished(false);
-      setIsPlaying(false);
-      setSessionId(null);
-
-      // Show the +5 Points celebration modal instead of plain Alert
-      setEarnedPoints(pointsEarned);
-      setNewPointsBalance(newBalance);
-      setShowPointsModal(true);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to record workout. Please try again.');
-    } finally {
-      setSavingHistory(false);
+    if (!allDone) {
+      setShowFinishConfirm(true);
+    } else {
+      executeFinishWorkout();
     }
   };
 
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const executeFinishWorkout = async () => {
+    setShowFinishConfirm(false);
+    setSavingSession(true);
+
+    const minutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    let pointsEarned = 5;
+    let newBalance = null;
+
+    if (sessionId) {
+      try {
+        const res = await workoutService.completeWorkout(sessionId, {
+          durationSeconds: elapsedSeconds,
+          caloriesEstimate: Math.max(50, Math.round(minutes * 7.5)),
+        });
+
+        const resData = res?.data || res;
+        if (resData?.points) {
+          pointsEarned = resData.points.pointsAdded ?? 5;
+          newBalance = resData.points.newBalance ?? null;
+        }
+        emitDbUpdate();
+      } catch (err) {
+        console.warn('[WorkoutSession] Completion error:', err.message);
+      }
+    }
+
+    setIsPlaying(false);
+    setIsResting(false);
+    setSavingSession(false);
+    setEarnedPoints(pointsEarned);
+    setNewPointsBalance(newBalance);
+    setShowPointsModal(true);
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Pressable
-          style={styles.navBackIcon}
-          onPress={() => {
-            if (isPlaying) {
-              Alert.alert(
-                'Exit Workout?',
-                'Are you sure you want to stop this workout session?',
-                [
-                  { text: 'Resume', style: 'cancel' },
-                  { text: 'Exit', style: 'destructive', onPress: () => setIsPlaying(false) },
-                ]
-              );
-            } else {
-              router.back();
-            }
-          }}
-        >
-          <ArrowLeft size={20} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.topBarTitle} numberOfLines={1}>
-          {isPlaying ? 'Active Workout Session' : workout.name}
-        </Text>
-        {isPlaying ? (
-          <View style={styles.timerBadge}>
-            <Clock size={12} color={Colors.primaryNeon} />
-            <Text style={styles.timerBadgeText}>{formatTime(elapsedSeconds)}</Text>
-          </View>
-        ) : (
-          <View style={{ width: 36 }} />
-        )}
-      </View>
+  const handleExitSession = () => {
+    setShowExitConfirm(false);
+    setIsPlaying(false);
+    setIsResting(false);
+  };
 
-      {/* ACTIVE WORKOUT PLAYER VIEW */}
-      {isPlaying ? (
-        <ScrollView style={styles.playerScroll} contentContainerStyle={styles.playerContent}>
-          {/* Progress tracker */}
-          <View style={styles.exerciseStepHeader}>
-            <Text style={styles.exerciseStepText}>
-              EXERCISE {currentExIndex + 1} OF {exerciseList.length}
+  const handlePointsModalClose = () => {
+    setShowPointsModal(false);
+    router.replace('/(tabs)/workouts');
+  };
+
+  // 1. Loading View
+  if (loading) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        <AppHeader title="Workout Details" onBack={() => router.back()} />
+        <View style={styles.contentWrap}>
+          <Skeleton height={180} radius={custom.radius.lg} style={{ marginBottom: 16 }} />
+          <Skeleton height={80} radius={custom.radius.lg} style={{ marginBottom: 12 }} />
+          <Skeleton height={80} radius={custom.radius.lg} style={{ marginBottom: 12 }} />
+          <Skeleton height={80} radius={custom.radius.lg} />
+        </View>
+      </View>
+    );
+  }
+
+  // 2. Workout Not Found View
+  if (!workout || exerciseList.length === 0) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        <AppHeader title="Workout" onBack={() => router.back()} />
+        <View style={styles.centerWrap}>
+          <EmptyState
+            icon="dumbbell"
+            title="Workout Routine Not Found"
+            description="The selected workout plan or exercise routine could not be loaded."
+            actionLabel="Return to Workouts"
+            onAction={() => router.replace('/(tabs)/workouts')}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  // 3. WORKOUT SESSION PLAYER (Active Mode)
+  if (isPlaying) {
+    const totalSets = Number(currentEx?.sets || 3);
+    const completedForCurrentEx = Array.from({ length: totalSets }).filter(
+      (_, i) => completedSets[`${currentExIndex}_${i}`]
+    ).length;
+
+    const sessionProgress = (currentExIndex + (completedForCurrentEx / totalSets)) / exerciseList.length;
+
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        {/* Active Player Header */}
+        <View
+          style={[
+            styles.playerHeader,
+            {
+              backgroundColor: colors.surface,
+              borderBottomColor: colors.outlineVariant,
+            },
+          ]}
+        >
+          <Pressable
+            style={[styles.headerIconBtn, { backgroundColor: colors.surfaceVariant }]}
+            onPress={() => setShowExitConfirm(true)}
+            hitSlop={8}
+          >
+            <X size={18} color={colors.onSurface} />
+          </Pressable>
+
+          {/* Elapsed Timer & Pause/Resume */}
+          <View style={styles.timerPill}>
+            <Clock size={15} color={colors.primary} />
+            <Text style={[styles.timerText, { color: colors.onSurface }]}>
+              {formatTime(elapsedSeconds)}
             </Text>
-            <View style={styles.trackBar}>
-              <View
-                style={[
-                  styles.trackFill,
-                  { width: `${((currentExIndex + 1) / exerciseList.length) * 100}%` },
-                ]}
-              />
+            <Pressable
+              onPress={() => setIsPaused((prev) => !prev)}
+              style={styles.pauseBtn}
+              hitSlop={8}
+            >
+              {isPaused ? (
+                <Play size={16} color={custom.primaryStrong} />
+              ) : (
+                <Pause size={16} color={colors.onSurfaceVariant} />
+              )}
+            </Pressable>
+          </View>
+
+          <Pressable
+            style={[styles.finishHeaderBtn, { backgroundColor: colors.primaryContainer }]}
+            onPress={checkBeforeFinish}
+          >
+            <Text style={[styles.finishHeaderText, { color: colors.onPrimaryContainer }]}>
+              Finish
+            </Text>
+          </Pressable>
+        </View>
+
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.playerScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Pause Status Indicator */}
+          {isPaused && (
+            <View
+              style={[
+                styles.pausedBanner,
+                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+              ]}
+            >
+              <Pause size={14} color={colors.secondary} />
+              <Text style={[styles.pausedText, { color: colors.onSurface }]}>
+                Workout Paused • Tap play icon above to resume
+              </Text>
             </View>
+          )}
+
+          {/* Overall Session Progress */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressHeaderRow}>
+              <Text style={[styles.progressExerciseLabel, { color: colors.onSurface }]}>
+                Exercise {currentExIndex + 1} of {exerciseList.length}
+              </Text>
+              <Text style={[styles.progressPct, { color: colors.onSurfaceVariant }]}>
+                {Math.round(sessionProgress * 100)}% Complete
+              </Text>
+            </View>
+            <ProgressBar
+              progress={Math.min(Math.max(sessionProgress, 0), 1)}
+              color={colors.primary}
+              style={styles.playerProgressBar}
+            />
           </View>
 
           {/* Current Exercise Card */}
-          <View style={styles.activeExCard}>
-            {currentEx.gifUrl ? (
-              <Image source={{ uri: currentEx.gifUrl }} style={styles.exImage} />
-            ) : (
-              <View style={styles.noExImage}>
-                <Dumbbell size={48} color={Colors.primaryNeon} />
+          <AppCard variant="elevated" style={styles.currentExCard}>
+            <View style={styles.exTagRow}>
+              <View style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}>
+                <Dumbbell size={12} color={colors.onPrimaryContainer} />
+                <Text style={[styles.tagPillText, { color: colors.onPrimaryContainer }]}>
+                  CURRENT EXERCISE
+                </Text>
               </View>
-            )}
+              {currentEx?.muscleGroups?.[0] && (
+                <Text style={[styles.muscleTag, { color: colors.onSurfaceVariant }]}>
+                  {currentEx.muscleGroups[0]}
+                </Text>
+              )}
+            </View>
 
-            <View style={styles.activeExInfo}>
-              <Text style={styles.activeExTitle}>{currentEx.name}</Text>
-              <Text style={styles.activeExTarget}>
-                Target: {currentEx.targetMuscle || workout.category}
+            <Text style={[styles.currentExTitle, { color: colors.onSurface }]}>
+              {currentEx?.name}
+            </Text>
+
+            <View style={styles.exMetaRow}>
+              <Text style={[styles.exMetaText, { color: colors.onSurfaceVariant }]}>
+                Target: {totalSets} Sets × {currentEx?.reps || '10-12'} Reps • {currentEx?.restSec || 60}s Rest
               </Text>
             </View>
 
-            {/* Rest Timer Banner */}
-            {isResting && (
-              <View style={styles.restBanner}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <RotateCcw size={16} color={Colors.accentAmber} />
-                  <Text style={styles.restBannerText}>Rest Interval</Text>
+            {/* Instructions box */}
+            {currentEx?.instructions?.length > 0 && (
+              <View
+                style={[
+                  styles.instructionsBox,
+                  { backgroundColor: colors.surfaceVariant },
+                ]}
+              >
+                <View style={styles.instructionsHeader}>
+                  <Info size={14} color={colors.primary} />
+                  <Text style={[styles.instructionsTitle, { color: colors.onSurface }]}>
+                    Instructions
+                  </Text>
                 </View>
-                <Text style={styles.restCountdown}>{restTimeLeft}s</Text>
-                <Pressable
-                  style={styles.skipRestBtn}
-                  onPress={() => setIsResting(false)}
-                >
-                  <Text style={styles.skipRestText}>Skip</Text>
-                </Pressable>
+                <Text style={[styles.instructionsText, { color: colors.onSurfaceVariant }]}>
+                  {currentEx.instructions[0]}
+                </Text>
               </View>
             )}
 
-            {/* Sets Checklist */}
-            <Text style={styles.setsHeader}>Exercise Sets</Text>
+            {/* Interactive Set Checklist */}
+            <SectionHeader title="Log Sets" style={{ marginTop: 16 }} />
+
             <View style={styles.setsList}>
-              {Array.from({ length: currentEx.sets || 3 }).map((_, sIdx) => {
-                const isChecked = !!completedSets[`${currentExIndex}_${sIdx}`];
+              {Array.from({ length: totalSets }).map((_, sIdx) => {
+                const key = `${currentExIndex}_${sIdx}`;
+                const isCompleted = Boolean(completedSets[key]);
+
                 return (
                   <Pressable
                     key={sIdx}
-                    style={[styles.setRow, isChecked && styles.setRowChecked]}
                     onPress={() => handleToggleSet(sIdx)}
+                    style={[
+                      styles.setRow,
+                      {
+                        backgroundColor: isCompleted
+                          ? colors.primaryContainer
+                          : colors.surfaceVariant,
+                        borderColor: isCompleted ? colors.primary : colors.outlineVariant,
+                      },
+                    ]}
                   >
-                    <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
-                      {isChecked && <CheckCircle2 size={16} color="#000" />}
+                    <View style={styles.rowAlign}>
+                      <View
+                        style={[
+                          styles.setCheckbox,
+                          {
+                            backgroundColor: isCompleted ? colors.primary : 'transparent',
+                            borderColor: isCompleted ? colors.primary : colors.outline,
+                          },
+                        ]}
+                      >
+                        {isCompleted && <Check size={14} color={colors.onPrimary} />}
+                      </View>
+                      <Text
+                        style={[
+                          styles.setLabel,
+                          {
+                            color: isCompleted ? colors.onPrimaryContainer : colors.onSurface,
+                            fontWeight: isCompleted ? '700' : '600',
+                          },
+                        ]}
+                      >
+                        Set {sIdx + 1}
+                      </Text>
                     </View>
-                    <Text style={[styles.setText, isChecked && styles.setTextChecked]}>
-                      Set {sIdx + 1}
-                    </Text>
-                    <Text style={styles.setReps}>
-                      {currentEx.reps || '10-12 reps'}
+
+                    <Text
+                      style={[
+                        styles.setReps,
+                        {
+                          color: isCompleted ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                        },
+                      ]}
+                    >
+                      {currentEx?.reps || '12'} reps
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
+          </AppCard>
 
-            {/* Nav Controls */}
-            <View style={styles.playerControls}>
-              <Pressable
-                style={[styles.prevBtn, currentExIndex === 0 && { opacity: 0.4 }]}
-                onPress={handlePrevExercise}
-                disabled={currentExIndex === 0}
-              >
-                <ChevronLeft size={18} color={Colors.textPrimary} />
-                <Text style={styles.prevBtnText}>Previous</Text>
-              </Pressable>
-
-              <Pressable style={styles.nextBtn} onPress={handleNextExercise}>
-                <Text style={styles.nextBtnText}>
-                  {currentExIndex === exerciseList.length - 1
-                    ? 'Finish Workout'
-                    : 'Next Exercise'}
-                </Text>
-                <ChevronRight size={18} color="#000" />
-              </Pressable>
-            </View>
-          </View>
-        </ScrollView>
-      ) : (
-        /* WORKOUT OVERVIEW VIEW */
-        <ScrollView style={styles.overviewScroll} contentContainerStyle={styles.overviewContent}>
-          <Image source={{ uri: workout.imageUrl }} style={styles.heroBanner} />
-
-          <View style={styles.heroOverlay}>
-            <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>{workout.category}</Text>
-            </View>
-            <Text style={styles.workoutNameBig}>{workout.name}</Text>
-            <Text style={styles.workoutDesc}>{workout.description}</Text>
-
-            {/* Quick Stats */}
-            <View style={styles.statsStrip}>
-              <View style={styles.statCol}>
-                <Clock size={16} color={Colors.primaryNeon} />
-                <Text style={styles.statVal}>{workout.duration} mins</Text>
-                <Text style={styles.statLbl}>Duration</Text>
-              </View>
-              <View style={styles.statCol}>
-                <Flame size={16} color={Colors.accentAmber} />
-                <Text style={styles.statVal}>{workout.calories} kcal</Text>
-                <Text style={styles.statLbl}>Est. Burn</Text>
-              </View>
-              <View style={styles.statCol}>
-                <Dumbbell size={16} color={Colors.secondaryCyan} />
-                <Text style={styles.statVal}>{exerciseList.length}</Text>
-                <Text style={styles.statLbl}>Exercises</Text>
-              </View>
-            </View>
-
-            {/* Start Button */}
-            <Pressable style={styles.startWorkoutCta} onPress={handleStartWorkout}>
-              <Play size={20} color="#000" fill="#000" />
-              <Text style={styles.startWorkoutCtaText}>Start Routine Now</Text>
-            </Pressable>
-          </View>
-
-          {/* Exercise Breakdown List */}
-          <Text style={styles.routineHeading}>Exercise Lineup</Text>
-          <View style={{ gap: 10, marginBottom: 30 }}>
-            {exerciseList.map((ex, i) => (
-              <View key={i} style={styles.exListCard}>
-                <View style={styles.exIndexCircle}>
-                  <Text style={styles.exIndexText}>{i + 1}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.exListName}>{ex.name}</Text>
-                  <Text style={styles.exListMeta}>
-                    {ex.sets} Sets • {ex.reps} • {ex.rest || 60}s Rest
+          {/* Rest Countdown Card */}
+          {isResting && (
+            <AppCard
+              variant="elevated"
+              style={[
+                styles.restCard,
+                { borderColor: colors.secondary, borderWidth: 1.5 },
+              ]}
+            >
+              <View style={styles.restHeader}>
+                <View style={styles.rowAlign}>
+                  <RotateCcw size={18} color={colors.secondary} />
+                  <Text style={[styles.restTitle, { color: colors.onSurface }]}>
+                    Rest Countdown
                   </Text>
                 </View>
-                <View style={styles.muscleTag}>
-                  <Text style={styles.muscleTagText}>{ex.targetMuscle || 'Target'}</Text>
-                </View>
+                <Text style={[styles.restCountdown, { color: colors.secondary }]}>
+                  {restTimeLeft}s
+                </Text>
               </View>
-            ))}
+
+              <ProgressBar
+                progress={Math.max(0, restTimeLeft / (initialRestDuration || 60))}
+                color={colors.secondary}
+                style={styles.restProgressBar}
+              />
+
+              <View style={styles.restActionsRow}>
+                <Pressable
+                  style={[
+                    styles.restActionBtn,
+                    { backgroundColor: colors.surfaceVariant },
+                  ]}
+                  onPress={handleAddRestTime}
+                >
+                  <Text style={[styles.restActionBtnText, { color: colors.onSurface }]}>
+                    +30s Rest
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.restActionBtn,
+                    { backgroundColor: colors.primaryContainer },
+                  ]}
+                  onPress={handleSkipRest}
+                >
+                  <Text style={[styles.restActionBtnText, { color: colors.onPrimaryContainer }]}>
+                    Skip Rest
+                  </Text>
+                </Pressable>
+              </View>
+            </AppCard>
+          )}
+
+          {/* Navigation Controls */}
+          <View style={styles.playerNavRow}>
+            <AppButton
+              mode="outlined"
+              label="Previous"
+              icon="chevron-left"
+              disabled={currentExIndex === 0}
+              onPress={handlePrevExercise}
+              style={{ flex: 1 }}
+            />
+
+            {currentExIndex < exerciseList.length - 1 ? (
+              <AppButton
+                tone="primary"
+                label="Next Exercise"
+                icon="chevron-right"
+                onPress={handleNextExercise}
+                style={{ flex: 1 }}
+              />
+            ) : (
+              <AppButton
+                tone="primary"
+                label="Finish Workout"
+                icon="check"
+                loading={savingSession}
+                onPress={checkBeforeFinish}
+                style={{ flex: 1 }}
+              />
+            )}
           </View>
         </ScrollView>
-      )}
 
-      {/* FINISHED MODAL */}
-      <Modal visible={isFinished} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.finishedCard}>
-            <View style={styles.finishedIconCircle}>
-              <Sparkles size={36} color="#000" />
-            </View>
-            <Text style={styles.finishedTitle}>Workout Crushed!</Text>
-            <Text style={styles.finishedSub}>
-              You persevered through all {exerciseList.length} exercises.
-            </Text>
+        {/* Exit Active Session Confirm Dialog */}
+        <ConfirmDialog
+          visible={showExitConfirm}
+          title="Exit Workout Session?"
+          message="Your progress and completed sets will be logged, but the routine will not be marked as fully completed."
+          confirmLabel="Exit Session"
+          cancelLabel="Keep Going"
+          destructive
+          onConfirm={handleExitSession}
+          onCancel={() => setShowExitConfirm(false)}
+        />
 
-            <View style={styles.finishedStatsStrip}>
-              <View style={styles.finishedStat}>
-                <Text style={styles.finishedStatVal}>
-                  {Math.round(elapsedSeconds / 60)} mins
-                </Text>
-                <Text style={styles.finishedStatLbl}>Total Time</Text>
-              </View>
-              <View style={styles.finishedStat}>
-                <Text style={styles.finishedStatVal}>
-                  {workout.calories} kcal
-                </Text>
-                <Text style={styles.finishedStatLbl}>Est. Burned</Text>
-              </View>
-            </View>
+        {/* Incomplete Sets Finish Confirm Dialog */}
+        <ConfirmDialog
+          visible={showFinishConfirm}
+          title="Finish Workout?"
+          message="You still have unlogged sets in this routine. Would you like to finish and record the workout now?"
+          confirmLabel="Yes, Finish"
+          cancelLabel="Log Remaining"
+          onConfirm={executeFinishWorkout}
+          onCancel={() => setShowFinishConfirm(false)}
+        />
 
-            <Pressable
-              style={styles.saveHistoryBtn}
-              onPress={handleFinishAndSave}
-              disabled={savingHistory}
-            >
-              <Text style={styles.saveHistoryBtnText}>
-                {savingHistory ? 'Saving to Profile...' : 'Save to Workout Log'}
+        {/* Points Celebration Modal */}
+        <PointsCelebrationModal
+          visible={showPointsModal}
+          pointsEarned={earnedPoints}
+          totalPoints={newPointsBalance}
+          onClose={handlePointsModalClose}
+        />
+      </View>
+    );
+  }
+
+  // 4. WORKOUT DETAILS (Pre-Workout View)
+  return (
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <AppHeader title="Workout Details" onBack={() => router.back()} />
+
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.detailScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero Card */}
+        <AppCard variant="elevated" style={styles.heroDetailCard}>
+          <View style={styles.heroTopRow}>
+            <View style={[styles.levelTag, { backgroundColor: colors.primaryContainer }]}>
+              <Text style={[styles.levelTagText, { color: colors.onPrimaryContainer }]}>
+                {workout.level.toUpperCase()}
               </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+            </View>
 
-      {/* ⚡ +5 Reward Points Celebration Modal */}
-      <Modal visible={showPointsModal} transparent animationType="fade">
-        <View style={styles.pointsModalBackdrop}>
-          <View style={styles.pointsModalCard}>
-            <View style={styles.pointsModalIcon}>
-              <Zap size={40} color="#FFB800" fill="#FFB800" />
-            </View>
-            <Text style={styles.pointsModalTitle}>Workout Complete! 🔥</Text>
-            <Text style={styles.pointsEarned}>+{earnedPoints}</Text>
-            <Text style={styles.pointsLabel}>Reward Points Earned</Text>
-            {newPointsBalance !== null && (
-              <Text style={styles.pointsBalance}>Total Balance: ⚡ {newPointsBalance} pts</Text>
-            )}
-            <Text style={styles.pointsDesc}>
-              Great work! Keep completing workouts to earn more points and redeem them for supplements.
-            </Text>
-            <View style={styles.pointsModalActions}>
-              <Pressable
-                style={styles.pointsStorBtn}
-                onPress={() => { setShowPointsModal(false); router.push('/(tabs)/store'); }}
-              >
-                <Text style={styles.pointsStoreBtnText}>🛒 Redeem in Store</Text>
-              </Pressable>
-              <Pressable
-                style={styles.pointsDoneBtn}
-                onPress={() => { setShowPointsModal(false); router.push('/(tabs)'); }}
-              >
-                <Text style={styles.pointsDoneBtnText}>Back to Home</Text>
-              </Pressable>
+            <View style={[styles.pointsTag, { backgroundColor: colors.secondaryContainer }]}>
+              <Zap size={13} color={colors.onSecondaryContainer} />
+              <Text style={[styles.pointsTagText, { color: colors.onSecondaryContainer }]}>
+                +5 REWARD PTS
+              </Text>
             </View>
           </View>
-        </View>
-      </Modal>
+
+          <Text style={[styles.detailTitle, { color: colors.onSurface }]}>
+            {workout.title}
+          </Text>
+
+          <Text style={[styles.detailSub, { color: colors.onSurfaceVariant }]}>
+            {workout.description ||
+              (workout.programName
+                ? `Structured routine from the ${workout.programName} program.`
+                : 'Complete all exercises in order to maximize muscular stimulation and cardiovascular fitness.')}
+          </Text>
+
+          {/* Metrics summary row */}
+          <View style={[styles.metricsRow, { borderColor: colors.outlineVariant }]}>
+            <View style={styles.metricItem}>
+              <Clock size={16} color={colors.primary} />
+              <Text style={[styles.metricVal, { color: colors.onSurface }]}>
+                ~{workout.estimatedMin} mins
+              </Text>
+              <Text style={[styles.metricLbl, { color: colors.onSurfaceVariant }]}>Duration</Text>
+            </View>
+
+            <View style={[styles.metricDivider, { backgroundColor: colors.outlineVariant }]} />
+
+            <View style={styles.metricItem}>
+              <Dumbbell size={16} color={colors.primary} />
+              <Text style={[styles.metricVal, { color: colors.onSurface }]}>
+                {exerciseList.length} Exercises
+              </Text>
+              <Text style={[styles.metricLbl, { color: colors.onSurfaceVariant }]}>Routine</Text>
+            </View>
+
+            <View style={[styles.metricDivider, { backgroundColor: colors.outlineVariant }]} />
+
+            <View style={styles.metricItem}>
+              <Flame size={16} color={colors.secondary} />
+              <Text style={[styles.metricVal, { color: colors.onSurface }]}>
+                ~{Math.round(workout.estimatedMin * 7.5)} kcal
+              </Text>
+              <Text style={[styles.metricLbl, { color: colors.onSurfaceVariant }]}>Burn Est.</Text>
+            </View>
+          </View>
+        </AppCard>
+
+        {/* Exercises Section */}
+        <SectionHeader
+          title={`Exercises (${exerciseList.length})`}
+          style={{ marginTop: 20, marginBottom: 8 }}
+        />
+
+        {exerciseList.map((ex, index) => {
+          const setsCount = Number(ex.sets || 3);
+          const repsStr = ex.reps || '10-12';
+          const restVal = ex.restSec || 60;
+
+          return (
+            <AppCard
+              key={ex.exerciseId || index}
+              variant="outlined"
+              style={styles.exerciseCard}
+            >
+              <View style={styles.exerciseCardRow}>
+                {/* Step Index Number */}
+                <View
+                  style={[
+                    styles.stepBadge,
+                    { backgroundColor: colors.surfaceVariant },
+                  ]}
+                >
+                  <Text style={[styles.stepBadgeText, { color: colors.onSurface }]}>
+                    {index + 1}
+                  </Text>
+                </View>
+
+                <View style={styles.exerciseMetaCol}>
+                  <Text style={[styles.exerciseCardTitle, { color: colors.onSurface }]}>
+                    {ex.name}
+                  </Text>
+
+                  <View style={styles.rowAlign}>
+                    <Text style={[styles.exerciseCardSub, { color: colors.onSurfaceVariant }]}>
+                      {setsCount} sets × {repsStr} reps • {restVal}s rest
+                    </Text>
+                  </View>
+
+                  {ex.instructions?.length > 0 && (
+                    <Text
+                      style={[styles.instructionSnippet, { color: colors.onSurfaceVariant }]}
+                      numberOfLines={2}
+                    >
+                      {ex.instructions[0]}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </AppCard>
+          );
+        })}
+      </ScrollView>
+
+      {/* Floating Sticky Start Workout Button */}
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: colors.surface,
+            borderTopColor: colors.outlineVariant,
+          },
+        ]}
+      >
+        <AppButton
+          tone="primary"
+          label="Start Workout"
+          icon="play"
+          onPress={handleStartWorkout}
+        />
+      </View>
+
+      {/* Points Celebration Modal */}
+      <PointsCelebrationModal
+        visible={showPointsModal}
+        pointsEarned={earnedPoints}
+        totalPoints={newPointsBalance}
+        onClose={handlePointsModalClose}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
   },
-  topBar: {
+  flex: {
+    flex: 1,
+  },
+  contentWrap: {
+    padding: 16,
+  },
+  centerWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  detailScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 90,
+  },
+  heroDetailCard: {
+    marginBottom: 8,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  levelTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  levelTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  pointsTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  pointsTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  detailTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  detailSub: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 12,
+  },
+  metricItem: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  metricVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  metricLbl: {
+    fontSize: 11,
+  },
+  metricDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 28,
+  },
+  exerciseCard: {
+    marginBottom: 8,
+  },
+  exerciseCardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  stepBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  exerciseMetaCol: {
+    flex: 1,
+  },
+  exerciseCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  exerciseCardSub: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  instructionSnippet: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  playerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderGlass,
-    backgroundColor: 'rgba(13, 18, 34, 0.95)',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  navBackIcon: {
+  headerIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topBarTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    maxWidth: '60%',
-  },
-  timerBadge: {
+  timerPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(204, 255, 0, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  timerBadgeText: {
-    color: Colors.primaryNeon,
-    fontSize: 12,
+  timerText: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  pauseBtn: {
+    padding: 4,
+    marginLeft: 4,
+  },
+  finishHeaderBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  finishHeaderText: {
+    fontSize: 13,
     fontWeight: '700',
   },
-  playerScroll: {
-    flex: 1,
+  playerScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 40,
   },
-  playerContent: {
-    padding: 16,
-    paddingBottom: 60,
+  pausedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12,
   },
-  exerciseStepHeader: {
+  pausedText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  progressContainer: {
     marginBottom: 16,
   },
-  exerciseStepText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.textSecondary,
-    letterSpacing: 1,
+  progressHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 6,
   },
-  trackBar: {
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 3,
-    overflow: 'hidden',
+  progressExerciseLabel: {
+    fontSize: 14,
+    fontWeight: '700',
   },
-  trackFill: {
-    height: '100%',
-    backgroundColor: Colors.primaryNeon,
-    borderRadius: 3,
-  },
-  activeExCard: {
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
-    borderWidth: 1,
-    borderRadius: 18,
-    overflow: 'hidden',
-    padding: 16,
-  },
-  exImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 14,
-  },
-  noExImage: {
-    width: '100%',
-    height: 140,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  activeExInfo: {
-    marginBottom: 14,
-  },
-  activeExTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  activeExTarget: {
+  progressPct: {
     fontSize: 12,
-    color: Colors.secondaryCyan,
-    fontWeight: '600',
-    marginTop: 2,
   },
-  restBanner: {
+  playerProgressBar: {
+    height: 6,
+    borderRadius: 3,
+  },
+  currentExCard: {
+    marginBottom: 16,
+  },
+  exTagRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderColor: Colors.accentAmber,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 14,
+    marginBottom: 8,
   },
-  restBannerText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.accentAmber,
-  },
-  restCountdown: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.accentAmber,
-  },
-  skipRestBtn: {
+  tagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: Colors.accentAmber,
+    paddingVertical: 3,
     borderRadius: 6,
   },
-  skipRestText: {
+  tagPillText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#000',
+    letterSpacing: 0.6,
   },
-  setsHeader: {
-    fontSize: 14,
+  muscleTag: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  currentExTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  exMetaRow: {
+    marginBottom: 12,
+  },
+  exMetaText: {
+    fontSize: 13,
+  },
+  instructionsBox: {
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  instructionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  instructionsTitle: {
+    fontSize: 12,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 10,
+  },
+  instructionsText: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   setsList: {
     gap: 8,
-    marginBottom: 20,
+    marginTop: 4,
   },
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    gap: 12,
-  },
-  setRowChecked: {
-    backgroundColor: 'rgba(204, 255, 0, 0.08)',
-    borderColor: Colors.primaryNeon,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  checkbox: {
+  setCheckbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: Colors.textSecondary,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
   },
-  checkboxChecked: {
-    backgroundColor: Colors.primaryNeon,
-    borderColor: Colors.primaryNeon,
-  },
-  setText: {
+  setLabel: {
     fontSize: 14,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  setTextChecked: {
-    color: Colors.primaryNeon,
   },
   setReps: {
-    fontSize: 12,
-    color: Colors.textSecondary,
+    fontSize: 13,
     fontWeight: '600',
   },
-  playerControls: {
-    flexDirection: 'row',
-    gap: 12,
+  restCard: {
+    marginBottom: 16,
   },
-  prevBtn: {
-    flex: 1,
+  restHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  prevBtnText: {
-    color: Colors.textPrimary,
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  nextBtn: {
-    flex: 1.6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: Colors.primaryNeon,
-  },
-  nextBtnText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  overviewScroll: {
-    flex: 1,
-  },
-  overviewContent: {
-    paddingBottom: 60,
-  },
-  heroBanner: {
-    width: '100%',
-    height: 240,
-  },
-  heroOverlay: {
-    padding: 16,
-    backgroundColor: Colors.bgDarkBase,
-    marginTop: -20,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  categoryPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0, 240, 255, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  categoryPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.secondaryCyan,
-  },
-  workoutNameBig: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 6,
-  },
-  workoutDesc: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  statsStrip: {
-    flexDirection: 'row',
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 12,
-    marginBottom: 18,
-  },
-  statCol: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  statVal: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  statLbl: {
-    fontSize: 10,
-    color: Colors.textSecondary,
-  },
-  startWorkoutCta: {
-    backgroundColor: Colors.primaryNeon,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  startWorkoutCtaText: {
-    color: '#000',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  routineHeading: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  exListCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 16,
-    gap: 12,
-  },
-  exIndexCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exIndexText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  exListName: {
+  restTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.textPrimary,
   },
-  exListMeta: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  muscleTag: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  muscleTagText: {
-    fontSize: 10,
-    color: Colors.textSecondary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  finishedCard: {
-    width: '100%',
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-  },
-  finishedIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.primaryNeon,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  finishedTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  finishedSub: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 18,
-  },
-  finishedStatsStrip: {
-    flexDirection: 'row',
-    gap: 20,
-    marginBottom: 20,
-  },
-  finishedStat: {
-    alignItems: 'center',
-  },
-  finishedStatVal: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.primaryNeon,
-  },
-  finishedStatLbl: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
-  saveHistoryBtn: {
-    width: '100%',
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  saveHistoryBtnText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  notFoundContainer: {
-    flex: 1,
-    backgroundColor: Colors.bgDarkBase,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  notFoundTitle: {
+  restCountdown: {
     fontSize: 20,
     fontWeight: '800',
-    color: Colors.textPrimary,
   },
-  notFoundSub: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: 'center',
+  restProgressBar: {
+    height: 6,
+    borderRadius: 3,
+    marginBottom: 12,
   },
-  backBtn: {
-    backgroundColor: Colors.primaryNeon,
-    paddingHorizontal: 20,
+  restActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  restActionBtn: {
+    flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  backBtnText: {
-    color: '#000',
+  restActionBtnText: {
+    fontSize: 13,
     fontWeight: '700',
+  },
+  playerNavRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  rowAlign: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

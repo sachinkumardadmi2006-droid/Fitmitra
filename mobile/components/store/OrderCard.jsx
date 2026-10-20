@@ -1,29 +1,15 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Package, Truck, Zap, ChevronRight } from 'lucide-react-native';
-import { Colors } from '../../constants/theme';
-import { Badge } from '../common/Badge';
+import { useAppTheme } from '../../theme/ThemeContext';
+import AppCard from '../ui/AppCard';
 
-export function OrderCard({ order, onTrack }) {
+export function OrderCard({ order, onTrack, showTracking = true }) {
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
+
   const isPoints = order.paymentMethod === 'POINTS';
   const awb = order.shippingDetails?.awbCode;
-
-  const getStatusVariant = (status) => {
-    switch (status) {
-      case 'DELIVERED':
-        return 'neon';
-      case 'IN_TRANSIT':
-      case 'OUT_FOR_DELIVERY':
-        return 'cyan';
-      case 'DISPATCHED':
-      case 'PROCESSING':
-        return 'amber';
-      case 'CANCELLED':
-        return 'rose';
-      default:
-        return 'gray';
-    }
-  };
 
   const formattedDate = order.createdAt
     ? new Date(order.createdAt).toLocaleDateString(undefined, {
@@ -34,28 +20,42 @@ export function OrderCard({ order, onTrack }) {
     : '';
 
   return (
-    <View style={styles.card}>
+    <AppCard variant="elevated" style={styles.card}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Package size={16} color={Colors.primaryNeon} />
-          <Text style={styles.orderId}>
+          <Package size={16} color={colors.primary} />
+          <Text style={[styles.orderId, { color: colors.onSurface }]}>
             #{order.orderNumber || order._id?.slice(-8).toUpperCase()}
           </Text>
         </View>
-        <Badge
-          label={order.status}
-          variant={getStatusVariant(order.status)}
-          size="small"
-        />
+
+        <View
+          style={[
+            styles.statusBadge,
+            { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+          ]}
+        >
+          <Text style={[styles.statusText, { color: colors.onSurface }]}>
+            {order.status}
+          </Text>
+        </View>
       </View>
 
-      <Text style={styles.dateText}>{formattedDate}</Text>
+      <Text style={[styles.dateText, { color: colors.onSurfaceVariant }]}>{formattedDate}</Text>
 
       {/* Items list */}
-      <View style={styles.itemsList}>
+      <View
+        style={[
+          styles.itemsList,
+          {
+            borderTopColor: colors.outlineVariant,
+            borderBottomColor: colors.outlineVariant,
+          },
+        ]}
+      >
         {order.items?.map((item, idx) => (
-          <Text key={idx} style={styles.itemText} numberOfLines={1}>
-            {item.quantity}x {item.productName || 'Product'}
+          <Text key={idx} style={[styles.itemText, { color: colors.onSurface }]} numberOfLines={1}>
+            {item.quantity}x {item.productName || item.product?.name || 'Product'}
           </Text>
         ))}
       </View>
@@ -63,41 +63,46 @@ export function OrderCard({ order, onTrack }) {
       {/* Total & Action Footer */}
       <View style={styles.footer}>
         <View style={styles.totalWrap}>
-          <Text style={styles.totalLabel}>Total: </Text>
+          <Text style={[styles.totalLabel, { color: colors.onSurfaceVariant }]}>Total: </Text>
           {isPoints ? (
             <View style={styles.pointsWrap}>
-              <Zap size={14} color="#FFB800" fill="#FFB800" />
-              <Text style={styles.pointsText}>{order.totalPoints} pts</Text>
+              <Zap size={14} color={colors.secondary} fill={colors.secondary} />
+              <Text style={[styles.pointsText, { color: colors.secondary }]}>
+                {order.totalPoints || 0} pts
+              </Text>
             </View>
           ) : (
-            <Text style={styles.cashText}>
+            <Text style={[styles.cashText, { color: colors.onSurface }]}>
               ₹{Math.round((order.totalAmountInPaise || 0) / 100)}
             </Text>
           )}
         </View>
 
-        {awb ? (
+        {showTracking && awb ? (
           <Pressable
-            style={({ pressed }) => [styles.trackBtn, pressed && { opacity: 0.8 }]}
+            style={[
+              styles.trackBtn,
+              {
+                backgroundColor: colors.primaryContainer,
+                borderColor: colors.primary,
+              },
+            ]}
             onPress={() => onTrack?.(order)}
           >
-            <Truck size={14} color={Colors.primaryNeon} />
-            <Text style={styles.trackBtnText}>Track Order</Text>
-            <ChevronRight size={14} color={Colors.primaryNeon} />
+            <Truck size={14} color={colors.onPrimaryContainer} />
+            <Text style={[styles.trackBtnText, { color: colors.onPrimaryContainer }]}>
+              Track Order
+            </Text>
+            <ChevronRight size={14} color={colors.onPrimaryContainer} />
           </Pressable>
         ) : null}
       </View>
-    </View>
+    </AppCard>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    padding: 16,
     marginBottom: 12,
   },
   header: {
@@ -113,24 +118,30 @@ const styles = StyleSheet.create({
   },
   orderId: {
     fontSize: 14,
+    fontWeight: '800',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: Colors.textPrimary,
   },
   dateText: {
     fontSize: 12,
-    color: Colors.textSecondary,
     marginBottom: 10,
   },
   itemsList: {
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 12,
   },
   itemText: {
     fontSize: 13,
-    color: Colors.textPrimary,
     lineHeight: 18,
   },
   footer: {
@@ -144,12 +155,10 @@ const styles = StyleSheet.create({
   },
   totalLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
   },
   cashText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
-    color: Colors.textPrimary,
   },
   pointsWrap: {
     flexDirection: 'row',
@@ -157,24 +166,20 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   pointsText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    color: '#FFB800',
   },
   trackBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 245, 155, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 245, 155, 0.25)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
+    borderWidth: 1,
   },
   trackBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.primaryNeon,
   },
 });

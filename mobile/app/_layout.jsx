@@ -5,103 +5,128 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
 import { onDbUpdate } from '../utils/events';
-import { AuthProvider } from '../context/AuthContext';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { authService } from '../services/authService';
+import { AppThemeProvider, useAppTheme } from '../theme/ThemeContext';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '../services/queryClient';
+import { LoadingScreen, SnackbarProvider } from '../components/ui';
+
+function ThemedStack() {
+  const { theme } = useAppTheme();
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: theme.colors.background },
+        animation: 'slide_from_right',
+      }}
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="notifications" />
+      <Stack.Screen name="leaderboard" />
+      <Stack.Screen name="profile" />
+      <Stack.Screen name="settings" />
+      <Stack.Screen name="ai-coach" />
+      <Stack.Screen name="store" />
+      <Stack.Screen name="orders" />
+      <Stack.Screen name="premium" />
+      <Stack.Screen name="workout/[workoutId]" />
+      <Stack.Screen name="+not-found" />
+    </Stack>
+  );
+}
+
+function ThemedRoot({ children }) {
+  const { user, profile } = useAuth();
+  const language = profile?.language || user?.language || 'en';
+  return (
+    <AppThemeProvider language={language}>
+      <SnackbarProvider>{children}</SnackbarProvider>
+    </AppThemeProvider>
+  );
+}
 
 function RootNavigator() {
-  const [isReady, setIsReady] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { isLoading, isAuthenticated, isOnboarded } = useAuth();
   const router = useRouter();
   const segments = useSegments();
-  const { colors, isDark } = useTheme();
+  const { isDark } = useTheme();
 
-  const checkAuth = useCallback(async () => {
-    try {
-      const token = await AsyncStorage.getItem('fitmitra_token');
-      const userStr = await AsyncStorage.getItem('fitmitra_user');
-      const isAuthenticated = Boolean(token && userStr);
-      setIsLoggedIn(isAuthenticated);
-    } catch (e) {
-      setIsLoggedIn(false);
-    }
-    setIsReady(true);
-  }, []);
-
+  // Authentication Gate: token -> profile -> onboarding
   useEffect(() => {
-    checkAuth();
-    const unsub = onDbUpdate(checkAuth);
-    return unsub;
-  }, [checkAuth]);
+    if (isLoading) return;
 
-  // Protect routes — redirect appropriately based on auth & onboarding status
-  useEffect(() => {
-    if (!isReady) return;
+    const inAuthGroup =
+      segments[0] === '(auth)' ||
+      segments[0] === 'login' ||
+      segments[0] === 'signup';
+    const inOnboarding =
+      segments[0] === 'onboarding' ||
+      segments[1] === 'onboarding';
+    const isAtRoot = !segments[0] || segments[0] === 'index';
 
-    const inProtectedGroup =
-      segments[0] === '(tabs)' ||
-      segments[0] === 'workout' ||
-      segments[0] === 'premium' ||
-      segments[0] === 'notifications' ||
-      segments[0] === 'leaderboard' ||
-      segments[0] === 'settings';
+    if (!isAuthenticated) {
+      // Unauthenticated -> gate protected routes and root, directing to login
+      const inProtectedGroup =
+        segments[0] === '(tabs)' ||
+        segments[0] === 'workout' ||
+        segments[0] === 'premium' ||
+        segments[0] === 'notifications' ||
+        segments[0] === 'leaderboard' ||
+        segments[0] === 'settings' ||
+        segments[0] === 'store' ||
+        segments[0] === 'orders' ||
+        segments[0] === 'ai-coach' ||
+        segments[0] === 'profile';
 
-    if (!isLoggedIn && inProtectedGroup) {
-      router.replace('/login');
-    } else if (isLoggedIn && (segments[1] === 'login' || segments[1] === 'signup')) {
-      // Check onboarding status
-      AsyncStorage.getItem('fitmitra_onboarded').then((onboarded) => {
-        if (onboarded === 'true') {
-          router.replace('/(tabs)');
-        } else {
-          router.replace('/onboarding');
-        }
-      });
+      if (inProtectedGroup || isAtRoot) {
+        router.replace('/login');
+      }
+    } else if (!isOnboarded) {
+      // Authenticated but onboarding incomplete -> direct to onboarding wizard
+      if (!inOnboarding) {
+        router.replace('/(auth)/onboarding');
+      }
+    } else {
+      // Authenticated and onboarded -> if at entry/auth/onboarding, direct to main tabs
+      if (isAtRoot || inAuthGroup || inOnboarding) {
+        router.replace('/(tabs)');
+      }
     }
-  }, [isReady, isLoggedIn, segments]);
+  }, [isLoading, isAuthenticated, isOnboarded, segments]);
 
-  if (!isReady) {
+  if (isLoading) {
     return (
-      <View style={[styles.loading, { backgroundColor: colors.bgBase }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-      </View>
+        <LoadingScreen />
+      </>
     );
   }
 
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.bgBase },
-          animation: 'slide_from_right',
-        }}
-      >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="notifications" />
-        <Stack.Screen name="leaderboard" />
-        <Stack.Screen name="profile" />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="ai-coach" />
-        <Stack.Screen name="store" />
-        <Stack.Screen name="premium" />
-        <Stack.Screen name="workout/[workoutId]" />
-        <Stack.Screen name="+not-found" />
-      </Stack>
+      <ThemedStack />
     </>
   );
 }
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <ThemedRoot>
+            <RootNavigator />
+          </ThemedRoot>
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

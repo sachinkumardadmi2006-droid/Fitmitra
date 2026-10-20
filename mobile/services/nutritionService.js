@@ -46,8 +46,34 @@ export const nutritionService = {
   },
 
   /**
+   * Get hydration (water intake in ml)
+   */
+  async getWater() {
+    try {
+      const res = await api.get('/nutrition/water');
+      return res?.data?.totalMl ?? res?.totalMl ?? 0;
+    } catch (_) {
+      return this.getHydration();
+    }
+  },
+
+  /**
+   * Log water intake in ml via backend API
+   */
+  async logWater(amountMl) {
+    try {
+      const res = await api.post('/nutrition/water', { amountMl });
+      const total = res?.data?.totalMl ?? res?.totalMl ?? amountMl;
+      const today = new Date().toISOString().split('T')[0];
+      await AsyncStorage.setItem(`fitmitra_hydration_${today}`, String(total));
+      return total;
+    } catch (_) {
+      return this.setHydration(amountMl);
+    }
+  },
+
+  /**
    * Get hydration (water intake in ml) for date YYYY-MM-DD
-   * Note: Cached on client until backend schema extends INutritionLog
    */
   async getHydration(date = new Date().toISOString().split('T')[0]) {
     try {

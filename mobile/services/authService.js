@@ -1,60 +1,155 @@
-import { api, setStoredToken, getStoredToken, clearAuthData } from './api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { emitDbUpdate } from '../utils/events';
+import { api, clearAuthData } from './api';
 import {
-  auth,
-  isFirebaseConfigured,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updateProfile as updateFirebaseProfile,
-  signInWithCredential,
-  GoogleAuthProvider,
-  signOut as firebaseSignOut,
-} from './firebase';
+  setAuthTokens,
+  getStoredToken,
+  setStoredToken,
+} from './tokenStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearUserCache } from './queryClient';
+import { emitDbUpdate } from '../utils/events';
 
 const USER_KEY = 'fitmitra_user';
 const ONBOARDED_KEY = 'fitmitra_onboarded';
 
 /**
- * Format human-readable Firebase Auth error messages
+ * Format human-readable authentication error messages from backend or network
  */
 export const formatAuthError = (err) => {
-  const code = err?.code || '';
-  switch (code) {
-    case 'auth/invalid-email':
-      return 'The email address is invalid.';
-    case 'auth/user-disabled':
-      return 'This account has been disabled. Please contact support.';
-    case 'auth/user-not-found':
-      return 'No account found with this email. Please sign up.';
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'Incorrect email or password. Please try again.';
-    case 'auth/email-already-in-use':
-      return 'An account already exists with this email. Please sign in.';
-    case 'auth/weak-password':
-      return 'Password should be at least 6 characters.';
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your internet connection.';
-    case 'auth/popup-closed-by-user':
-      return 'Google Sign-In was cancelled.';
-    default:
-      return err?.message || 'Authentication failed. Please try again.';
+  const message = err?.message || '';
+  if (/email.*already.*exists/i.test(message)) {
+    return 'An account already exists with this email. Please log in.';
   }
+  if (/invalid.*credential|incorrect.*password|user not found|unauthorized/i.test(message)) {
+    return 'Incorrect email or password. Please try again.';
+  }
+  if (/invalid email/i.test(message)) {
+    return 'Please enter a valid email address.';
+  }
+  if (/network|cannot reach/i.test(message)) {
+    return 'Cannot reach the server. Please check your internet connection.';
+  }
+  return message || 'Authentication failed. Please try again.';
 };
 
 export const authService = {
   /**
-   * Check if Firebase is configured with active keys
+   * Status check for authentication service
    */
   isConfigured() {
-    return isFirebaseConfigured;
+    return true;
   },
 
   /**
-   * Synchronize authenticated session with backend
-   * @param {string} idToken Firebase JWT or dev token
-   * @param {object} profileData Optional initial profile data
+   * Log in directly with backend /auth/login endpoint
+   * @param {string} email
+   * @param {string} password
+   */
+  async loginWithEmail(email, password) {
+    try {
+      await clearUserCache();
+      const result = await api.post('/auth/login', {
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      const user = result?.user;
+      const tokens = result?.tokens;
+
+      if (!tokens?.idToken) {
+        throw new Error('Authentication succeeded but server returned no access token.');
+      }
+
+      // Save tokens securely in expo-secure-store
+      await setAuthTokens({
+        accessToken: tokens.idToken,
+        refreshToken: tokens.refreshToken,
+      });
+
+      if (user) {
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+      }
+
+      // Check onboarding state from server profile or user biometrics
+      const hasBiometrics = Boolean(user?.profile?.heightCm && user?.profile?.weightKg);
+      if (hasBiometrics) {
+        await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
+      } else {
+        await AsyncStorage.removeItem(ONBOARDED_KEY);
+      }
+
+      emitDbUpdate();
+      return {
+        user,
+        isOnboarded: hasBiometrics,
+      };
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Register directly with backend /auth/register endpoint
+   * @param {string} name
+   * @param {string} email
+   * @param {string} password
+   */
+  async signupWithEmail(name, email, password) {
+    try {
+      await clearUserCache();
+      const result = await api.post('/auth/register', {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      const user = result?.user;
+      const tokens = result?.tokens;
+
+      if (!tokens?.idToken) {
+        throw new Error('Registration succeeded but server returned no access token.');
+      }
+
+      // Save tokens securely in expo-secure-store
+      await setAuthTokens({
+        accessToken: tokens.idToken,
+        refreshToken: tokens.refreshToken,
+      });
+
+      if (user) {
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+      }
+
+      // Newly registered users must complete onboarding
+      await AsyncStorage.removeItem(ONBOARDED_KEY);
+
+      emitDbUpdate();
+      return {
+        user,
+        isOnboarded: false,
+      };
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Request password reset email from backend /auth/forgot-password
+   * @param {string} email
+   */
+  async forgotPassword(email) {
+    try {
+      return await api.post('/auth/forgot-password', {
+        email: email.trim().toLowerCase(),
+      });
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Synchronize authenticated session with backend (legacy compatibility)
+   * @param {string} idToken
+   * @param {object} profileData
    */
   async syncUser(idToken, profileData = {}) {
     await setStoredToken(idToken);
@@ -76,10 +171,11 @@ export const authService = {
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(result.user));
     }
 
-    // Check if user has already completed onboarding
     const hasBiometrics = Boolean(result?.profile?.heightCm && result?.profile?.weightKg);
     if (hasBiometrics) {
       await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
+    } else {
+      await AsyncStorage.removeItem(ONBOARDED_KEY);
     }
 
     emitDbUpdate();
@@ -91,108 +187,45 @@ export const authService = {
   },
 
   /**
-   * Sign in with Email & Password via Firebase Auth
-   */
-  async loginWithEmail(email, password) {
-    if (!isFirebaseConfigured || !auth) {
-      throw new Error(
-        'Firebase is not configured. Please add your EXPO_PUBLIC_FIREBASE_* keys to the .env file.'
-      );
-    }
-
-    try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email.trim().toLowerCase(),
-        password
-      );
-
-      const idToken = await userCredential.user.getIdToken();
-      return await this.syncUser(idToken, {
-        displayName: userCredential.user.displayName || undefined,
-        photoUrl: userCredential.user.photoURL || undefined,
-      });
-    } catch (err) {
-      throw new Error(formatAuthError(err));
-    }
-  },
-
-  /**
-   * Sign up with Name, Email & Password via Firebase Auth
-   */
-  async signupWithEmail(name, email, password) {
-    if (!isFirebaseConfigured || !auth) {
-      throw new Error(
-        'Firebase is not configured. Please add your EXPO_PUBLIC_FIREBASE_* keys to the .env file.'
-      );
-    }
-
-    try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email.trim().toLowerCase(),
-        password
-      );
-
-      // Attach displayName to Firebase user profile
-      if (name.trim()) {
-        try {
-          await updateFirebaseProfile(userCredential.user, {
-            displayName: name.trim(),
-          });
-        } catch (_) {}
-      }
-
-      const idToken = await userCredential.user.getIdToken();
-      const syncResult = await this.syncUser(idToken, {
-        displayName: name.trim(),
-      });
-
-      // Newly registered users must complete onboarding
-      return {
-        ...syncResult,
-        isOnboarded: false,
-      };
-    } catch (err) {
-      throw new Error(formatAuthError(err));
-    }
-  },
-
-  /**
-   * Authenticate with Google ID Token via Firebase Auth
-   * @param {string} googleIdToken Google OAuth ID Token
-   * @param {string} [accessToken] Optional Google Access Token
-   */
-  async signInWithGoogleCredential(googleIdToken, accessToken = null) {
-    if (!isFirebaseConfigured || !auth) {
-      throw new Error(
-        'Firebase is not configured. Please add your EXPO_PUBLIC_FIREBASE_* keys to the .env file.'
-      );
-    }
-
-    try {
-      const credential = GoogleAuthProvider.credential(googleIdToken, accessToken);
-      const userCredential = await signInWithCredential(auth, credential);
-      const idToken = await userCredential.user.getIdToken();
-
-      return await this.syncUser(idToken, {
-        displayName: userCredential.user.displayName || undefined,
-        photoUrl: userCredential.user.photoURL || undefined,
-      });
-    } catch (err) {
-      throw new Error(formatAuthError(err));
-    }
-  },
-
-  /**
-   * Development Quick Login (bypasses Firebase during testing)
+   * Development Quick Login (strictly gated to __DEV__)
+   * NEVER executable in production builds.
    */
   async devLogin() {
-    return this.syncUser('dev-token');
+    if (!__DEV__) {
+      throw new Error('Development quick login is disabled in production builds.');
+    }
+
+    await clearUserCache();
+
+    const devUser = {
+      _id: 'dev-user-shivanna',
+      email: 'shivannagorkal@gmail.com',
+      displayName: 'Shivanna Gorkal',
+      role: 'USER',
+    };
+
+    await setStoredToken('dev-token');
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(devUser));
+    await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
+
+    try {
+      const syncResult = await this.syncUser('dev-token', {
+        displayName: 'Shivanna Gorkal',
+      });
+      return syncResult;
+    } catch (e) {
+      console.warn('Backend sync in devLogin deferred:', e?.message || e);
+      emitDbUpdate();
+      return {
+        user: devUser,
+        profile: { heightCm: 175, weightKg: 70, points: 100 },
+        isOnboarded: true,
+      };
+    }
   },
 
   /**
-   * Check if onboarding has been completed locally or via profile
+   * Check if onboarding has been completed
    */
   async getOnboardedStatus() {
     try {
@@ -204,16 +237,21 @@ export const authService = {
   },
 
   /**
-   * Mark onboarding as complete
+   * Mark onboarding as complete or incomplete
    */
-  async setOnboardedStatus(status = true) {
+  async setOnboardedStatus(status = true, emit = false) {
     try {
+      const current = await AsyncStorage.getItem(ONBOARDED_KEY);
+      const isAlready = current === 'true';
+      if (Boolean(status) === isAlready) return;
       if (status) {
         await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
       } else {
         await AsyncStorage.removeItem(ONBOARDED_KEY);
       }
-      emitDbUpdate();
+      if (emit) {
+        emitDbUpdate();
+      }
     } catch (_) {}
   },
 
@@ -240,12 +278,17 @@ export const authService = {
    * Save or update local cached user
    */
   async saveLocalUser(user) {
-    if (!user) {
-      await AsyncStorage.removeItem(USER_KEY);
-    } else {
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
-    }
-    emitDbUpdate();
+    try {
+      if (!user) {
+        await AsyncStorage.removeItem(USER_KEY);
+      } else {
+        const current = await AsyncStorage.getItem(USER_KEY);
+        const next = JSON.stringify(user);
+        if (current === next) return;
+        await AsyncStorage.setItem(USER_KEY, next);
+      }
+      emitDbUpdate();
+    } catch (_) {}
   },
 
   /**
@@ -253,9 +296,7 @@ export const authService = {
    */
   async logout() {
     try {
-      if (auth) {
-        await firebaseSignOut(auth).catch(() => {});
-      }
+      await api.post('/auth/logout').catch(() => {});
     } catch (_) {}
     await clearAuthData();
     emitDbUpdate();

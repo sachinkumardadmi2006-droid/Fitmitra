@@ -29,4 +29,33 @@ export const aiService = {
   async deleteConversation(id) {
     return api.delete(`/ai/conversations/${id}`);
   },
+
+  /**
+   * Fetch today's AI message quota usage
+   */
+  async getUsage() {
+    return api.get('/ai/usage');
+  },
+
+  /**
+   * Fetch user's active AI memories / preferences
+   */
+  async getMemories() {
+    return api.get('/ai/memories');
+  },
+
+  /**
+   * Save a new memory / fitness preference
+   * @param {object} payload { category: 'PREFERENCE'|'FITNESS_PREFERENCE'|'LANGUAGE'|'WORKOUT_PREFERENCE', key, value }
+   */
+  async saveMemory(payload) {
+    return api.post('/ai/memories', payload);
+  },
+
+  /**
+   * Delete a saved memory
+   */
+  async deleteMemory(id) {
+    return api.delete(`/ai/memories/${id}`);
+  },
 };

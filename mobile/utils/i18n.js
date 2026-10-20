@@ -87,6 +87,52 @@ export const TRANSLATIONS = {
     proUser: "PRO Account Active",
     exploreAsGuest: "Explore as Guest",
 
+    // Settings
+    "settings.theme": "Theme",
+    "settings.themeLight": "Light",
+    "settings.themeDark": "Dark",
+    "settings.themeSystem": "System",
+    settings: {
+      theme: "Theme",
+      themeLight: "Light",
+      themeDark: "Dark",
+      themeSystem: "System",
+    },
+
+    // Common
+    "common.retry": "Try again",
+    "common.cancel": "Cancel",
+    "common.confirm": "Confirm",
+    "common.loading": "Loading...",
+    "common.seeAll": "See all",
+    common: {
+      retry: "Try again",
+      cancel: "Cancel",
+      confirm: "Confirm",
+      loading: "Loading...",
+      seeAll: "See all",
+    },
+
+    // Errors
+    "errors.generic": "Something went wrong. Please try again.",
+    "errors.network": "No internet connection. Check your network and try again.",
+    "errors.rateLimited": "Too many requests. Please wait a moment.",
+    "errors.unavailable": "This feature is not available right now.",
+    "errors.sessionExpired": "Your session expired. Please log in again.",
+    errors: {
+      generic: "Something went wrong. Please try again.",
+      network: "No internet connection. Check your network and try again.",
+      rateLimited: "Too many requests. Please wait a moment.",
+      unavailable: "This feature is not available right now.",
+      sessionExpired: "Your session expired. Please log in again.",
+    },
+
+    // Empty
+    "empty.title": "Nothing here yet",
+    empty: {
+      title: "Nothing here yet",
+    },
+
     // Weekdays
     Monday: "Monday",
     Tuesday: "Tuesday",
@@ -182,6 +228,52 @@ export const TRANSLATIONS = {
     proUser: "PRO ಖಾತೆ ಸಕ್ರಿಯವಾಗಿದೆ",
     exploreAsGuest: "ಅತಿಥಿಯಾಗಿ ವೀಕ್ಷಿಸಿ",
 
+    // Settings
+    "settings.theme": "ಥೀಮ್",
+    "settings.themeLight": "ಲೈಟ್",
+    "settings.themeDark": "ಡಾರ್ಕ್",
+    "settings.themeSystem": "ಸಿಸ್ಟಂ",
+    settings: {
+      theme: "ಥೀಮ್",
+      themeLight: "ಲೈಟ್",
+      themeDark: "ಡಾರ್ಕ್",
+      themeSystem: "ಸಿಸ್ಟಂ",
+    },
+
+    // Common
+    "common.retry": "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
+    "common.cancel": "ರದ್ದುಮಾಡಿ",
+    "common.confirm": "ಖಚಿತಪಡಿಸಿ",
+    "common.loading": "ಲೋಡ್ ಆಗುತ್ತಿದೆ...",
+    "common.seeAll": "ಎಲ್ಲವನ್ನೂ ನೋಡಿ",
+    common: {
+      retry: "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
+      cancel: "ರದ್ದುಮಾಡಿ",
+      confirm: "ಖಚಿತಪಡಿಸಿ",
+      loading: "ಲೋಡ್ ಆಗುತ್ತಿದೆ...",
+      seeAll: "ಎಲ್ಲವನ್ನೂ ನೋಡಿ",
+    },
+
+    // Errors
+    "errors.generic": "ಏನೋ ತಪ್ಪಾಗಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+    "errors.network": "ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕ ಇಲ್ಲ. ನಿಮ್ಮ ನೆಟ್ವರ್ಕ್ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+    "errors.rateLimited": "ತುಂಬಾ ವಿನಂತಿಗಳು. ದಯವಿಟ್ಟು ಸ್ವಲ್ಪ ಕಾಯಿರಿ.",
+    "errors.unavailable": "ಈ ಸೌಲಭ್ಯ ಈಗ ಲಭ್ಯವಿಲ್ಲ.",
+    "errors.sessionExpired": "ನಿಮ್ಮ ಸೆಷನ್ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಲಾಗಿನ್ ಮಾಡಿ.",
+    errors: {
+      generic: "ಏನೋ ತಪ್ಪಾಗಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+      network: "ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕ ಇಲ್ಲ. ನಿಮ್ಮ ನೆಟ್ವರ್ಕ್ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+      rateLimited: "ತುಂಬಾ ವಿನಂತಿಗಳು. ದಯವಿಟ್ಟು ಸ್ವಲ್ಪ ಕಾಯಿರಿ.",
+      unavailable: "ಈ ಸೌಲಭ್ಯ ಈಗ ಲಭ್ಯವಿಲ್ಲ.",
+      sessionExpired: "ನಿಮ್ಮ ಸೆಷನ್ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಲಾಗಿನ್ ಮಾಡಿ.",
+    },
+
+    // Empty
+    "empty.title": "ಇಲ್ಲಿ ಇನ್ನೂ ಏನೂ ಇಲ್ಲ",
+    empty: {
+      title: "ಇಲ್ಲಿ ಇನ್ನೂ ಏನೂ ಇಲ್ಲ",
+    },
+
     // Weekdays
     Monday: "ಸೋಮವಾರ",
     Tuesday: "ಮಂಗಳವಾರ",
@@ -195,5 +287,30 @@ export const TRANSLATIONS = {
 
 export const t = (key, lang = 'en') => {
   const normalizedLang = lang === 'kn' ? 'kn' : 'en';
-  return TRANSLATIONS[normalizedLang][key] || TRANSLATIONS['en'][key] || key;
+  const dict = TRANSLATIONS[normalizedLang] || TRANSLATIONS['en'];
+  if (dict && dict[key] !== undefined && typeof dict[key] === 'string') return dict[key];
+  if (key && key.includes('.')) {
+    const parts = key.split('.');
+    let cur = dict;
+    for (const p of parts) {
+      if (cur && typeof cur === 'object') cur = cur[p];
+      else { cur = undefined; break; }
+    }
+    if (typeof cur === 'string') return cur;
+  }
+  return TRANSLATIONS['en'] ? (TRANSLATIONS['en'][key] || key) : key;
+};
+
+export const useTranslation = () => {
+  let lang = 'en';
+  try {
+    const { useAuth } = require('../context/AuthContext');
+    const auth = useAuth();
+    if (auth?.profile?.language) lang = auth.profile.language;
+    else if (auth?.user?.language) lang = auth.user.language;
+  } catch (_) {}
+  return {
+    t: (key) => t(key, lang),
+    i18n: { language: lang },
+  };
 };

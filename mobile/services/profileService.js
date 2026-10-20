@@ -14,4 +14,20 @@ export const profileService = {
   async updateProfile(updates) {
     return api.patch('/profiles/me', updates);
   },
+
+  /**
+   * Fetch notification settings
+   */
+  async getSettings() {
+    return api.get('/profiles/me/settings');
+  },
+
+  /**
+   * Update notification settings
+   * @param {object} settings { workoutReminders, pointsAlerts, offersAndNews }
+   */
+  async updateSettings(settings) {
+    return api.patch('/profiles/me/settings', settings);
+  },
 };
+

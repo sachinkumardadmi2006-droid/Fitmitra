@@ -1,243 +1,230 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
+  StyleSheet,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
-import { Trophy, Medal, Flame, Zap, User } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { Trophy, Medal, Zap, Flame, User } from 'lucide-react-native';
 import { leaderboardService } from '../services/leaderboardService';
-import { TopBar } from '../components/common/TopBar';
-import { MaterialCard } from '../components/common/MaterialCard';
-import { useTheme } from '../context/ThemeContext';
-import { FontSize, BorderRadius } from '../constants/theme';
+import { queryKeys } from '../constants/queryKeys';
+import { useAppTheme } from '../theme/ThemeContext';
+import AppHeader from '../components/ui/AppHeader';
+import AppCard from '../components/ui/AppCard';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
 
 export default function LeaderboardScreen() {
-  const { colors, isDark } = useTheme();
+  const router = useRouter();
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [currentUser, setCurrentUser] = useState({ rank: 1, points: 0 });
+  const leaderboardQuery = useQuery({
+    queryKey: queryKeys.leaderboard,
+    queryFn: async () => {
+      const res = await leaderboardService.getLeaderboard();
+      const data = res?.data || res;
+      return {
+        items: data?.leaderboard || [],
+        currentUser: data?.currentUser || data?.me || null,
+      };
+    },
+    staleTime: 60 * 1000,
+  });
 
-  const fetchLeaderboard = async () => {
-    try {
-      const data = await leaderboardService.getLeaderboard();
-      if (data?.leaderboard) {
-        setLeaderboard(data.leaderboard);
-      }
-      if (data?.currentUser) {
-        setCurrentUser(data.currentUser);
-      }
-    } catch (err) {
-      console.warn('Leaderboard fetch error:', err.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const leaderboard = leaderboardQuery.data?.items || [];
+  const currentUser = leaderboardQuery.data?.currentUser || null;
+
+  const loading = leaderboardQuery.isLoading && !leaderboardQuery.data;
+  const refreshing = leaderboardQuery.isRefetching;
+
+  const onRefresh = useCallback(async () => {
+    await leaderboardQuery.refetch();
+  }, [leaderboardQuery]);
+
+  const getRankBadgeColor = (rank) => {
+    if (rank === 1) return '#F59E0B'; // Gold
+    if (rank === 2) return '#94A3B8'; // Silver
+    if (rank === 3) return '#B45309'; // Bronze
+    return colors.surfaceVariant;
   };
-
-  useEffect(() => {
-    fetchLeaderboard();
-  }, []);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchLeaderboard();
-  };
-
-  const topThree = leaderboard.slice(0, 3);
-  const rest = leaderboard.slice(3);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bgBase }]}>
-      {/* Context-Aware TopBar */}
-      <TopBar title="Leaderboard" subtitle="Top Community Athletes" showBack icon={Trophy} />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <AppHeader title="Leaderboard" subtitle="Community Rankings & Streaks" showBack />
 
       <ScrollView
-        style={styles.scrollView}
+        style={styles.flex}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
             colors={[colors.primary]}
+            tintColor={custom.primaryStrong}
+            progressBackgroundColor={colors.surface}
           />
         }
-        showsVerticalScrollIndicator={false}
       >
-        {/* Your Rank Highlight Card */}
-        <MaterialCard elevated style={[styles.myRankCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.primary }]}>
-          <View style={styles.myRankRow}>
-            <View style={[styles.myRankBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.myRankNumber}>#{currentUser.rank}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.myRankTitle, { color: colors.textPrimary }]}>
-                Your Current Ranking
-              </Text>
-              <Text style={[styles.myRankSub, { color: colors.textSecondary }]}>
-                Keep completing workouts to climb the leaderboard!
-              </Text>
-            </View>
-            <View style={styles.pointsBadge}>
-              <Zap size={15} color={colors.primary} />
-              <Text style={[styles.pointsText, { color: colors.primary }]}>
-                {currentUser.points} pts
-              </Text>
-            </View>
-          </View>
-        </MaterialCard>
-
-        {loading && !leaderboard.length ? (
-          <View style={styles.centerSpinner}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Loading community rankings...
-            </Text>
-          </View>
-        ) : (
-          <>
-            {/* Top 3 Podium */}
-            {topThree.length >= 1 ? (
-              <View style={styles.podiumSection}>
-                {/* 2nd Place */}
-                {topThree[1] ? (
-                  <View style={[styles.podiumCol, { marginTop: 24 }]}>
-                    <View style={[styles.podiumAvatar, { borderColor: '#A0AEC0' }]}>
-                      <Text style={[styles.podiumAvatarText, { color: colors.textPrimary }]}>
-                        {topThree[1].displayName?.charAt(0) || '2'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.podiumName, { color: colors.textPrimary }]} numberOfLines={1}>
-                      {topThree[1].displayName}
-                    </Text>
-                    <View style={[styles.podiumPill, { backgroundColor: '#A0AEC025' }]}>
-                      <Medal size={12} color="#A0AEC0" />
-                      <Text style={[styles.podiumRank, { color: '#A0AEC0' }]}>2nd</Text>
-                    </View>
-                    <Text style={[styles.podiumPoints, { color: colors.textSecondary }]}>
-                      {topThree[1].points} pts
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* 1st Place (Gold) */}
-                {topThree[0] ? (
-                  <View style={styles.podiumCol}>
-                    <View style={[styles.podiumAvatarFirst, { borderColor: '#FFB800' }]}>
-                      <Text style={[styles.podiumAvatarTextFirst, { color: '#FFB800' }]}>
-                        {topThree[0].displayName?.charAt(0) || '1'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.podiumNameFirst, { color: colors.textPrimary }]} numberOfLines={1}>
-                      {topThree[0].displayName}
-                    </Text>
-                    <View style={[styles.podiumPill, { backgroundColor: '#FFB80025' }]}>
-                      <Trophy size={13} color="#FFB800" />
-                      <Text style={[styles.podiumRankFirst, { color: '#FFB800' }]}>1st</Text>
-                    </View>
-                    <Text style={[styles.podiumPointsFirst, { color: colors.primary }]}>
-                      {topThree[0].points} pts
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* 3rd Place (Bronze) */}
-                {topThree[2] ? (
-                  <View style={[styles.podiumCol, { marginTop: 32 }]}>
-                    <View style={[styles.podiumAvatar, { borderColor: '#CD7F32' }]}>
-                      <Text style={[styles.podiumAvatarText, { color: colors.textPrimary }]}>
-                        {topThree[2].displayName?.charAt(0) || '3'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.podiumName, { color: colors.textPrimary }]} numberOfLines={1}>
-                      {topThree[2].displayName}
-                    </Text>
-                    <View style={[styles.podiumPill, { backgroundColor: '#CD7F3225' }]}>
-                      <Medal size={12} color="#CD7F32" />
-                      <Text style={[styles.podiumRank, { color: '#CD7F32' }]}>3rd</Text>
-                    </View>
-                    <Text style={[styles.podiumPoints, { color: colors.textSecondary }]}>
-                      {topThree[2].points} pts
-                    </Text>
-                  </View>
-                ) : null}
+        {/* User's Current Standing Card */}
+        {currentUser && (
+          <AppCard variant="elevated" style={styles.myRankCard}>
+            <View style={styles.myRankRow}>
+              <View
+                style={[
+                  styles.myRankCircle,
+                  { backgroundColor: colors.primaryContainer, borderColor: colors.primary },
+                ]}
+              >
+                <Text style={[styles.myRankNum, { color: colors.onPrimaryContainer }]}>
+                  #{currentUser.rank || '-'}
+                </Text>
               </View>
-            ) : null}
 
-            {/* Remaining Athletes List */}
-            <Text style={[styles.listHeader, { color: colors.textMuted }]}>
-              ALL ATHLETES
-            </Text>
-
-            <MaterialCard style={[styles.listCard, { backgroundColor: colors.surface }]}>
-              {leaderboard.map((item, index) => (
-                <View
-                  key={item.userId || index}
-                  style={[
-                    styles.rankRow,
-                    index > 0 && { borderTopWidth: 1, borderTopColor: colors.borderLight },
-                  ]}
-                >
-                  <Text style={[styles.rankNumber, { color: colors.textMuted }]}>
-                    #{item.rank || index + 1}
-                  </Text>
-                  <View style={[styles.userAvatar, { backgroundColor: colors.surfaceElevated }]}>
-                    <User size={16} color={colors.textSecondary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.userName, { color: colors.textPrimary }]}>
-                      {item.displayName || 'Athlete'}
-                    </Text>
-                    <Text style={[styles.userGoal, { color: colors.textMuted }]}>
-                      {item.goal || 'General Fitness'}
+              <View style={styles.myRankInfo}>
+                <Text style={[styles.myRankLabel, { color: colors.onSurfaceVariant }]}>
+                  Your Standing
+                </Text>
+                <View style={styles.statsRow}>
+                  <View style={styles.statPill}>
+                    <Zap size={14} color={colors.secondary} fill={colors.secondary} />
+                    <Text style={[styles.statVal, { color: colors.onSurface }]}>
+                      {currentUser.lifetimePoints || currentUser.points || 0} pts
                     </Text>
                   </View>
-                  <View style={styles.pointsBadge}>
-                    <Zap size={13} color={colors.primary} />
-                    <Text style={[styles.pointsText, { color: colors.textPrimary }]}>
-                      {item.points || 0}
+                  <View style={styles.statPill}>
+                    <Flame size={14} color="#EF4444" fill="#EF4444" />
+                    <Text style={[styles.statVal, { color: colors.onSurface }]}>
+                      {currentUser.currentStreak || 0} days streak
                     </Text>
                   </View>
                 </View>
-              ))}
-            </MaterialCard>
-          </>
+              </View>
+            </View>
+          </AppCard>
         )}
 
-        <View style={{ height: 40 }} />
+        {/* Loading Skeletons */}
+        {loading && leaderboard.length === 0 ? (
+          <View style={styles.skeletonWrap}>
+            <Skeleton height={70} radius={custom.radius.md} style={styles.mbSm} />
+            <Skeleton height={70} radius={custom.radius.md} style={styles.mbSm} />
+            <Skeleton height={70} radius={custom.radius.md} style={styles.mbSm} />
+            <Skeleton height={70} radius={custom.radius.md} style={styles.mbSm} />
+          </View>
+        ) : leaderboard.length > 0 ? (
+          leaderboard.map((item) => {
+            const isTop3 = item.rank <= 3;
+            const badgeColor = getRankBadgeColor(item.rank);
+
+            return (
+              <AppCard
+                key={item.rank}
+                variant={item.isMe ? 'elevated' : 'outlined'}
+                style={[
+                  styles.rankCard,
+                  item.isMe ? { borderColor: colors.primary, borderWidth: 1.5 } : null,
+                ]}
+              >
+                <View style={styles.rankRow}>
+                  {/* Rank Position */}
+                  <View
+                    style={[
+                      styles.rankBadge,
+                      { backgroundColor: isTop3 ? badgeColor : colors.surfaceVariant },
+                    ]}
+                  >
+                    {item.rank === 1 ? (
+                      <Trophy size={16} color="#FFF" />
+                    ) : item.rank <= 3 ? (
+                      <Medal size={16} color="#FFF" />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.rankText,
+                          { color: colors.onSurfaceVariant },
+                        ]}
+                      >
+                        {item.rank}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* User Meta */}
+                  <View style={styles.userCol}>
+                    <View style={styles.userNameRow}>
+                      <Text
+                        style={[
+                          styles.userName,
+                          { color: colors.onSurface },
+                          item.isMe ? { fontWeight: '700', color: colors.primary } : null,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {item.displayName || 'FitMitra Athlete'}
+                      </Text>
+                      {item.isMe && (
+                        <View style={[styles.youBadge, { backgroundColor: colors.primaryContainer }]}>
+                          <Text style={[styles.youText, { color: colors.onPrimaryContainer }]}>
+                            YOU
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.metaRow}>
+                      <Flame size={12} color="#EF4444" />
+                      <Text style={[styles.metaText, { color: colors.onSurfaceVariant }]}>
+                        {item.currentStreak || 0} day streak
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Points Pill */}
+                  <View
+                    style={[
+                      styles.pointsPill,
+                      { backgroundColor: colors.secondaryContainer },
+                    ]}
+                  >
+                    <Zap size={13} color={colors.secondary} fill={colors.secondary} />
+                    <Text style={[styles.pointsVal, { color: colors.onSecondaryContainer }]}>
+                      {item.lifetimePoints || 0}
+                    </Text>
+                  </View>
+                </View>
+              </AppCard>
+            );
+          })
+        ) : (
+          <EmptyState
+            icon="award"
+            title="Leaderboard Resetting"
+            description="Leaderboard rankings will appear once athlete workouts are logged."
+          />
+        )}
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
   },
-  scrollView: {
+  flex: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  centerSpinner: {
-    paddingVertical: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: FontSize.sm,
+    padding: 16,
+    paddingBottom: 40,
   },
   myRankCard: {
     padding: 16,
-    borderWidth: 1.5,
     marginBottom: 20,
   },
   myRankRow: {
@@ -245,145 +232,107 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
-  myRankBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  myRankNumber: {
-    fontSize: FontSize.lg,
-    fontWeight: '900',
-    color: '#000',
-  },
-  myRankTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '800',
-  },
-  myRankSub: {
-    fontSize: FontSize.xs,
-    marginTop: 2,
-  },
-  pointsBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  pointsText: {
-    fontSize: FontSize.sm,
-    fontWeight: '800',
-  },
-  podiumSection: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    marginBottom: 24,
-    gap: 16,
-  },
-  podiumCol: {
-    alignItems: 'center',
-    width: 90,
-  },
-  podiumAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  myRankCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
-  podiumAvatarFirst: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  podiumAvatarText: {
-    fontSize: 20,
+  myRankNum: {
+    fontSize: 16,
     fontWeight: '800',
   },
-  podiumAvatarTextFirst: {
-    fontSize: 26,
-    fontWeight: '900',
+  myRankInfo: {
+    flex: 1,
   },
-  podiumName: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    textAlign: 'center',
+  myRankLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 4,
   },
-  podiumNameFirst: {
-    fontSize: FontSize.sm,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 4,
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  podiumPill: {
+  statPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-    marginBottom: 4,
   },
-  podiumRank: {
-    fontSize: 10,
-    fontWeight: '800',
+  statVal: {
+    fontSize: 13,
+    fontWeight: '600',
   },
-  podiumRankFirst: {
-    fontSize: 11,
-    fontWeight: '900',
+  skeletonWrap: {
+    gap: 10,
   },
-  podiumPoints: {
-    fontSize: 11,
-    fontWeight: '700',
+  mbSm: {
+    marginBottom: 10,
   },
-  podiumPointsFirst: {
-    fontSize: FontSize.xs,
-    fontWeight: '900',
-  },
-  listHeader: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
+  rankCard: {
+    padding: 12,
     marginBottom: 8,
-    marginLeft: 4,
-  },
-  listCard: {
-    padding: 0,
-    marginBottom: 20,
   },
   rankRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
     gap: 12,
   },
-  rankNumber: {
-    width: 28,
-    fontSize: FontSize.xs,
-    fontWeight: '800',
-  },
-  userAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  rankBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  userName: {
-    fontSize: FontSize.sm,
+  rankText: {
+    fontSize: 14,
     fontWeight: '700',
   },
-  userGoal: {
-    fontSize: 10,
-    marginTop: 1,
+  userCol: {
+    flex: 1,
+  },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  youBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  youText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 11,
+  },
+  pointsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  pointsVal: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

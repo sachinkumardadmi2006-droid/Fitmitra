@@ -11,12 +11,12 @@ import {
   ActivityIndicator,
   ImageBackground,
   Dimensions,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ArrowLeft, Dumbbell } from 'lucide-react-native';
-import { syncAuth } from '../../services/api';
+import { authService } from '../../services/authService';
 import { useTheme } from '../../context/ThemeContext';
 import { FontSize, BorderRadius } from '../../constants/theme';
 
@@ -78,11 +78,15 @@ export default function OtpVerification() {
     setError('');
     setLoading(true);
     try {
-      const result = await syncAuth('dev-token');
-      if (result?.user) {
-        await AsyncStorage.setItem('fitmitra_user', JSON.stringify(result.user));
+      if (!__DEV__) {
+        throw new Error('Phone verification is not yet available in production.');
       }
-      router.replace('/(auth)/onboarding');
+      const result = await authService.devLogin();
+      if (result?.isOnboarded) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/onboarding');
+      }
     } catch (err) {
       setError(err.message || 'Invalid code. Please try again.');
     } finally {

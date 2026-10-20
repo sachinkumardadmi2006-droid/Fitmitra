@@ -27,10 +27,11 @@ import {
   Check,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQueryClient } from '@tanstack/react-query';
 import { Colors } from '../../constants/theme';
 import { authService, profileService } from '../../services';
+import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
-import { onDbUpdate, emitDbUpdate } from '../../utils/events';
 import { t } from '../../utils/i18n';
 
 const GOALS = ['Muscle Gain', 'Fat Loss', 'Strength', 'General Fitness'];
@@ -44,6 +45,7 @@ const ACTIVITIES = [
 
 export default function ProfileTab() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { points, refreshProfile } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -116,8 +118,6 @@ export default function ProfileTab() {
 
   useEffect(() => {
     loadData();
-    const unsub = onDbUpdate(loadData);
-    return unsub;
   }, [loadData]);
 
   const handleSaveProfile = async () => {
@@ -174,7 +174,10 @@ export default function ProfileTab() {
       await authService.saveLocalUser(updated);
       setUser(updated);
       refreshProfile();
-      emitDbUpdate();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]);
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (e) {
       Alert.alert('Error', 'Failed to update profile.');

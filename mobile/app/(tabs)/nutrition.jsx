@@ -1,6 +1,4 @@
-// Nutrition & Diet Tracker Tab — connected to live Nutrition APIs
-// GET /api/v1/nutrition/recipes, GET /api/v1/nutrition/logs, POST /api/v1/nutrition/logs
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,1276 +7,1116 @@ import {
   ScrollView,
   StyleSheet,
   Modal,
-  Image,
   Alert,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Apple,
+  Utensils,
   Plus,
   Trash2,
   Clock,
   Check,
   X,
   Search,
-  Lock,
-  Sparkles,
-  ChevronRight,
+  Droplets,
   Flame,
+  Info,
+  ChevronRight,
+  BookOpen,
 } from 'lucide-react-native';
-import { Colors } from '../../constants/theme';
-import { nutritionService } from '../../services';
-import { useAuth } from '../../context/AuthContext';
-import { onDbUpdate, emitDbUpdate } from '../../utils/events';
-import { t } from '../../utils/i18n';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { ProgressBar, Chip } from 'react-native-paper';
+import { nutritionService } from '../../services/nutritionService';
+import { queryKeys } from '../../constants/queryKeys';
 import { TopBar } from '../../components/common/TopBar';
-import { useTheme } from '../../context/ThemeContext';
-import { Utensils } from 'lucide-react-native';
+import { useAppTheme } from '../../theme/ThemeContext';
+import AppCard from '../../components/ui/AppCard';
+import AppButton from '../../components/ui/AppButton';
+import SectionHeader from '../../components/ui/SectionHeader';
+import EmptyState from '../../components/ui/EmptyState';
+import Skeleton from '../../components/ui/Skeleton';
 
-export default function NutritionTab() {
+const MEAL_CATEGORIES = [
+  { key: 'BREAKFAST', label: 'Breakfast' },
+  { key: 'LUNCH', label: 'Lunch' },
+  { key: 'DINNER', label: 'Dinner' },
+  { key: 'SNACK', label: 'Snacks' },
+];
+
+export default function NutritionScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
-  const { colors, isDark } = useTheme();
+  const queryClient = useQueryClient();
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
 
-  const [recipes, setRecipes] = useState([]);
-  const [nutritionLog, setNutritionLog] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  // Tabs & Filters
-  const [activeTab, setActiveTab] = useState('All');
+  // Modals state
+  const [logModalVisible, setLogModalVisible] = useState(false);
+  const [selectedMealType, setSelectedMealType] = useState('BREAKFAST');
+  const [foodName, setFoodName] = useState('');
+  const [caloriesInput, setCaloriesInput] = useState('');
+  const [proteinInput, setProteinInput] = useState('');
+  const [carbsInput, setCarbsInput] = useState('');
+  const [fatInput, setFatInput] = useState('');
+  const [quantityInput, setQuantityInput] = useState('1');
+  const [unitInput, setUnitInput] = useState('serving');
+  const [submittingMeal, setSubmittingMeal] = useState(false);
+
+  // Recipe detail modal
+  const [recipeModalVisible, setRecipeModalVisible] = useState(false);
+  const [activeRecipe, setActiveRecipe] = useState(null);
+  const [recipeMealType, setRecipeMealType] = useState('LUNCH');
   const [recipeSearch, setRecipeSearch] = useState('');
 
-  // Recipe Modal
-  const [selectedRecipe, setSelectedRecipe] = useState(null);
-  const [recipeModalVisible, setRecipeModalVisible] = useState(false);
-  const [targetMealType, setTargetMealType] = useState('BREAKFAST');
+  // 1. Targets Query
+  const targetsQuery = useQuery({
+    queryKey: queryKeys.nutritionTargets,
+    queryFn: async () => {
+      const res = await nutritionService.getTargets();
+      const t = res?.data || res;
+      return t?.calories ? t : { calories: 2200, protein: 140, carbs: 240, fat: 65, waterMl: 3000 };
+    },
+    staleTime: 60 * 1000,
+  });
 
-  // Custom Log Modal
-  const [customModalVisible, setCustomModalVisible] = useState(false);
-  const [customMealType, setCustomMealType] = useState('BREAKFAST');
-  const [customFoodName, setCustomFoodName] = useState('');
-  const [customCalories, setCustomCalories] = useState('');
-  const [customProtein, setCustomProtein] = useState('');
-  const [customCarbs, setCustomCarbs] = useState('');
-  const [customFats, setCustomFats] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // 2. Daily Log Query
+  const logsQuery = useQuery({
+    queryKey: queryKeys.nutritionLogs(todayDate),
+    queryFn: async () => {
+      const res = await nutritionService.getNutritionLogs(todayDate);
+      const l = res?.data || res;
+      return Array.isArray(l) ? l[0] : l || null;
+    },
+    staleTime: 60 * 1000,
+  });
 
-  const lang = user?.language || 'en';
-  const todayDate = new Date().toISOString().split('T')[0];
+  // 3. Hydration Query
+  const waterQuery = useQuery({
+    queryKey: queryKeys.nutritionWater,
+    queryFn: async () => {
+      const res = await nutritionService.getWater();
+      return typeof res === 'object' ? (res?.totalMl ?? 0) : Number(res || 0);
+    },
+    staleTime: 60 * 1000,
+  });
 
-  const loadData = useCallback(async () => {
+  // 4. Recipes Query
+  const recipesQuery = useQuery({
+    queryKey: queryKeys.recipes(20),
+    queryFn: async () => {
+      const res = await nutritionService.getRecipes({ limit: 20 });
+      return Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray(res)
+        ? res
+        : [];
+    },
+    staleTime: 60 * 1000,
+  });
+
+  const targets = targetsQuery.data || { calories: 2200, protein: 140, carbs: 240, fat: 65, waterMl: 3000 };
+  const dailyLog = logsQuery.data || null;
+  const waterMl = waterQuery.data ?? 0;
+  const recipes = recipesQuery.data || [];
+
+  const loading =
+    (targetsQuery.isLoading && !targetsQuery.data) &&
+    (logsQuery.isLoading && !logsQuery.data);
+
+  const refreshing =
+    targetsQuery.isRefetching ||
+    logsQuery.isRefetching ||
+    waterQuery.isRefetching ||
+    recipesQuery.isRefetching;
+
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      targetsQuery.refetch(),
+      logsQuery.refetch(),
+      waterQuery.refetch(),
+      recipesQuery.refetch(),
+    ]);
+  }, [targetsQuery, logsQuery, waterQuery, recipesQuery]);
+
+  const handleAddWater = async (amount = 250) => {
     try {
-      // 1. Fetch real recipes
-      const recipeRes = await nutritionService.getRecipes({ limit: 50 });
-      const recipeList = Array.isArray(recipeRes)
-        ? recipeRes
-        : recipeRes?.recipes || recipeRes?.items || [];
-      setRecipes(recipeList);
-
-      // 2. Fetch today's meal logs
-      const logRes = await nutritionService.getNutritionLogs(todayDate);
-      // Backend may return single log object or array of logs
-      const logData = Array.isArray(logRes) ? logRes[0] : logRes;
-      setNutritionLog(logData || null);
+      await nutritionService.logWater(amount);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionWater }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]);
     } catch (e) {
-      console.warn('Error loading nutrition data from server:', e.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.warn('[Nutrition] Water log error:', e.message);
     }
-  }, [todayDate]);
-
-  useEffect(() => {
-    setLoading(true);
-    loadData();
-    const unsub = onDbUpdate(loadData);
-    return unsub;
-  }, [loadData]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadData();
   };
 
-  // Macro Goals & Calculations
-  const targetCal = profile?.dailyCalorieTarget || user?.targetCal || 2200;
-  const targetProtein = profile?.dailyProteinTargetGrams || user?.targetProtein || 140;
-  const targetCarbs = profile?.dailyCarbsTargetGrams || user?.targetCarbs || 250;
-  const targetFats = profile?.dailyFatTargetGrams || user?.targetFats || 65;
-
-  const totals = nutritionLog?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  const totalCalories = Math.round(totals.calories || 0);
-  const totalProtein = Math.round(totals.protein || 0);
-  const totalCarbs = Math.round(totals.carbs || 0);
-  const totalFats = Math.round(totals.fat || totals.fats || 0);
-  const remainingCal = Math.max(0, targetCal - totalCalories);
-
-  // Group meals from server log
-  const rawMeals = nutritionLog?.meals || {};
-  const meals = {
-    Breakfast: rawMeals.BREAKFAST || rawMeals.breakfast || [],
-    Lunch: rawMeals.LUNCH || rawMeals.lunch || [],
-    Dinner: rawMeals.DINNER || rawMeals.dinner || [],
-    Snacks: rawMeals.SNACK || rawMeals.snack || rawMeals.SNACKS || [],
+  const openLogModalFor = (mealType) => {
+    setSelectedMealType(mealType);
+    setFoodName('');
+    setCaloriesInput('');
+    setProteinInput('');
+    setCarbsInput('');
+    setFatInput('');
+    setQuantityInput('1');
+    setUnitInput('serving');
+    setLogModalVisible(true);
   };
 
-  const handleAddRecipeMeal = async (recipe, mealCategory) => {
-    const chosenType = (mealCategory || targetMealType || 'BREAKFAST').toUpperCase();
-    const normalizedMealType = chosenType === 'SNACKS' ? 'SNACK' : chosenType;
+  const handleSubmitCustomMeal = async () => {
+    if (!foodName.trim() || !caloriesInput.trim()) {
+      Alert.alert('Required Fields', 'Please enter at least the food name and estimated calories.');
+      return;
+    }
 
-    const mealName = lang === 'kn' && recipe.nameKn ? recipe.nameKn : recipe.name;
+    setSubmittingMeal(true);
     try {
-      setIsSubmitting(true);
       await nutritionService.addNutritionLog({
         date: todayDate,
-        mealType: normalizedMealType,
+        mealType: selectedMealType,
         items: [
           {
-            recipeId: recipe._id || recipe.id,
-            name: mealName,
+            name: foodName.trim(),
+            quantity: Number(quantityInput) || 1,
+            unit: unitInput.trim() || 'serving',
+            calories: Math.max(0, Number(caloriesInput) || 0),
+            protein: Math.max(0, Number(proteinInput) || 0),
+            carbs: Math.max(0, Number(carbsInput) || 0),
+            fat: Math.max(0, Number(fatInput) || 0),
+          },
+        ],
+      });
+
+      setLogModalVisible(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(todayDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to save meal item to server.');
+    } finally {
+      setSubmittingMeal(false);
+    }
+  };
+
+  const handleDeleteItem = async (logId, itemId) => {
+    if (!logId || !itemId) return;
+    try {
+      await nutritionService.deleteNutritionLogItem(logId, itemId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(todayDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to delete item.');
+    }
+  };
+
+  const handleOpenRecipeDetail = (recipe) => {
+    setActiveRecipe(recipe);
+    setRecipeModalVisible(true);
+  };
+
+  const handleLogRecipeAsMeal = async () => {
+    if (!activeRecipe) return;
+
+    setSubmittingMeal(true);
+    try {
+      await nutritionService.addNutritionLog({
+        date: todayDate,
+        mealType: recipeMealType,
+        items: [
+          {
+            recipeId: activeRecipe._id || activeRecipe.id,
+            name: activeRecipe.name,
             quantity: 1,
             unit: 'serving',
-            calories: Number(recipe.calories) || 0,
-            protein: Number(recipe.protein) || 0,
-            carbs: Number(recipe.carbs) || 0,
-            fat: Number(recipe.fat || recipe.fats) || 0,
+            calories: Number(activeRecipe.calories) || 0,
+            protein: Number(activeRecipe.protein) || 0,
+            carbs: Number(activeRecipe.carbs) || 0,
+            fat: Number(activeRecipe.fat || activeRecipe.fats) || 0,
           },
         ],
       });
 
       setRecipeModalVisible(false);
-      emitDbUpdate();
-      Alert.alert('Meal Logged!', `${mealName} added to your daily intake.`);
-      loadData();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(todayDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]);
+      Alert.alert('Recipe Logged!', `${activeRecipe.name} added to your ${recipeMealType.toLowerCase()} log.`);
     } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to log recipe meal.');
+      Alert.alert('Error', e.message || 'Failed to log recipe.');
     } finally {
-      setIsSubmitting(false);
+      setSubmittingMeal(false);
     }
   };
 
-  const handleAddCustomMeal = async () => {
-    if (!customFoodName.trim() || !customCalories.trim()) {
-      Alert.alert('Missing Info', 'Please enter at least food name and calories.');
-      return;
-    }
-    const normalizedMealType = customMealType.toUpperCase() === 'SNACKS' ? 'SNACK' : customMealType.toUpperCase();
+  // Compute live daily totals from server log
+  const totals = dailyLog?.dailyTotals || dailyLog?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const currentCalories = Math.round(totals.calories || 0);
+  const currentProtein = Math.round(totals.protein || 0);
+  const currentCarbs = Math.round(totals.carbs || 0);
+  const currentFat = Math.round(totals.fat || totals.fats || 0);
 
-    try {
-      setIsSubmitting(true);
-      await nutritionService.addNutritionLog({
-        date: todayDate,
-        mealType: normalizedMealType,
-        items: [
-          {
-            name: customFoodName.trim(),
-            quantity: 1,
-            unit: 'serving',
-            calories: Number(customCalories) || 0,
-            protein: Number(customProtein) || 0,
-            carbs: Number(customCarbs) || 0,
-            fat: Number(customFats) || 0,
-          },
-        ],
-      });
+  const targetCal = Math.max(1200, targets.calories || 2200);
+  const targetProt = Math.max(30, targets.protein || 140);
+  const targetCarb = Math.max(50, targets.carbs || 240);
+  const targetF = Math.max(20, targets.fat || 65);
+  const targetWat = Math.max(1000, targets.waterMl || 3000);
 
-      setCustomModalVisible(false);
-      setCustomFoodName('');
-      setCustomCalories('');
-      setCustomProtein('');
-      setCustomCarbs('');
-      setCustomFats('');
-      emitDbUpdate();
-      loadData();
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to add food log.');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const calProgress = Math.min(Math.max(currentCalories / targetCal, 0), 1);
+  const protProgress = Math.min(Math.max(currentProtein / targetProt, 0), 1);
+  const carbProgress = Math.min(Math.max(currentCarbs / targetCarb, 0), 1);
+  const fatProgress = Math.min(Math.max(currentFat / targetF, 0), 1);
+  const waterProgress = Math.min(Math.max(waterMl / targetWat, 0), 1);
+
+  // Group meals
+  const logId = dailyLog?._id || dailyLog?.id;
+  const rawMeals = dailyLog?.meals || {};
+  const mealsMap = {
+    BREAKFAST: rawMeals.BREAKFAST || rawMeals.breakfast || [],
+    LUNCH: rawMeals.LUNCH || rawMeals.lunch || [],
+    DINNER: rawMeals.DINNER || rawMeals.dinner || [],
+    SNACK: rawMeals.SNACK || rawMeals.snack || rawMeals.SNACKS || [],
   };
 
-  const handleDeleteItem = async (itemId) => {
-    if (!nutritionLog?._id) return;
-    try {
-      await nutritionService.deleteNutritionLogItem(nutritionLog._id, itemId);
-      emitDbUpdate();
-      loadData();
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Could not delete meal item.');
-    }
-  };
+  const totalItemsCount = Object.values(mealsMap).reduce((sum, items) => sum + (items?.length || 0), 0);
 
-  const openRecipeDetails = (recipe, defaultMealType) => {
-    if (recipe.isPremium && !user?.isPremium) {
-      router.push('/premium');
-      return;
-    }
-    setSelectedRecipe(recipe);
-    setTargetMealType(defaultMealType || 'BREAKFAST');
-    setRecipeModalVisible(true);
-  };
-
-  // Filter Recipes
-  const filteredRecipes = recipes.filter((r) => {
-    const q = recipeSearch.toLowerCase();
-    const nameMatch = (r.name || '').toLowerCase().includes(q);
-    const catMatch = (r.category || '').toLowerCase().includes(q);
-    const searchMatches = !q || nameMatch || catMatch;
-
-    if (activeTab === 'All') return searchMatches;
-    return (r.category || '').toLowerCase().includes(activeTab.toLowerCase()) && searchMatches;
-  });
-
-  if (loading) {
-    return <LoadingSpinner message="Loading nutrition tracker..." fullScreen />;
-  }
-
-  const mealCategories = [
-    { key: 'Breakfast', serverKey: 'BREAKFAST' },
-    { key: 'Lunch', serverKey: 'LUNCH' },
-    { key: 'Dinner', serverKey: 'DINNER' },
-    { key: 'Snacks', serverKey: 'SNACK' },
-  ];
+  const filteredRecipes = recipes.filter((r) =>
+    recipeSearch.trim()
+      ? r.name?.toLowerCase().includes(recipeSearch.toLowerCase())
+      : true
+  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bgBase }}>
-      <TopBar
-        title="Nutrition & Diet"
-        subtitle="Track Calories & Macros"
-        icon={Utensils}
-        rightAction={
-          <Pressable
-            style={[styles.quickAddBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setCustomModalVisible(true)}
-          >
-            <Plus size={16} color="#000" />
-            <Text style={styles.quickAddBtnText}>Add Food</Text>
-          </Pressable>
-        }
-      />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <TopBar title="Diet & Nutrition" subtitle="Macros, meals & recipes" />
+
       <ScrollView
-        style={[styles.container, { backgroundColor: colors.bgBase }]}
-        contentContainerStyle={styles.contentContainer}
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={custom.primaryStrong}
+            progressBackgroundColor={colors.surface}
+          />
         }
       >
-      {/* Energy Balance Card */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          {lang === 'kn' ? 'ದೈನಂದಿನ ಶಕ್ತಿಯ ಸಮತೋಲನ' : 'Daily Energy Balance'}
-        </Text>
-
-        <View style={styles.calRow}>
-          <View style={styles.calBox}>
-            <Text style={styles.calLabel}>Goal</Text>
-            <Text style={styles.calValue}>{targetCal}</Text>
-            <Text style={styles.calUnit}>kcal</Text>
+        {/* Loading Skeleton */}
+        {loading && !dailyLog && recipes.length === 0 ? (
+          <View style={styles.skeletonWrap}>
+            <Skeleton height={180} radius={custom.radius.lg} style={styles.mbLg} />
+            <Skeleton height={100} radius={custom.radius.lg} style={styles.mbLg} />
+            <Skeleton height={120} radius={custom.radius.lg} />
           </View>
-          <View style={[styles.calBox, styles.calBoxActive]}>
-            <Text style={[styles.calLabel, { color: Colors.primaryNeon }]}>Eaten</Text>
-            <Text style={[styles.calValue, { color: Colors.primaryNeon }]}>{totalCalories}</Text>
-            <Text style={styles.calUnit}>kcal</Text>
-          </View>
-          <View style={styles.calBox}>
-            <Text style={styles.calLabel}>Remaining</Text>
-            <Text style={styles.calValue}>{remainingCal}</Text>
-            <Text style={styles.calUnit}>kcal</Text>
-          </View>
-        </View>
+        ) : (
+          <>
+            {/* 1. Daily Calorie & Macronutrient Summary Card */}
+            <AppCard variant="elevated" style={styles.summaryCard}>
+              <View style={styles.summaryTopRow}>
+                <View>
+                  <Text style={[styles.summaryTitle, { color: colors.onSurface }]}>
+                    Daily Macro Intake
+                  </Text>
+                  <Text style={[styles.summaryDate, { color: colors.onSurfaceVariant }]}>
+                    Today's Goals & Targets
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.calTargetPill,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+                  ]}
+                >
+                  <Flame size={14} color={colors.secondary} />
+                  <Text style={[styles.calTargetPillText, { color: colors.onSurface }]}>
+                    Target: {targetCal} kcal
+                  </Text>
+                </View>
+              </View>
 
-        {/* Progress Bar */}
-        <View style={styles.mainProgressTrack}>
-          <View
-            style={[
-              styles.mainProgressFill,
-              { width: `${Math.min(100, Math.round((totalCalories / (targetCal || 1)) * 100))}%` },
-            ]}
-          />
-        </View>
+              {/* Calorie Gauge */}
+              <View style={styles.calSection}>
+                <ProgressBar
+                  progress={calProgress}
+                  color={colors.primary}
+                  style={styles.calProgressBar}
+                />
+                <View style={styles.calRow}>
+                  <Text style={[styles.calEaten, { color: colors.onSurface }]}>
+                    {currentCalories} <Text style={styles.calUnit}>kcal eaten</Text>
+                  </Text>
+                  <Text style={[styles.calRemaining, { color: colors.onSurfaceVariant }]}>
+                    {Math.max(0, targetCal - currentCalories)} kcal remaining
+                  </Text>
+                </View>
+              </View>
 
-        {/* Macro Bars */}
-        <View style={styles.macrosRow}>
-          {/* Protein */}
-          <View style={styles.macroCol}>
-            <View style={styles.macroHeader}>
-              <Text style={styles.macroName}>{t('protein', lang)}</Text>
-              <Text style={styles.macroVal}>
-                {totalProtein}/{targetProtein}g
-              </Text>
-            </View>
-            <View style={styles.miniTrack}>
-              <View
-                style={[
-                  styles.miniFill,
-                  {
-                    backgroundColor: Colors.secondaryCyan,
-                    width: `${Math.min(100, Math.round((totalProtein / (targetProtein || 1)) * 100))}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
+              {/* Macro Breakdown Columns */}
+              <View style={styles.macroColumnsRow}>
+                <View style={styles.macroCol}>
+                  <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>Protein</Text>
+                  <Text style={[styles.macroVal, { color: colors.onSurface }]}>
+                    {currentProtein} / {targetProt}g
+                  </Text>
+                  <ProgressBar progress={protProgress} color={colors.primary} style={styles.macroBar} />
+                </View>
 
-          {/* Carbs */}
-          <View style={styles.macroCol}>
-            <View style={styles.macroHeader}>
-              <Text style={styles.macroName}>{t('carbs', lang)}</Text>
-              <Text style={styles.macroVal}>
-                {totalCarbs}/{targetCarbs}g
-              </Text>
-            </View>
-            <View style={styles.miniTrack}>
-              <View
-                style={[
-                  styles.miniFill,
-                  {
-                    backgroundColor: Colors.accentAmber,
-                    width: `${Math.min(100, Math.round((totalCarbs / (targetCarbs || 1)) * 100))}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
+                <View style={styles.macroCol}>
+                  <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>Carbs</Text>
+                  <Text style={[styles.macroVal, { color: colors.onSurface }]}>
+                    {currentCarbs} / {targetCarb}g
+                  </Text>
+                  <ProgressBar progress={carbProgress} color={colors.secondary} style={styles.macroBar} />
+                </View>
 
-          {/* Fats */}
-          <View style={styles.macroCol}>
-            <View style={styles.macroHeader}>
-              <Text style={styles.macroName}>{t('fats', lang)}</Text>
-              <Text style={styles.macroVal}>
-                {totalFats}/{targetFats}g
-              </Text>
-            </View>
-            <View style={styles.miniTrack}>
-              <View
-                style={[
-                  styles.miniFill,
-                  {
-                    backgroundColor: Colors.accentRose,
-                    width: `${Math.min(100, Math.round((totalFats / (targetFats || 1)) * 100))}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-        </View>
-      </View>
+                <View style={styles.macroCol}>
+                  <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>Fats</Text>
+                  <Text style={[styles.macroVal, { color: colors.onSurface }]}>
+                    {currentFat} / {targetF}g
+                  </Text>
+                  <ProgressBar progress={fatProgress} color={colors.outline} style={styles.macroBar} />
+                </View>
+              </View>
+            </AppCard>
 
-      {/* Meals Log Section */}
-      <Text style={styles.sectionHeader}>Today's Logged Meals</Text>
-      {mealCategories.map(({ key, serverKey }) => {
-        const list = meals[key] || [];
-        const mealCals = list.reduce((a, b) => a + (Number(b.calories) || 0), 0);
-        return (
-          <View key={key} style={styles.mealGroupCard}>
-            <View style={styles.mealGroupHeader}>
-              <View>
-                <Text style={styles.mealGroupTitle}>{key}</Text>
-                <Text style={styles.mealGroupSub}>
-                  {list.length} item{list.length === 1 ? '' : 's'}
+            {/* 2. Hydration Tracking Card */}
+            <AppCard variant="outlined" style={styles.hydrationCard}>
+              <View style={styles.hydrationHeader}>
+                <View style={styles.rowAlign}>
+                  <Droplets size={18} color={colors.primary} />
+                  <Text style={[styles.hydrationTitle, { color: colors.onSurface }]}>
+                    Hydration Tracker
+                  </Text>
+                </View>
+                <Text style={[styles.waterVal, { color: colors.onSurface }]}>
+                  {waterMl} <Text style={styles.waterTargetSub}>/ {targetWat} ml</Text>
                 </Text>
               </View>
-              <View style={styles.mealGroupRight}>
-                <Text style={styles.mealGroupCals}>{mealCals} kcal</Text>
+
+              <ProgressBar
+                progress={waterProgress}
+                color={colors.primary}
+                style={styles.waterProgressBar}
+              />
+
+              <View style={styles.waterActionRow}>
+                <Text style={[styles.waterPct, { color: colors.onSurfaceVariant }]}>
+                  {Math.round(waterProgress * 100)}% of daily recommendation
+                </Text>
+
                 <Pressable
-                  style={styles.addMiniBtn}
-                  onPress={() => {
-                    setCustomMealType(serverKey);
-                    setCustomModalVisible(true);
-                  }}
-                >
-                  <Plus size={14} color={Colors.primaryNeon} />
-                </Pressable>
-              </View>
-            </View>
-
-            {list.length === 0 ? (
-              <Text style={styles.emptyMealText}>No food logged yet for {key}</Text>
-            ) : (
-              list.map((item, idx) => (
-                <View key={item._id || item.id || idx} style={styles.foodRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.foodName}>{item.name}</Text>
-                    <Text style={styles.foodMacros}>
-                      P: {item.protein || 0}g • C: {item.carbs || 0}g • F: {item.fat || item.fats || 0}g
-                    </Text>
-                  </View>
-                  <Text style={styles.foodCals}>{item.calories} kcal</Text>
-                  <Pressable
-                    onPress={() => handleDeleteItem(item._id || item.id)}
-                    style={styles.deleteBtn}
-                  >
-                    <Trash2 size={16} color={Colors.accentRose} />
-                  </Pressable>
-                </View>
-              ))
-            )}
-          </View>
-        );
-      })}
-
-      {/* Healthy Recipes Catalogue */}
-      <View style={styles.recipeHeaderRow}>
-        <Text style={styles.sectionHeader}>Curated Healthy Recipes</Text>
-        {!user?.isPremium && (
-          <Pressable
-            style={styles.proPill}
-            onPress={() => router.push('/premium')}
-          >
-            <Sparkles size={12} color="#000" />
-            <Text style={styles.proPillText}>Upgrade PRO</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {/* Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsScroll}
-        contentContainerStyle={{ gap: 8 }}
-      >
-        {['All', 'Breakfast', 'Lunch', 'Dinner', 'Snacks'].map((tab) => (
-          <Pressable
-            key={tab}
-            style={[styles.tabChip, activeTab === tab && styles.tabChipActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text
-              style={[styles.tabChipText, activeTab === tab && styles.tabChipTextActive]}
-            >
-              {tab}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      {/* Search Bar */}
-      <View style={styles.searchBar}>
-        <Search size={18} color={Colors.textSecondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search recipes, ingredients..."
-          placeholderTextColor={Colors.textSecondary}
-          value={recipeSearch}
-          onChangeText={setRecipeSearch}
-        />
-        {recipeSearch ? (
-          <Pressable onPress={() => setRecipeSearch('')}>
-            <X size={16} color={Colors.textSecondary} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {/* Recipe Cards List */}
-      <View style={{ gap: 14 }}>
-        {filteredRecipes.length === 0 ? (
-          <Text style={styles.emptyMealText}>No recipes match your criteria.</Text>
-        ) : (
-          filteredRecipes.map((recipe) => {
-            const img =
-              recipe.imageUrl ||
-              'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60';
-
-            return (
-              <Pressable
-                key={recipe._id || recipe.id}
-                style={styles.recipeCard}
-                onPress={() => openRecipeDetails(recipe)}
-              >
-                <Image source={{ uri: img }} style={styles.recipeImg} />
-                <View style={styles.recipeBody}>
-                  <View style={styles.recipeBadges}>
-                    <View style={styles.catBadge}>
-                      <Text style={styles.catBadgeText}>{recipe.category || 'Healthy'}</Text>
-                    </View>
-                    {recipe.isPremium && (
-                      <View style={styles.lockBadge}>
-                        <Lock size={10} color={Colors.accentAmber} />
-                        <Text style={styles.lockBadgeText}>PRO</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <Text style={styles.recipeTitle}>{recipe.name}</Text>
-
-                  <View style={styles.recipeMetaRow}>
-                    <Text style={styles.recipeCals}>{recipe.calories} kcal</Text>
-                    <Text style={styles.recipeDot}>•</Text>
-                    <Text style={styles.recipeMetaText}>P: {recipe.protein}g</Text>
-                    <Text style={styles.recipeDot}>•</Text>
-                    <Text style={styles.recipeMetaText}>C: {recipe.carbs}g</Text>
-                    <Text style={styles.recipeDot}>•</Text>
-                    <Clock size={12} color={Colors.textSecondary} />
-                    <Text style={styles.recipeMetaText}>
-                      {(recipe.prepTimeMinutes || 10) + (recipe.cookTimeMinutes || 0)}m
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            );
-          })
-        )}
-      </View>
-
-      {/* Recipe Detail Modal */}
-      <Modal
-        visible={recipeModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setRecipeModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {selectedRecipe && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Image
-                  source={{
-                    uri:
-                      selectedRecipe.imageUrl ||
-                      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60',
-                  }}
-                  style={styles.modalHeroImg}
-                />
-                <Pressable
-                  style={styles.modalCloseBtn}
-                  onPress={() => setRecipeModalVisible(false)}
-                >
-                  <X size={20} color="#fff" />
-                </Pressable>
-
-                <View style={styles.modalInner}>
-                  <Text style={styles.modalRecipeTitle}>{selectedRecipe.name}</Text>
-
-                  {/* Macros Strip */}
-                  <View style={styles.modalMacroStrip}>
-                    <View style={styles.modalMacroItem}>
-                      <Text style={styles.modalMacroVal}>{selectedRecipe.calories}</Text>
-                      <Text style={styles.modalMacroLbl}>Calories</Text>
-                    </View>
-                    <View style={styles.modalMacroItem}>
-                      <Text style={styles.modalMacroVal}>{selectedRecipe.protein}g</Text>
-                      <Text style={styles.modalMacroLbl}>Protein</Text>
-                    </View>
-                    <View style={styles.modalMacroItem}>
-                      <Text style={styles.modalMacroVal}>{selectedRecipe.carbs}g</Text>
-                      <Text style={styles.modalMacroLbl}>Carbs</Text>
-                    </View>
-                    <View style={styles.modalMacroItem}>
-                      <Text style={styles.modalMacroVal}>
-                        {selectedRecipe.fat || selectedRecipe.fats || 0}g
-                      </Text>
-                      <Text style={styles.modalMacroLbl}>Fats</Text>
-                    </View>
-                  </View>
-
-                  {/* Meal Destination Selector */}
-                  <Text style={styles.modalSectionLabel}>Log to Meal Category:</Text>
-                  <View style={styles.targetMealRow}>
-                    {mealCategories.map(({ key, serverKey }) => (
-                      <Pressable
-                        key={key}
-                        style={[
-                          styles.targetMealPill,
-                          targetMealType === serverKey && styles.targetMealPillActive,
-                        ]}
-                        onPress={() => setTargetMealType(serverKey)}
-                      >
-                        <Text
-                          style={[
-                            styles.targetMealPillText,
-                            targetMealType === serverKey && styles.targetMealPillTextActive,
-                          ]}
-                        >
-                          {key}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  {/* Ingredients */}
-                  {selectedRecipe.ingredients?.length > 0 && (
-                    <>
-                      <Text style={styles.modalSectionLabel}>Ingredients</Text>
-                      <View style={styles.ingredBox}>
-                        {selectedRecipe.ingredients.map((ing, i) => (
-                          <Text key={i} style={styles.ingredItem}>
-                            • {typeof ing === 'string' ? ing : ing.name}
-                          </Text>
-                        ))}
-                      </View>
-                    </>
-                  )}
-
-                  {/* Steps */}
-                  {selectedRecipe.instructions?.length > 0 && (
-                    <>
-                      <Text style={styles.modalSectionLabel}>Preparation Instructions</Text>
-                      <View style={{ gap: 10, marginBottom: 20 }}>
-                        {selectedRecipe.instructions.map((step, idx) => (
-                          <View key={idx} style={styles.stepRow}>
-                            <View style={styles.stepNum}>
-                              <Text style={styles.stepNumText}>{idx + 1}</Text>
-                            </View>
-                            <Text style={styles.stepText}>{step}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </>
-                  )}
-
-                  {/* Log Action Button */}
-                  <Pressable
-                    disabled={isSubmitting}
-                    style={({ pressed }) => [
-                      styles.logActionBtn,
-                      isSubmitting && { opacity: 0.6 },
-                      pressed && { opacity: 0.8 },
-                    ]}
-                    onPress={() => handleAddRecipeMeal(selectedRecipe, targetMealType)}
-                  >
-                    {isSubmitting ? (
-                      <ActivityIndicator color="#000" />
-                    ) : (
-                      <>
-                        <Plus size={18} color="#000" />
-                        <Text style={styles.logActionBtnText}>
-                          Log This Recipe to {targetMealType}
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Custom Meal Log Modal */}
-      <Modal
-        visible={customModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCustomModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.customModalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalHeaderTitle}>Add Custom Food</Text>
-              <Pressable onPress={() => setCustomModalVisible(false)}>
-                <X size={20} color={Colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            {/* Meal type selector */}
-            <View style={[styles.targetMealRow, { marginBottom: 16 }]}>
-              {mealCategories.map(({ key, serverKey }) => (
-                <Pressable
-                  key={key}
                   style={[
-                    styles.targetMealPill,
-                    customMealType === serverKey && styles.targetMealPillActive,
+                    styles.addWaterBtn,
+                    {
+                      backgroundColor: colors.primaryContainer,
+                      borderColor: colors.primary,
+                    },
                   ]}
-                  onPress={() => setCustomMealType(serverKey)}
+                  onPress={() => handleAddWater(250)}
                 >
-                  <Text
-                    style={[
-                      styles.targetMealPillText,
-                      customMealType === serverKey && styles.targetMealPillTextActive,
-                    ]}
-                  >
-                    {key}
+                  <Plus size={14} color={colors.onPrimaryContainer} />
+                  <Text style={[styles.addWaterBtnText, { color: colors.onPrimaryContainer }]}>
+                    +250 ml
                   </Text>
                 </Pressable>
+              </View>
+            </AppCard>
+
+            {/* 3. Meals Logged Section */}
+            <SectionHeader
+              title={`Today's Meals (${totalItemsCount} items)`}
+              actionLabel="Add Food"
+              onAction={() => openLogModalFor('BREAKFAST')}
+            />
+
+            {MEAL_CATEGORIES.map((cat) => {
+              const items = mealsMap[cat.key] || [];
+              const categoryCalories = items.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
+
+              return (
+                <AppCard key={cat.key} variant="elevated" style={styles.mealCard}>
+                  <View style={styles.mealHeaderRow}>
+                    <View style={styles.rowAlign}>
+                      <Text style={[styles.mealCategoryTitle, { color: colors.onSurface }]}>
+                        {cat.label}
+                      </Text>
+                      {items.length > 0 && (
+                        <View style={[styles.mealCountBadge, { backgroundColor: colors.surfaceVariant }]}>
+                          <Text style={[styles.mealCountText, { color: colors.onSurfaceVariant }]}>
+                            {categoryCalories} kcal
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <Pressable
+                      style={[styles.addMealIconBtn, { backgroundColor: colors.surfaceVariant }]}
+                      onPress={() => openLogModalFor(cat.key)}
+                      hitSlop={8}
+                    >
+                      <Plus size={16} color={colors.onSurface} />
+                    </Pressable>
+                  </View>
+
+                  {items.length > 0 ? (
+                    <View style={styles.itemsList}>
+                      {items.map((item, idx) => (
+                        <View
+                          key={item._id || item.id || idx}
+                          style={[
+                            styles.itemRow,
+                            idx > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.outlineVariant } : null,
+                          ]}
+                        >
+                          <View style={styles.itemMetaCol}>
+                            <Text style={[styles.itemName, { color: colors.onSurface }]}>
+                              {item.name}
+                            </Text>
+                            <Text style={[styles.itemSub, { color: colors.onSurfaceVariant }]}>
+                              {item.calories} kcal • {item.protein || 0}g P • {item.carbs || 0}g C • {item.fat || 0}g F
+                            </Text>
+                          </View>
+
+                          {logId && (
+                            <Pressable
+                              style={styles.deleteBtn}
+                              onPress={() => handleDeleteItem(logId, item._id || item.id)}
+                              hitSlop={8}
+                            >
+                              <Trash2 size={16} color={colors.error} />
+                            </Pressable>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.emptyMealText, { color: colors.onSurfaceVariant }]}>
+                      No {cat.label.toLowerCase()} items logged yet.
+                    </Text>
+                  )}
+                </AppCard>
+              );
+            })}
+
+            {/* 4. Healthy Recipes Section */}
+            <SectionHeader
+              title={`Recipes Catalog (${recipes.length})`}
+              style={{ marginTop: 20 }}
+            />
+
+            {/* Recipe search */}
+            <View
+              style={[
+                styles.searchBox,
+                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+              ]}
+            >
+              <Search size={16} color={colors.onSurfaceVariant} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.onSurface }]}
+                placeholder="Search healthy recipes..."
+                placeholderTextColor={colors.onSurfaceVariant}
+                value={recipeSearch}
+                onChangeText={setRecipeSearch}
+              />
+              {recipeSearch ? (
+                <Pressable onPress={() => setRecipeSearch('')} hitSlop={8}>
+                  <X size={16} color={colors.onSurfaceVariant} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {filteredRecipes.length > 0 ? (
+              filteredRecipes.map((recipe) => (
+                <AppCard
+                  key={recipe._id || recipe.id}
+                  variant="outlined"
+                  style={styles.recipeCard}
+                  onPress={() => handleOpenRecipeDetail(recipe)}
+                >
+                  <View style={styles.recipeCardRow}>
+                    <View style={styles.recipeMetaCol}>
+                      <Text style={[styles.recipeTitle, { color: colors.onSurface }]}>
+                        {recipe.name}
+                      </Text>
+                      <Text style={[styles.recipeMacros, { color: colors.onSurfaceVariant }]}>
+                        {recipe.calories || 0} kcal • {recipe.protein || 0}g protein • {recipe.carbs || 0}g carbs
+                      </Text>
+                      {recipe.prepTimeMinutes && (
+                        <View style={styles.rowAlign}>
+                          <Clock size={12} color={colors.onSurfaceVariant} />
+                          <Text style={[styles.recipeTime, { color: colors.onSurfaceVariant }]}>
+                            {recipe.prepTimeMinutes} mins prep
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <ChevronRight size={18} color={custom.primaryStrong} />
+                  </View>
+                </AppCard>
+              ))
+            ) : (
+              <EmptyState
+                icon="utensils"
+                title="No Recipes Found"
+                description={recipeSearch ? "No recipes matched your query." : "No recipes are currently loaded."}
+              />
+            )}
+          </>
+        )}
+      </ScrollView>
+
+      {/* 5. Custom Meal Log Modal */}
+      <Modal visible={logModalVisible} transparent animationType="slide" onRequestClose={() => setLogModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.outlineVariant,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                Log Meal Item
+              </Text>
+              <Pressable onPress={() => setLogModalVisible(false)} hitSlop={8}>
+                <X size={20} color={colors.onSurfaceVariant} />
+              </Pressable>
+            </View>
+
+            {/* Meal Type Selector Chips */}
+            <View style={styles.chipRow}>
+              {MEAL_CATEGORIES.map((cat) => (
+                <Chip
+                  key={cat.key}
+                  selected={selectedMealType === cat.key}
+                  onPress={() => setSelectedMealType(cat.key)}
+                  style={[
+                    styles.categoryChip,
+                    selectedMealType === cat.key
+                      ? { backgroundColor: colors.primaryContainer }
+                      : { backgroundColor: colors.surfaceVariant },
+                  ]}
+                  textStyle={{
+                    color: selectedMealType === cat.key ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: '700',
+                  }}
+                >
+                  {cat.label}
+                </Chip>
               ))}
             </View>
 
+            {/* Inputs */}
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Food Name *</Text>
             <TextInput
-              style={styles.customInput}
-              placeholder="Food name (e.g. 2 Boiled Eggs, Dosa)"
-              placeholderTextColor={Colors.textSecondary}
-              value={customFoodName}
-              onChangeText={setCustomFoodName}
+              style={[
+                styles.modalInput,
+                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
+              ]}
+              placeholder="e.g., Grilled Chicken Salad, Oatmeal"
+              placeholderTextColor={colors.onSurfaceVariant}
+              value={foodName}
+              onChangeText={setFoodName}
             />
 
-            <TextInput
-              style={styles.customInput}
-              placeholder="Calories (kcal) *"
-              keyboardType="numeric"
-              placeholderTextColor={Colors.textSecondary}
-              value={customCalories}
-              onChangeText={setCustomCalories}
-            />
+            <View style={styles.twoColInputRow}>
+              <View style={styles.flex}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Calories (kcal) *</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
+                  ]}
+                  placeholder="e.g., 350"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={caloriesInput}
+                  onChangeText={setCaloriesInput}
+                />
+              </View>
 
-            <View style={styles.macroInputsRow}>
-              <TextInput
-                style={[styles.customInput, { flex: 1 }]}
-                placeholder="Protein (g)"
-                keyboardType="numeric"
-                placeholderTextColor={Colors.textSecondary}
-                value={customProtein}
-                onChangeText={setCustomProtein}
-              />
-              <TextInput
-                style={[styles.customInput, { flex: 1 }]}
-                placeholder="Carbs (g)"
-                keyboardType="numeric"
-                placeholderTextColor={Colors.textSecondary}
-                value={customCarbs}
-                onChangeText={setCustomCarbs}
-              />
-              <TextInput
-                style={[styles.customInput, { flex: 1 }]}
-                placeholder="Fats (g)"
-                keyboardType="numeric"
-                placeholderTextColor={Colors.textSecondary}
-                value={customFats}
-                onChangeText={setCustomFats}
-              />
+              <View style={styles.flex}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Protein (g)</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
+                  ]}
+                  placeholder="e.g., 28"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={proteinInput}
+                  onChangeText={setProteinInput}
+                />
+              </View>
             </View>
 
-            <Pressable
-              disabled={isSubmitting}
-              style={({ pressed }) => [
-                styles.logActionBtn,
-                isSubmitting && { opacity: 0.6 },
-                pressed && { opacity: 0.8 },
-              ]}
-              onPress={handleAddCustomMeal}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <>
-                  <Check size={18} color="#000" />
-                  <Text style={styles.logActionBtnText}>Save Entry</Text>
-                </>
-              )}
-            </Pressable>
+            <View style={styles.twoColInputRow}>
+              <View style={styles.flex}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Carbs (g)</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
+                  ]}
+                  placeholder="e.g., 40"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={carbsInput}
+                  onChangeText={setCarbsInput}
+                />
+              </View>
+
+              <View style={styles.flex}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Fat (g)</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
+                  ]}
+                  placeholder="e.g., 10"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={fatInput}
+                  onChangeText={setFatInput}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalActionWrap}>
+              <AppButton
+                tone="primary"
+                label="Save Food to Daily Log"
+                loading={submittingMeal}
+                onPress={handleSubmitCustomMeal}
+              />
+            </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
-  </View>
+
+      {/* 6. Recipe Details & Log Modal */}
+      <Modal visible={recipeModalVisible} transparent animationType="slide" onRequestClose={() => setRecipeModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.outlineVariant,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                {activeRecipe?.name || 'Recipe Details'}
+              </Text>
+              <Pressable onPress={() => setRecipeModalVisible(false)} hitSlop={8}>
+                <X size={20} color={colors.onSurfaceVariant} />
+              </Pressable>
+            </View>
+
+            <View style={styles.recipeBadgeRow}>
+              <View style={[styles.recipeMetricPill, { backgroundColor: colors.primaryContainer }]}>
+                <Flame size={13} color={colors.onPrimaryContainer} />
+                <Text style={[styles.recipeMetricText, { color: colors.onPrimaryContainer }]}>
+                  {activeRecipe?.calories || 0} kcal
+                </Text>
+              </View>
+
+              <View style={[styles.recipeMetricPill, { backgroundColor: colors.secondaryContainer }]}>
+                <Text style={[styles.recipeMetricText, { color: colors.onSecondaryContainer }]}>
+                  {activeRecipe?.protein || 0}g Protein
+                </Text>
+              </View>
+
+              <View style={[styles.recipeMetricPill, { backgroundColor: colors.surfaceVariant }]}>
+                <Text style={[styles.recipeMetricText, { color: colors.onSurfaceVariant }]}>
+                  {activeRecipe?.carbs || 0}g Carbs
+                </Text>
+              </View>
+            </View>
+
+            {activeRecipe?.description && (
+              <Text style={[styles.recipeModalDesc, { color: colors.onSurfaceVariant }]}>
+                {activeRecipe.description}
+              </Text>
+            )}
+
+            {/* Meal Destination Selector */}
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant, marginTop: 12 }]}>
+              Log To Meal:
+            </Text>
+            <View style={styles.chipRow}>
+              {MEAL_CATEGORIES.map((cat) => (
+                <Chip
+                  key={cat.key}
+                  selected={recipeMealType === cat.key}
+                  onPress={() => setRecipeMealType(cat.key)}
+                  style={[
+                    styles.categoryChip,
+                    recipeMealType === cat.key
+                      ? { backgroundColor: colors.primaryContainer }
+                      : { backgroundColor: colors.surfaceVariant },
+                  ]}
+                  textStyle={{
+                    color: recipeMealType === cat.key ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: '700',
+                  }}
+                >
+                  {cat.label}
+                </Chip>
+              ))}
+            </View>
+
+            <View style={styles.modalActionWrap}>
+              <AppButton
+                tone="primary"
+                label={`Log as ${recipeMealType.toLowerCase()}`}
+                loading={submittingMeal}
+                onPress={handleLogRecipeAsMeal}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
   },
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 54,
+  flex: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 40,
   },
-  header: {
+  skeletonWrap: {
+    paddingVertical: 12,
+  },
+  mbLg: {
+    marginBottom: 16,
+  },
+  summaryCard: {
+    marginBottom: 16,
+  },
+  summaryTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: Colors.textPrimary,
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '800',
   },
-  headerSubtitle: {
-    fontSize: 13,
-    color: Colors.textSecondary,
+  summaryDate: {
+    fontSize: 12,
     marginTop: 2,
   },
-  quickAddBtn: {
+  calTargetPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.primaryNeon,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  quickAddBtnText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  card: {
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 20,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    padding: 20,
-    marginBottom: 24,
   },
-  cardTitle: {
-    fontSize: 14,
+  calTargetPillText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: Colors.textSecondary,
-    marginBottom: 16,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  },
+  calSection: {
+    marginBottom: 14,
+  },
+  calProgressBar: {
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 6,
   },
   calRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  calBox: {
     alignItems: 'center',
-    flex: 1,
   },
-  calBoxActive: {
-    backgroundColor: 'rgba(0, 245, 155, 0.08)',
-    borderRadius: 12,
-    paddingVertical: 4,
-  },
-  calLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  calValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-    marginVertical: 2,
+  calEaten: {
+    fontSize: 16,
+    fontWeight: '800',
   },
   calUnit: {
-    fontSize: 10,
-    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '400',
   },
-  mainProgressTrack: {
-    height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 20,
+  calRemaining: {
+    fontSize: 12,
   },
-  mainProgressFill: {
-    height: '100%',
-    backgroundColor: Colors.primaryNeon,
-    borderRadius: 4,
-  },
-  macrosRow: {
+  macroColumnsRow: {
     flexDirection: 'row',
     gap: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.2)',
+    paddingTop: 12,
   },
   macroCol: {
     flex: 1,
   },
-  macroHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  macroName: {
+  macroLabel: {
     fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '600',
+    marginBottom: 2,
   },
   macroVal: {
-    fontSize: 11,
-    color: Colors.textPrimary,
+    fontSize: 12,
     fontWeight: '700',
+    marginBottom: 4,
   },
-  miniTrack: {
+  macroBar: {
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  miniFill: {
-    height: '100%',
     borderRadius: 2,
   },
-  sectionHeader: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 14,
+  hydrationCard: {
+    marginBottom: 16,
   },
-  mealGroupCard: {
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    padding: 16,
-    marginBottom: 14,
-  },
-  mealGroupHeader: {
+  hydrationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  hydrationTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  waterVal: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  waterTargetSub: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  waterProgressBar: {
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  waterActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  waterPct: {
+    fontSize: 12,
+  },
+  addWaterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  addWaterBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mealCard: {
     marginBottom: 12,
   },
-  mealGroupTitle: {
+  mealHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  mealCategoryTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  mealGroupSub: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  mealGroupRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  mealGroupCals: {
-    fontSize: 14,
     fontWeight: '700',
-    color: Colors.primaryNeon,
   },
-  addMiniBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0, 245, 155, 0.12)',
-    justifyContent: 'center',
+  mealCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  mealCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  addMealIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  emptyMealText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-    paddingVertical: 6,
+  itemsList: {
+    marginTop: 4,
   },
-  foodRow: {
+  itemRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
   },
-  foodName: {
+  itemMetaCol: {
+    flex: 1,
+    marginRight: 8,
+  },
+  itemName: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.textPrimary,
+    marginBottom: 2,
   },
-  foodMacros: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  foodCals: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginRight: 12,
+  itemSub: {
+    fontSize: 12,
   },
   deleteBtn: {
     padding: 6,
   },
-  recipeHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 12,
-  },
-  proPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.accentAmber,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  proPillText: {
-    color: '#000',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  tabsScroll: {
-    marginBottom: 12,
-  },
-  tabChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  tabChipActive: {
-    backgroundColor: 'rgba(0, 245, 155, 0.15)',
-    borderColor: Colors.primaryNeon,
-  },
-  tabChipText: {
+  emptyMealText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    paddingVertical: 4,
   },
-  tabChipTextActive: {
-    color: Colors.primaryNeon,
-    fontWeight: '700',
-  },
-  searchBar: {
+  searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: Colors.bgCardGlass,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 44,
-    marginBottom: 16,
+    marginBottom: 12,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    fontSize: 13,
+    padding: 0,
   },
   recipeCard: {
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    height: 110,
+    marginBottom: 8,
   },
-  recipeImg: {
-    width: 110,
-    height: '100%',
-  },
-  recipeBody: {
-    flex: 1,
-    padding: 12,
-    justifyContent: 'space-between',
-  },
-  recipeBadges: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  catBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  catBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  lockBadge: {
+  recipeCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(255, 184, 0, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    justifyContent: 'space-between',
   },
-  lockBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.accentAmber,
+  recipeMetaCol: {
+    flex: 1,
+    marginRight: 8,
   },
   recipeTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.textPrimary,
+    marginBottom: 2,
   },
-  recipeMetaRow: {
+  recipeMacros: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  recipeTime: {
+    fontSize: 11,
+    marginLeft: 4,
+  },
+  rowAlign: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
   },
-  recipeCals: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: Colors.primaryNeon,
-  },
-  recipeDot: {
-    fontSize: 10,
-    color: Colors.textSecondary,
-  },
-  recipeMetaText: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
-  modalOverlay: {
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(6, 9, 19, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: '#0D1222',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    maxHeight: '90%',
-  },
-  modalHeroImg: {
-    width: '100%',
-    height: 200,
-  },
-  modalCloseBtn: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalInner: {
-    padding: 24,
-  },
-  modalRecipeTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-    marginBottom: 16,
-  },
-  modalMacroStrip: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 14,
-    paddingVertical: 12,
-    marginBottom: 20,
-  },
-  modalMacroItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  modalMacroVal: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  modalMacroLbl: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  modalSectionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 10,
-  },
-  targetMealRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  targetMealPill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    alignItems: 'center',
+  modalCard: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 20,
+    maxHeight: '85%',
   },
-  targetMealPillActive: {
-    backgroundColor: 'rgba(0, 245, 155, 0.15)',
-    borderColor: Colors.primaryNeon,
-  },
-  targetMealPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  targetMealPillTextActive: {
-    color: Colors.primaryNeon,
-    fontWeight: '800',
-  },
-  ingredBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    gap: 6,
-  },
-  ingredItem: {
-    fontSize: 13,
-    color: Colors.textPrimary,
-    lineHeight: 18,
-  },
-  stepRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-  },
-  stepNum: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0, 245, 155, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepNumText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.primaryNeon,
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.textPrimary,
-    lineHeight: 18,
-  },
-  logActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  logActionBtnText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  customModalCard: {
-    backgroundColor: '#0D1222',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-  },
-  modalHeaderRow: {
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  modalHeaderTitle: {
+  modalTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: Colors.textPrimary,
   },
-  customInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 16,
+  },
+  categoryChip: {
+    borderRadius: 16,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  modalInput: {
+    height: 44,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
     fontSize: 14,
-    color: Colors.textPrimary,
     marginBottom: 12,
   },
-  macroInputsRow: {
+  twoColInputRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
+  },
+  modalActionWrap: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  recipeBadgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  recipeMetricPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  recipeMetricText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  recipeModalDesc: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
   },
 });

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet } from 'react-native';
 import { Zap, ShoppingBag, Sparkles, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { Colors } from '../../constants/theme';
+import { useAppTheme } from '../../theme/ThemeContext';
 
 export function PointsCelebrationModal({
   visible,
@@ -11,55 +11,95 @@ export function PointsCelebrationModal({
   onClose,
 }) {
   const router = useRouter();
+  const { theme } = useAppTheme();
 
   const handleGoToStore = () => {
     onClose?.();
     router.push('/(tabs)/store');
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Pressable style={styles.closeBtn} onPress={onClose}>
-            <X size={20} color={Colors.textSecondary} />
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.dark ? theme.colors.elevation.level2 : theme.colors.surface,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
+        >
+          <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={12}>
+            <X size={20} color={theme.colors.onSurfaceVariant} />
           </Pressable>
 
-          <View style={styles.iconCircle}>
-            <Zap size={44} color="#FFB800" fill="#FFB800" />
+          <View
+            style={[
+              styles.iconCircle,
+              {
+                backgroundColor: theme.colors.secondaryContainer,
+                borderColor: theme.colors.secondary,
+              },
+            ]}
+          >
+            <Zap size={44} color={theme.colors.secondary} fill={theme.colors.secondary} />
           </View>
 
           <View style={styles.sparkleRow}>
-            <Sparkles size={16} color={Colors.primaryNeon} />
-            <Text style={styles.badgeText}>WORKOUT COMPLETED</Text>
-            <Sparkles size={16} color={Colors.primaryNeon} />
+            <Sparkles size={16} color={theme.colors.primary} />
+            <Text style={[styles.badgeText, { color: theme.colors.primary }]}>WORKOUT COMPLETED</Text>
+            <Sparkles size={16} color={theme.colors.primary} />
           </View>
 
-          <Text style={styles.pointsText}>+{pointsEarned} Points!</Text>
-          <Text style={styles.subtext}>
+          <Text style={[styles.pointsText, { color: theme.colors.onSurface }]}>
+            +{pointsEarned} Points!
+          </Text>
+          <Text style={[styles.subtext, { color: theme.colors.onSurfaceVariant }]}>
             Congratulations! You earned +{pointsEarned} FitMitra Reward Points.
           </Text>
 
           {totalPoints > 0 && (
-            <View style={styles.balancePill}>
-              <Text style={styles.balanceLabel}>Your Balance:</Text>
-              <Text style={styles.balanceValue}>⚡ {totalPoints} pts</Text>
+            <View
+              style={[
+                styles.balancePill,
+                {
+                  backgroundColor: theme.dark ? theme.colors.elevation.level3 : theme.colors.surfaceVariant,
+                },
+              ]}
+            >
+              <Text style={[styles.balanceLabel, { color: theme.colors.onSurfaceVariant }]}>
+                Your Balance:
+              </Text>
+              <Text style={[styles.balanceValue, { color: theme.colors.onSurface }]}>
+                ⚡ {totalPoints} pts
+              </Text>
             </View>
           )}
 
           <Pressable
-            style={({ pressed }) => [styles.storeBtn, pressed && { opacity: 0.85 }]}
+            style={({ pressed }) => [
+              styles.storeBtn,
+              { backgroundColor: theme.colors.primary },
+              pressed && { opacity: 0.85 },
+            ]}
             onPress={handleGoToStore}
           >
-            <ShoppingBag size={18} color={Colors.bgDarkBase} />
-            <Text style={styles.storeBtnText}>Redeem in Supplements Store</Text>
+            <ShoppingBag size={18} color={theme.colors.onPrimary} />
+            <Text style={[styles.storeBtnText, { color: theme.colors.onPrimary }]}>
+              Redeem in Store
+            </Text>
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [styles.dismissBtn, pressed && { opacity: 0.7 }]}
             onPress={onClose}
           >
-            <Text style={styles.dismissBtnText}>Continue</Text>
+            <Text style={[styles.dismissBtnText, { color: theme.colors.onSurfaceVariant }]}>
+              Continue
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -70,19 +110,22 @@ export function PointsCelebrationModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(6, 9, 19, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   card: {
     width: '100%',
-    backgroundColor: '#0D1222',
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 184, 0, 0.4)',
+    borderRadius: 24,
+    borderWidth: 1,
     padding: 28,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
   },
   closeBtn: {
     position: 'absolute',
@@ -91,19 +134,13 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   iconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: 'rgba(255, 184, 0, 0.15)',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     borderWidth: 2,
-    borderColor: '#FFB800',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#FFB800',
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 8,
   },
   sparkleRow: {
     flexDirection: 'row',
@@ -112,20 +149,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   badgeText: {
-    color: Colors.primaryNeon,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.2,
   },
   pointsText: {
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '900',
-    color: '#FFB800',
     marginBottom: 6,
   },
   subtext: {
     fontSize: 14,
-    color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 16,
@@ -134,7 +168,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,
@@ -142,26 +175,22 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
   },
   balanceValue: {
     fontSize: 14,
     fontWeight: '800',
-    color: Colors.textPrimary,
   },
   storeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.primaryNeon,
     width: '100%',
     paddingVertical: 14,
-    borderRadius: 16,
+    borderRadius: 14,
     marginBottom: 10,
   },
   storeBtnText: {
-    color: Colors.bgDarkBase,
     fontWeight: '800',
     fontSize: 15,
   },
@@ -169,7 +198,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   dismissBtnText: {
-    color: Colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
   },

@@ -1,5 +1,5 @@
 // Welcome / Landing Screen — Dribbble Onboarding Style with gym_hero background
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,9 @@ import {
   StyleSheet,
   ImageBackground,
   Dimensions,
-  SafeAreaView,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Dumbbell } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
@@ -21,6 +21,7 @@ export default function Landing() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const [activeSlide, setActiveSlide] = useState(0);
+
 
   const heroSlides = [
     {

@@ -1,8 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DarkTheme, LightTheme } from '../constants/theme';
-
-const THEME_STORAGE_KEY = 'fitmitra_theme_mode';
+import React, { createContext, useContext, useMemo } from 'react';
+import { useAppTheme } from '../theme/ThemeContext';
+import { mapThemeColors, LightTheme } from '../constants/theme';
 
 export const ThemeContext = createContext({
   theme: 'light',
@@ -13,48 +11,30 @@ export const ThemeContext = createContext({
 });
 
 export const ThemeProvider = ({ children }) => {
-  const [themeMode, setThemeModeState] = useState('light');
-
-  useEffect(() => {
-    // Temporarily disabled AsyncStorage theme loading to enforce global light mode
-    // until Phase 3 (dynamic styling refactor) is fully complete.
-    // (async () => {
-    //   try {
-    //     const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-    //     if (saved === 'light' || saved === 'dark') {
-    //       setThemeModeState(saved);
-    //     }
-    //   } catch (_) {}
-    // })();
-  }, []);
-
-  const setThemeMode = async (mode) => {
-    setThemeModeState(mode);
-    try {
-      await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
-    } catch (_) {}
-  };
-
-  const toggleTheme = () => {
-    setThemeMode(themeMode === 'dark' ? 'light' : 'dark');
-  };
-
-  const isDark = themeMode === 'dark';
-  const colors = useMemo(() => (isDark ? DarkTheme : LightTheme), [isDark]);
-
-  return (
-    <ThemeContext.Provider
-      value={{
-        theme: themeMode,
-        isDark,
-        colors,
-        toggleTheme,
-        setThemeMode,
-      }}
-    >
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <>{children}</>;
 };
 
-export const useTheme = () => useContext(ThemeContext);
+export const useTheme = () => {
+  const appTheme = useAppTheme();
+  const { theme, mode, isDark, setPreference } = appTheme;
+
+  const colors = useMemo(() => {
+    return mapThemeColors(theme.colors, theme.custom, isDark);
+  }, [theme, isDark]);
+
+  const toggleTheme = () => {
+    setPreference(isDark ? 'light' : 'dark');
+  };
+
+  const setThemeMode = (newMode) => {
+    setPreference(newMode);
+  };
+
+  return {
+    theme: mode,
+    isDark,
+    colors,
+    toggleTheme,
+    setThemeMode,
+  };
+};

@@ -1,51 +1,109 @@
 /**
  * FitMitra — Unified Authenticated API Service
  *
- * All server requests must include `Authorization: Bearer <token>`.
- * In development (__DEV__), if no real token is found in AsyncStorage,
- * the service automatically falls back to `dev-token` so the app
- * can connect to the local backend without requiring real Firebase Auth.
+ * All server requests include `Authorization: Bearer <token>`.
+ * Handles automatic session token refresh on 401 Unauthorized,
+ * coordinates concurrent refresh requests, and performs controlled
+ * logout when refresh fails.
  *
- * Token storage key: 'fitmitra_token'
- * User storage key:  'fitmitra_user'
+ * Token storage is backed by `expo-secure-store` with safe legacy migration.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../constants/api';
+import { emitDbUpdate } from '../utils/events';
+import {
+  getAccessToken,
+  getRefreshToken,
+  setAuthTokens,
+  clearAuthTokens,
+  getStoredToken,
+  setStoredToken,
+} from './tokenStorage';
+import { clearUserCache } from './queryClient';
 
-const TOKEN_KEY = 'fitmitra_token';
+export {
+  getAccessToken,
+  getRefreshToken,
+  setAuthTokens,
+  clearAuthTokens,
+  getStoredToken,
+  setStoredToken,
+};
+
 const USER_KEY = 'fitmitra_user';
 const ONBOARDED_KEY = 'fitmitra_onboarded';
 
-// ─── Token Management ────────────────────────────────────────────────────────
-
-export const getStoredToken = async () => {
-  try {
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
-    if (token) return token;
-  } catch (_) {}
-  return null;
-};
-
-export const setStoredToken = async (token) => {
-  try {
-    if (token) {
-      await AsyncStorage.setItem(TOKEN_KEY, token);
-    } else {
-      await AsyncStorage.removeItem(TOKEN_KEY);
-    }
-  } catch (_) {}
-};
-
 export const clearAuthData = async () => {
   try {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, ONBOARDED_KEY]);
+    await clearAuthTokens();
+    await AsyncStorage.multiRemove([USER_KEY, ONBOARDED_KEY]);
+    await clearUserCache();
   } catch (_) {}
+};
+
+// ─── Token Refresh Coordination ──────────────────────────────────────────────
+
+let refreshPromise = null;
+
+/**
+ * Coordinate concurrent refresh requests so only ONE `/auth/refresh` HTTP call
+ * runs at a time. All other concurrent 401 callers await this single promise.
+ */
+export const refreshAuthSession = async () => {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = await getRefreshToken();
+      if (!refreshToken) {
+        throw new Error('No refresh token available');
+      }
+
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok || !body?.data?.tokens?.idToken) {
+        const errorMsg = body?.message || body?.error || 'Token refresh failed';
+        throw new Error(errorMsg);
+      }
+
+      const { idToken, refreshToken: newRefreshToken } = body.data.tokens;
+      await setAuthTokens({
+        accessToken: idToken,
+        refreshToken: newRefreshToken || refreshToken,
+      });
+
+      return idToken;
+    } catch (err) {
+      // Refresh failed — clear credentials and trigger logout across app
+      await clearAuthData();
+      emitDbUpdate();
+      throw err;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 };
 
 // ─── Core Request Helper ─────────────────────────────────────────────────────
 
 const request = async (path, options = {}) => {
+  const isAuthEndpoint =
+    path.startsWith('/auth/login') ||
+    path.startsWith('/auth/register') ||
+    path.startsWith('/auth/refresh') ||
+    path.startsWith('/auth/logout');
+
   const token = await getStoredToken();
 
   const headers = {
@@ -58,7 +116,16 @@ const request = async (path, options = {}) => {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const timeoutMs = options.timeout || 10000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
 
   const fetchOptions = {
     method: options.method || 'GET',
@@ -70,27 +137,66 @@ const request = async (path, options = {}) => {
     fetchOptions.body = JSON.stringify(options.body);
   }
 
+  const normalizedPath = path.startsWith('/api/v1') ? path.replace(/^\/api\/v1/, '') : path;
+  const fullUrl = `${API_URL}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
+
   try {
-    const response = await fetch(`${API_URL}${path}`, fetchOptions);
+    const response = await fetch(fullUrl, fetchOptions);
     clearTimeout(timeoutId);
-    const data = await response.json().catch(() => ({}));
+
+    // Automatic token refresh on 401 (retry eligible requests at most once)
+    if (response.status === 401 && !options._retry && !isAuthEndpoint) {
+      try {
+        const newToken = await refreshAuthSession();
+        if (newToken) {
+          return await request(path, {
+            ...options,
+            _retry: true,
+            headers: {
+              ...(options.headers || {}),
+              Authorization: `Bearer ${newToken}`,
+            },
+          });
+        }
+      } catch (refreshErr) {
+        console.warn('[FitMitra API] Session refresh failed, logging out:', refreshErr.message);
+        const expiredErr = new Error('Session expired. Please log in again.');
+        expiredErr.status = 401;
+        throw expiredErr;
+      }
+    }
+
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (_) {
+      data = {};
+    }
 
     if (!response.ok) {
       const message =
         data?.message ||
         data?.error ||
         `Request failed with status ${response.status}`;
-      throw new Error(message);
+      const apiErr = new Error(message);
+      apiErr.status = response.status;
+      apiErr.data = data;
+      throw apiErr;
     }
 
     return data?.data !== undefined ? data.data : data;
   } catch (err) {
     clearTimeout(timeoutId);
+    console.warn(`[FitMitra API Error] ${fetchOptions.method} ${fullUrl} ->`, err.message);
     if (err.name === 'AbortError') {
-      throw new Error('Connection timed out. Server taking too long to respond.');
+      const timeoutErr = new Error('Connection timed out. Server taking too long to respond.');
+      timeoutErr.code = 'ERR_NETWORK';
+      throw timeoutErr;
     }
-    if (err instanceof TypeError) {
-      throw new Error('Cannot reach the server. Please check your connection.');
+    if (err instanceof TypeError && !err.status) {
+      const netErr = new Error('Cannot reach the server. Please check your connection.');
+      netErr.code = 'ERR_NETWORK';
+      throw netErr;
     }
     throw err;
   }
@@ -100,19 +206,19 @@ const request = async (path, options = {}) => {
 // ─── Convenience Methods ──────────────────────────────────────────────────────
 
 export const api = {
-  get: (path, params = {}) => {
+  get: (path, params = {}, options = {}) => {
     const keys = Object.keys(params).filter(
       (k) => params[k] !== undefined && params[k] !== null && params[k] !== ''
     );
     const query = keys.length
       ? '?' + keys.map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&')
       : '';
-    return request(`${path}${query}`);
+    return request(`${path}${query}`, options);
   },
-  post: (path, body = {}) => request(path, { method: 'POST', body }),
-  patch: (path, body = {}) => request(path, { method: 'PATCH', body }),
-  put: (path, body = {}) => request(path, { method: 'PUT', body }),
-  delete: (path) => request(path, { method: 'DELETE' }),
+  post: (path, body = {}, options = {}) => request(path, { ...options, method: 'POST', body }),
+  patch: (path, body = {}, options = {}) => request(path, { ...options, method: 'PATCH', body }),
+  put: (path, body = {}, options = {}) => request(path, { ...options, method: 'PUT', body }),
+  delete: (path, options = {}) => request(path, { ...options, method: 'DELETE' }),
 };
 
 // ─── Auth Sync ───────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   TextInput,
   RefreshControl,
   StyleSheet,
-  ActivityIndicator,
   Modal,
   Alert,
 } from 'react-native';
@@ -21,18 +20,24 @@ import {
   Filter,
   ArrowRight,
 } from 'lucide-react-native';
-import { Colors } from '../../constants/theme';
-import { storeService } from '../../services';
+import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Chip } from 'react-native-paper';
+import { storeService } from '../../services/storeService';
+import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
-import { onDbUpdate } from '../../utils/events';
+import { useAppConfig } from '../../hooks/useAppConfig';
 import { ProductCard } from '../../components/store/ProductCard';
 import { OrderCard } from '../../components/store/OrderCard';
 import { OrderModal } from '../../components/store/OrderModal';
 import { TrackingTimeline } from '../../components/store/TrackingTimeline';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { EmptyState } from '../../components/common/EmptyState';
 import { TopBar } from '../../components/common/TopBar';
-import { useTheme } from '../../context/ThemeContext';
+import { useAppTheme } from '../../theme/ThemeContext';
+import AppCard from '../../components/ui/AppCard';
+import AppButton from '../../components/ui/AppButton';
+import SectionHeader from '../../components/ui/SectionHeader';
+import EmptyState from '../../components/ui/EmptyState';
+import Skeleton from '../../components/ui/Skeleton';
 
 const CATEGORIES = [
   { key: 'ALL', label: 'All' },
@@ -44,17 +49,16 @@ const CATEGORIES = [
 ];
 
 export default function StoreTab() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { points, refreshProfile } = useAuth();
-  const { colors, isDark } = useTheme();
+  const { theme } = useAppTheme();
+  const { colors, custom } = theme;
+  const { storeEnabled, shippingEnabled, isLoading: configLoading } = useAppConfig();
 
   const [activeTab, setActiveTab] = useState('PRODUCTS'); // 'PRODUCTS' | 'ORDERS'
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-
-  const [products, setProducts] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   // Checkout modal
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -66,48 +70,68 @@ export default function StoreTab() {
   const [activeTracking, setActiveTracking] = useState(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
 
-  const loadStoreData = useCallback(async () => {
-    try {
-      if (activeTab === 'PRODUCTS') {
-        const params = {};
-        if (selectedCategory !== 'ALL') {
-          params.category = selectedCategory;
-        }
-        if (searchQuery.trim()) {
-          params.search = searchQuery.trim();
-        }
-        const data = await storeService.getProducts(params);
-        setProducts(data || []);
-      } else {
-        const orderData = await storeService.getMyOrders();
-        setOrders(orderData || []);
+  // 1. Products Query (cached per category and search)
+  const productsQuery = useQuery({
+    queryKey: queryKeys.storeProducts(selectedCategory, searchQuery),
+    queryFn: async () => {
+      const params = {};
+      if (selectedCategory !== 'ALL') {
+        params.category = selectedCategory;
       }
-    } catch (err) {
-      console.warn('Store data fetch error:', err.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim();
+      }
+      const data = await storeService.getProducts(params);
+      return Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+    },
+    enabled: activeTab === 'PRODUCTS',
+    staleTime: 60 * 1000,
+  });
+
+  // 2. Orders Query (cached)
+  const ordersQuery = useQuery({
+    queryKey: queryKeys.storeOrders,
+    queryFn: async () => {
+      const orderData = await storeService.getMyOrders();
+      return Array.isArray(orderData?.items)
+        ? orderData.items
+        : Array.isArray(orderData?.data)
+        ? orderData.data
+        : Array.isArray(orderData)
+        ? orderData
+        : [];
+    },
+    enabled: activeTab === 'ORDERS',
+    staleTime: 60 * 1000,
+  });
+
+  const products = productsQuery.data || [];
+  const orders = ordersQuery.data || [];
+
+  const loading =
+    activeTab === 'PRODUCTS'
+      ? productsQuery.isLoading && !productsQuery.data
+      : ordersQuery.isLoading && !ordersQuery.data;
+
+  const refreshing =
+    activeTab === 'PRODUCTS'
+      ? productsQuery.isRefetching
+      : ordersQuery.isRefetching;
+
+  const onRefresh = useCallback(async () => {
+    refreshProfile?.();
+    if (activeTab === 'PRODUCTS') {
+      await productsQuery.refetch();
+    } else {
+      await ordersQuery.refetch();
     }
-  }, [activeTab, selectedCategory, searchQuery]);
-
-  useEffect(() => {
-    setLoading(true);
-    loadStoreData();
-  }, [loadStoreData]);
-
-  useEffect(() => {
-    const unsub = onDbUpdate(() => {
-      refreshProfile();
-      loadStoreData();
-    });
-    return unsub;
-  }, [refreshProfile, loadStoreData]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    refreshProfile();
-    loadStoreData();
-  };
+  }, [activeTab, productsQuery, ordersQuery, refreshProfile]);
 
   const handleBuyCash = (product) => {
     setSelectedProduct(product);
@@ -116,10 +140,10 @@ export default function StoreTab() {
   };
 
   const handleRedeemPoints = (product) => {
-    if (points < (product.pointsPrice || 0)) {
+    if ((points || 0) < (product.pointsPrice || 0)) {
       Alert.alert(
         'Insufficient Points',
-        `You need ${product.pointsPrice} points to redeem this item. You currently have ${points} points. Complete workouts to earn +5 points each session!`
+        `You need ${product.pointsPrice} points to redeem this item. You currently have ${points || 0} points. Complete workouts to earn +5 points each session!`
       );
       return;
     }
@@ -129,6 +153,10 @@ export default function StoreTab() {
   };
 
   const handleTrackOrder = async (order) => {
+    if (!shippingEnabled) {
+      Alert.alert('Tracking Unavailable', 'Shipment tracking is currently disabled.');
+      return;
+    }
     const awb = order.shippingDetails?.awbCode;
     if (!awb) {
       Alert.alert('Tracking Pending', 'AWB has not been assigned by Shiprocket yet. Check back soon!');
@@ -155,54 +183,94 @@ export default function StoreTab() {
     }
   };
 
+  // Truthful Feature-Flag Guard
+  if (!configLoading && !storeEnabled) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        <TopBar title="FitMitra Store" subtitle="Supplements & Gear" icon={ShoppingBag} showBack />
+        <View style={styles.centerWrap}>
+          <EmptyState
+            icon="shopping-bag"
+            title="Store Currently Closed"
+            description="The FitMitra store is currently disabled. Check back soon for supplements and fitness gear."
+            actionLabel="Back to Home"
+            onAction={() => router.replace('/(tabs)')}
+          />
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bgBase }]}>
-      {/* Top Header */}
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <TopBar
         title="FitMitra Store"
         subtitle="Supplements & Gear"
         icon={ShoppingBag}
         showBack
         rightAction={
-          <View style={[styles.pointsPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-            <Zap size={14} color="#FFB800" fill="#FFB800" />
-            <Text style={[styles.pointsPillText, { color: colors.textPrimary }]}>{points} pts</Text>
+          <View
+            style={[
+              styles.pointsPill,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+            ]}
+          >
+            <Zap size={14} color={colors.secondary} fill={colors.secondary} />
+            <Text style={[styles.pointsPillText, { color: colors.onSurface }]}>
+              {points || 0} pts
+            </Text>
           </View>
         }
       />
 
       {/* Main Tabs (Products vs Orders) */}
-      <View style={[styles.tabToggleRow, { paddingHorizontal: 16 }]}>
+      <View style={styles.tabToggleRow}>
         <Pressable
-          style={[styles.tabBtn, activeTab === 'PRODUCTS' && styles.tabBtnActive]}
+          style={[
+            styles.tabBtn,
+            activeTab === 'PRODUCTS'
+              ? { backgroundColor: colors.primaryContainer }
+              : { backgroundColor: colors.surfaceVariant },
+          ]}
           onPress={() => setActiveTab('PRODUCTS')}
         >
           <ShoppingBag
             size={16}
-            color={activeTab === 'PRODUCTS' ? Colors.bgDarkBase : Colors.textSecondary}
+            color={activeTab === 'PRODUCTS' ? colors.onPrimaryContainer : colors.onSurfaceVariant}
           />
           <Text
             style={[
               styles.tabBtnText,
-              activeTab === 'PRODUCTS' && styles.tabBtnTextActive,
+              {
+                color: activeTab === 'PRODUCTS' ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                fontWeight: activeTab === 'PRODUCTS' ? '800' : '600',
+              },
             ]}
           >
-            Products
+            Supplements
           </Text>
         </Pressable>
 
         <Pressable
-          style={[styles.tabBtn, activeTab === 'ORDERS' && styles.tabBtnActive]}
+          style={[
+            styles.tabBtn,
+            activeTab === 'ORDERS'
+              ? { backgroundColor: colors.primaryContainer }
+              : { backgroundColor: colors.surfaceVariant },
+          ]}
           onPress={() => setActiveTab('ORDERS')}
         >
           <Truck
             size={16}
-            color={activeTab === 'ORDERS' ? Colors.bgDarkBase : Colors.textSecondary}
+            color={activeTab === 'ORDERS' ? colors.onPrimaryContainer : colors.onSurfaceVariant}
           />
           <Text
             style={[
               styles.tabBtnText,
-              activeTab === 'ORDERS' && styles.tabBtnTextActive,
+              {
+                color: activeTab === 'ORDERS' ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                fontWeight: activeTab === 'ORDERS' ? '800' : '600',
+              },
             ]}
           >
             My Orders
@@ -212,156 +280,188 @@ export default function StoreTab() {
 
       {activeTab === 'PRODUCTS' ? (
         <>
-          {/* Search & Categories */}
-          <View style={styles.searchBar}>
-            <Search size={18} color={Colors.textSecondary} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search protein, creatine, oats..."
-              placeholderTextColor={Colors.textSecondary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={loadStoreData}
-            />
+          {/* Search Box */}
+          <View style={styles.searchContainer}>
+            <View
+              style={[
+                styles.searchBar,
+                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+              ]}
+            >
+              <Search size={16} color={colors.onSurfaceVariant} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.onSurface }]}
+                placeholder="Search whey, creatine, oats..."
+                placeholderTextColor={colors.onSurfaceVariant}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={loadStoreData}
+              />
+              {searchQuery ? (
+                <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+                  <X size={16} color={colors.onSurfaceVariant} />
+                </Pressable>
+              ) : null}
+            </View>
           </View>
 
-          {/* Category Horizontal Filter */}
-          <View style={styles.categoriesContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoriesContent}
-            >
-              {CATEGORIES.map((cat) => (
-                <Pressable
+          {/* Categories Horizontal Filter Chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoriesContent}
+          >
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.key;
+              return (
+                <Chip
                   key={cat.key}
+                  selected={isSelected}
+                  onPress={() => setSelectedCategory(cat.key)}
                   style={[
                     styles.catChip,
-                    selectedCategory === cat.key && styles.catChipActive,
+                    isSelected
+                      ? { backgroundColor: colors.primaryContainer }
+                      : { backgroundColor: colors.surfaceVariant },
                   ]}
-                  onPress={() => setSelectedCategory(cat.key)}
+                  textStyle={{
+                    color: isSelected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: isSelected ? '700' : '500',
+                  }}
                 >
-                  <Text
-                    style={[
-                      styles.catChipText,
-                      selectedCategory === cat.key && styles.catChipTextActive,
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
+                  {cat.label}
+                </Chip>
+              );
+            })}
+          </ScrollView>
 
           {/* Products List */}
-          {loading ? (
-            <LoadingSpinner message="Loading supplements..." />
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
-              }
-            >
-              {products.length === 0 ? (
-                <EmptyState
-                  icon={ShoppingBag}
-                  title="No Products Found"
-                  description="We couldn't find any supplements matching your filter. Try another category or search term."
-                  actionLabel="Reset Filters"
-                  onAction={() => {
-                    setSelectedCategory('ALL');
-                    setSearchQuery('');
-                  }}
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+                tintColor={custom.primaryStrong}
+                progressBackgroundColor={colors.surface}
+              />
+            }
+          >
+            {loading && products.length === 0 ? (
+              <View style={styles.skeletonWrap}>
+                <Skeleton height={220} radius={custom.radius.lg} style={styles.mbLg} />
+                <Skeleton height={220} radius={custom.radius.lg} style={styles.mbLg} />
+              </View>
+            ) : products.length > 0 ? (
+              products.map((prod) => (
+                <ProductCard
+                  key={prod._id || prod.id}
+                  product={prod}
+                  userPoints={points || 0}
+                  onBuyCash={handleBuyCash}
+                  onRedeemPoints={handleRedeemPoints}
                 />
-              ) : (
-                products.map((product) => (
-                  <ProductCard
-                    key={product._id || product.id}
-                    product={product}
-                    userPoints={points}
-                    onBuyCash={handleBuyCash}
-                    onRedeemPoints={handleRedeemPoints}
-                  />
-                ))
-              )}
-            </ScrollView>
-          )}
+              ))
+            ) : (
+              <EmptyState
+                icon="shopping-bag"
+                title="No Products Found"
+                description={
+                  searchQuery
+                    ? `No products matched "${searchQuery}".`
+                    : 'The supplements catalog is currently being updated.'
+                }
+              />
+            )}
+          </ScrollView>
         </>
       ) : (
-        /* My Orders Tab */
+        /* Orders Tab */
         <ScrollView
+          style={styles.flex}
           contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={custom.primaryStrong}
+              progressBackgroundColor={colors.surface}
+            />
           }
         >
-          {loading ? (
-            <LoadingSpinner message="Loading your orders..." />
-          ) : orders.length === 0 ? (
-            <EmptyState
-              icon={Package}
-              title="No Orders Placed Yet"
-              description="You have not purchased any supplements or redeemed points yet. Check out the products catalog!"
-              actionLabel="Browse Products"
-              onAction={() => setActiveTab('PRODUCTS')}
-            />
-          ) : (
-            orders.map((order) => (
+          {loading && orders.length === 0 ? (
+            <View style={styles.skeletonWrap}>
+              <Skeleton height={110} radius={custom.radius.lg} style={styles.mbLg} />
+              <Skeleton height={110} radius={custom.radius.lg} style={styles.mbLg} />
+            </View>
+          ) : orders.length > 0 ? (
+            orders.map((ord) => (
               <OrderCard
-                key={order._id || order.id}
-                order={order}
+                key={ord._id || ord.id}
+                order={ord}
+                showTracking={shippingEnabled}
                 onTrack={handleTrackOrder}
               />
             ))
+          ) : (
+            <EmptyState
+              icon="package"
+              title="No Orders Yet"
+              description="Orders placed via Cash or redeemed with Reward Points will appear here with tracking details."
+              actionLabel="Browse Products"
+              onAction={() => setActiveTab('PRODUCTS')}
+            />
           )}
         </ScrollView>
       )}
 
-      {/* Order Modal (Cash / Points) */}
+      {/* Order / Checkout Modal */}
       <OrderModal
         visible={showOrderModal}
         product={selectedProduct}
         mode={checkoutMode}
-        userPoints={points}
+        userPoints={points || 0}
         onClose={() => setShowOrderModal(false)}
-        onSuccess={() => {
-          refreshProfile();
+        onSuccess={async () => {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.storeOrders }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
+          ]);
+          refreshProfile?.();
           setActiveTab('ORDERS');
-          loadStoreData();
         }}
       />
 
-      {/* Shiprocket Live Tracking Modal */}
-      <Modal visible={trackingModalVisible} transparent animationType="slide">
+      {/* Live Shiprocket Tracking Modal */}
+      <Modal visible={trackingModalVisible} transparent animationType="slide" onRequestClose={() => setTrackingModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.trackingSheet}>
-            <View style={styles.trackingSheetHeader}>
-              <View style={styles.trackingTitleRow}>
-                <Truck size={20} color={Colors.primaryNeon} />
-                <Text style={styles.trackingTitle}>Live Shipment Tracking</Text>
-              </View>
-              <Pressable
-                style={styles.closeBtn}
-                onPress={() => setTrackingModalVisible(false)}
-              >
-                <X size={20} color={Colors.textSecondary} />
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.outlineVariant }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Live Tracking</Text>
+              <Pressable onPress={() => setTrackingModalVisible(false)} hitSlop={8}>
+                <X size={20} color={colors.onSurfaceVariant} />
               </Pressable>
             </View>
 
             {trackingLoading ? (
-              <LoadingSpinner message="Fetching Shiprocket updates..." />
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <Skeleton height={120} radius={custom.radius.md} />
+              </View>
             ) : activeTracking ? (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <TrackingTimeline
-                  status={activeTracking.status}
-                  awb={activeTracking.awb}
-                  courier={activeTracking.courier}
-                  estimatedDelivery={activeTracking.estimatedDelivery}
-                  activities={activeTracking.activities}
-                />
-              </ScrollView>
+              <TrackingTimeline
+                status={activeTracking.status}
+                awb={activeTracking.awb}
+                courier={activeTracking.courier}
+                estimatedDelivery={activeTracking.estimatedDelivery}
+                activities={activeTracking.activities}
+              />
             ) : null}
           </View>
         </View>
@@ -371,51 +471,47 @@ export default function StoreTab() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
-    paddingTop: 54,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
+  flex: {
+    flex: 1,
+  },
+  centerWrap: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 40,
+  },
+  skeletonWrap: {
+    paddingVertical: 12,
+  },
+  mbLg: {
     marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginTop: 2,
   },
   pointsPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 184, 0, 0.12)',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 184, 0, 0.35)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
   },
   pointsPillText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
-    color: '#FFB800',
   },
   tabToggleRow: {
     flexDirection: 'row',
-    marginHorizontal: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 14,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   tabBtn: {
     flex: 1,
@@ -423,102 +519,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  tabBtnActive: {
-    backgroundColor: Colors.primaryNeon,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   tabBtnText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: Colors.textSecondary,
   },
-  tabBtnTextActive: {
-    color: Colors.bgDarkBase,
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 6,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: Colors.bgCardGlass,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    borderRadius: 14,
-    marginHorizontal: 20,
-    paddingHorizontal: 14,
-    height: 44,
-    marginBottom: 12,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 14,
-  },
-  categoriesContainer: {
-    marginBottom: 14,
+    fontSize: 13,
+    padding: 0,
   },
   categoriesContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
     gap: 8,
   },
   catChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  catChipActive: {
-    backgroundColor: 'rgba(0, 245, 155, 0.15)',
-    borderColor: Colors.primaryNeon,
-  },
-  catChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  catChipTextActive: {
-    color: Colors.primaryNeon,
-    fontWeight: '700',
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
+    borderRadius: 16,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(6, 9, 19, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
   },
-  trackingSheet: {
-    backgroundColor: '#0D1222',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+  modalCard: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: Colors.borderGlass,
-    padding: 24,
+    padding: 20,
     maxHeight: '85%',
   },
-  trackingSheetHeader: {
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  trackingTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  trackingTitle: {
-    fontSize: 17,
+  modalTitle: {
+    fontSize: 18,
     fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    padding: 4,
   },
 });

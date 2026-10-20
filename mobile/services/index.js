@@ -1,12 +1,15 @@
 export { api, getStoredToken, setStoredToken, clearAuthData } from './api';
 export { authService } from './authService';
 export { dashboardService } from './dashboardService';
-export { workoutService } from './workoutService';
+export { workoutService, normalizeTodayWorkout, getWeekConsistency } from './workoutService';
 export { nutritionService } from './nutritionService';
 export { storeService } from './storeService';
 export { aiService } from './aiService';
 export { subscriptionService } from './subscriptionService';
+export { progressService } from './progressService';
 export { profileService } from './profileService';
 export { notificationService } from './notificationService';
 export { leaderboardService } from './leaderboardService';
+export { appConfigService } from './appConfigService';
+export { queryClient, queryKeys, clearUserCache } from './queryClient';
 export { auth as firebaseAuth, isFirebaseConfigured } from './firebase';

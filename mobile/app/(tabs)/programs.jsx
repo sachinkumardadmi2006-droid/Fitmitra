@@ -23,54 +23,39 @@ import {
 import { Colors } from '../../constants/theme';
 import { workoutService, authService } from '../../services';
 import { useAuth } from '../../context/AuthContext';
-import { onDbUpdate } from '../../utils/events';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../constants/queryKeys';
 import { t } from '../../utils/i18n';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { EmptyState } from '../../components/common/EmptyState';
 
 export default function ProgramsTab() {
   const { user } = useAuth();
-  const [programs, setPrograms] = useState([]);
-  const [selectedProgram, setSelectedProgram] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
+  const [selectedProgramId, setSelectedProgramId] = useState(null);
   const [activeProgramId, setActiveProgramId] = useState(user?.activeProgramId || null);
 
   const lang = user?.language || 'en';
 
-  const loadData = useCallback(async () => {
-    try {
+  const {
+    data: rawPrograms,
+    isLoading,
+    isRefetching,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.programs('all'),
+    queryFn: async () => {
       const result = await workoutService.getPrograms({ limit: 50 });
-      const items = Array.isArray(result) ? result : result?.programs || result?.items || [];
-      setPrograms(items);
+      return Array.isArray(result) ? result : result?.programs || result?.items || [];
+    },
+  });
 
-      if (items.length > 0) {
-        setSelectedProgram((prev) => {
-          if (prev) {
-            const stillExists = items.find((p) => (p._id || p.id) === (prev._id || prev.id));
-            return stillExists || items[0];
-          }
-          return items[0];
-        });
-      }
-    } catch (e) {
-      console.warn('Error loading programs from server:', e.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
-    loadData();
-    const unsub = onDbUpdate(loadData);
-    return unsub;
-  }, [loadData]);
+  const programs = rawPrograms || [];
+  const selectedProgram =
+    programs.find((p) => (p._id || p.id) === selectedProgramId) || programs[0] || null;
 
   const onRefresh = () => {
-    setRefreshing(true);
-    loadData();
+    refetch();
   };
 
   const handleStartProgram = async (programId) => {
@@ -84,6 +69,9 @@ export default function ProgramsTab() {
           activeProgramWeek: 1,
         });
       }
+      queryClient.invalidateQueries({ queryKey: queryKeys.currentProgram });
+      queryClient.invalidateQueries({ queryKey: queryKeys.todayWorkout });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
       Alert.alert(
         'Program Activated!',
         `You have enrolled in ${selectedProgram?.name || 'this program'}. Check your Dashboard for daily sessions!`
@@ -93,7 +81,7 @@ export default function ProgramsTab() {
     }
   };
 
-  if (loading) {
+  if (isLoading && !rawPrograms) {
     return <LoadingSpinner message="Loading training programs from server..." fullScreen />;
   }
 
@@ -102,7 +90,7 @@ export default function ProgramsTab() {
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
+        <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
       }
     >
       {/* Header */}
@@ -140,7 +128,7 @@ export default function ProgramsTab() {
                   isSelected && styles.progCardSelected,
                   isActive && styles.progCardActive,
                 ]}
-                onPress={() => setSelectedProgram(prog)}
+                onPress={() => setSelectedProgramId(progId)}
               >
                 <View style={styles.cardBadgeRow}>
                   <View style={styles.levelBadge}>
