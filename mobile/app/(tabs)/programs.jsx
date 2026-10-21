@@ -1,238 +1,654 @@
 // Structured Programs Tab — mirrors frontend Programs.jsx
-// Powered by live GET /api/v1/programs API
-import React, { useState, useEffect, useCallback } from 'react';
+// Displays the user's active fitness program, today's workout, and timeline
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   Pressable,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
-  Alert,
   RefreshControl,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
-  Calendar,
   Clock,
-  Award,
   Target,
-  ChevronRight,
+  Play,
   CheckCircle2,
   Sparkles,
+  Dumbbell,
+  Calendar,
+  Layers,
 } from 'lucide-react-native';
-import { Colors } from '../../constants/theme';
-import { workoutService, authService } from '../../services';
-import { useAuth } from '../../context/AuthContext';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { spacing, radius } from '../../theme/tokens';
+import { workoutService } from '../../services';
 import { queryKeys } from '../../constants/queryKeys';
+import { useAuth } from '../../context/AuthContext';
 import { t } from '../../utils/i18n';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { EmptyState } from '../../components/common/EmptyState';
+import Skeleton, { SkeletonCard } from '../../components/ui/Skeleton';
+import EmptyState from '../../components/ui/EmptyState';
+import ErrorState from '../../components/ui/ErrorState';
 
 export default function ProgramsTab() {
+  const router = useRouter();
+  const { theme } = useAppTheme();
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [selectedProgramId, setSelectedProgramId] = useState(null);
-  const [activeProgramId, setActiveProgramId] = useState(user?.activeProgramId || null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const lang = user?.language || 'en';
 
+  // 1. Fetch Current User Program
   const {
-    data: rawPrograms,
-    isLoading,
-    isRefetching,
-    refetch,
+    data: currentData,
+    isLoading: isProgramLoading,
+    isError: isProgramError,
+    error: programError,
+    refetch: refetchCurrent,
   } = useQuery({
-    queryKey: queryKeys.programs('all'),
-    queryFn: async () => {
-      const result = await workoutService.getPrograms({ limit: 50 });
-      return Array.isArray(result) ? result : result?.programs || result?.items || [];
-    },
+    queryKey: queryKeys.currentProgram,
+    queryFn: () => workoutService.getCurrentProgram(),
+    staleTime: 60000,
   });
 
-  const programs = rawPrograms || [];
-  const selectedProgram =
-    programs.find((p) => (p._id || p.id) === selectedProgramId) || programs[0] || null;
+  const currentProgram = currentData?.program || null;
+  const programId = currentProgram?.id;
 
-  const onRefresh = () => {
-    refetch();
-  };
+  // 2. Fetch Full Program Details (weeks & days timeline)
+  const {
+    data: programDetails,
+    isLoading: isDetailsLoading,
+  } = useQuery({
+    queryKey: queryKeys.program(programId),
+    queryFn: () => workoutService.getProgram(programId),
+    enabled: Boolean(programId),
+    staleTime: 60000,
+  });
 
-  const handleStartProgram = async (programId) => {
-    try {
-      setActiveProgramId(programId);
-      const localUser = await authService.getLocalUser();
-      if (localUser) {
-        await authService.saveLocalUser({
-          ...localUser,
-          activeProgramId: programId,
-          activeProgramWeek: 1,
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: queryKeys.currentProgram });
-      queryClient.invalidateQueries({ queryKey: queryKeys.todayWorkout });
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
-      Alert.alert(
-        'Program Activated!',
-        `You have enrolled in ${selectedProgram?.name || 'this program'}. Check your Dashboard for daily sessions!`
-      );
-    } catch (e) {
-      Alert.alert('Error', 'Failed to activate program.');
-    }
-  };
+  // 3. Fetch Today's Scheduled Workout
+  const {
+    data: todayData,
+    isLoading: isTodayLoading,
+    refetch: refetchToday,
+  } = useQuery({
+    queryKey: queryKeys.todayWorkout,
+    queryFn: () => workoutService.getTodayWorkout(),
+    staleTime: 60000,
+  });
 
-  if (isLoading && !rawPrograms) {
-    return <LoadingSpinner message="Loading training programs from server..." fullScreen />;
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetchCurrent(), refetchToday()]);
+    setRefreshing(false);
+  }, [refetchCurrent, refetchToday]);
+
+  // Loading State
+  if (isProgramLoading) {
+    return (
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        contentContainerStyle={styles.contentContainer}
+      >
+        <View style={styles.header}>
+          <Skeleton width="60%" height={28} style={{ marginBottom: spacing.xs }} />
+          <Skeleton width="85%" height={14} />
+        </View>
+        <SkeletonCard lines={4} style={{ marginBottom: spacing.lg }} />
+        <SkeletonCard lines={3} style={{ marginBottom: spacing.lg }} />
+        <SkeletonCard lines={5} />
+      </ScrollView>
+    );
   }
+
+  // Error State
+  if (isProgramError) {
+    return (
+      <View
+        style={[
+          styles.centerContainer,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
+        <ErrorState
+          error={programError}
+          message="Failed to load your assigned fitness program."
+          onRetry={onRefresh}
+        />
+      </View>
+    );
+  }
+
+  // Empty State: No active program assigned
+  if (!currentProgram) {
+    return (
+      <View
+        style={[
+          styles.centerContainer,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
+        <EmptyState
+          icon="dumbbell"
+          title="No Active Program Assigned"
+          message="Complete your onboarding profile to get a personalized workout routine."
+          actionLabel="Complete Onboarding"
+          onAction={() => router.push('/(auth)/onboarding')}
+        />
+      </View>
+    );
+  }
+
+  const durationWeeks = currentProgram.durationWeeks || 4;
+  const currentWeekNum = currentData?.weekNumber || 1;
+  const currentDayNum = currentData?.dayNumber || 1;
+  const programWeeks = programDetails?.weeks || [];
+
+  const isRestDayToday = Boolean(todayData?.programDay?.restDay);
+  const isCompletedToday = Boolean(todayData?.hasCompletedToday);
+  const todayWorkoutTitle =
+    todayData?.programDay?.title ||
+    todayData?.program?.name ||
+    'Scheduled Routine';
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={styles.contentContainer}
       refreshControl={
-        <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={Colors.primaryNeon} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={theme.custom.primaryStrong}
+        />
       }
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t('fitnessPrograms', lang)}</Text>
-        <Text style={styles.headerSubtitle}>
-          Structured multi-week periodized plans built for total transformation
+        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
+          {t('fitnessPrograms', lang)}
+        </Text>
+        <Text
+          style={[
+            styles.headerSubtitle,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Structured periodized training plan built for your goals
         </Text>
       </View>
 
-      {/* Program Selector Carousel / List */}
-      <Text style={styles.sectionHeader}>{t('availablePrograms', lang)}</Text>
-      {programs.length === 0 ? (
-        <EmptyState
-          icon={Target}
-          title="No Programs Available"
-          description="Check back soon as new structured fitness programs are added to the library."
-        />
-      ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12, paddingBottom: 10 }}
+      {/* Program Summary Card */}
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <View style={styles.badgeRow}>
+          <View
+            style={[
+              styles.levelBadge,
+              { backgroundColor: theme.colors.surfaceVariant },
+            ]}
+          >
+            <Text
+              style={[
+                styles.levelBadgeText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              {currentProgram.level || 'ALL LEVELS'}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.activeTag,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          >
+            <Sparkles size={11} color={theme.colors.onPrimaryContainer} />
+            <Text
+              style={[
+                styles.activeTagText,
+                { color: theme.colors.onPrimaryContainer },
+              ]}
+            >
+              Active Plan
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.programTitle, { color: theme.colors.onSurface }]}>
+          {currentProgram.title || currentProgram.name}
+        </Text>
+        <Text
+          style={[
+            styles.programGoal,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
         >
-          {programs.map((prog) => {
-            const progId = prog._id || prog.id;
-            const isActive = activeProgramId === progId;
-            const isSelected = (selectedProgram?._id || selectedProgram?.id) === progId;
+          Goal: {currentProgram.goal || 'General Fitness'}
+        </Text>
 
-            return (
-              <Pressable
-                key={progId}
+        {/* Quick Metrics */}
+        <View
+          style={[
+            styles.metricStrip,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
+        >
+          <View style={styles.metricBox}>
+            <Text
+              style={[
+                styles.metricVal,
+                { color: theme.custom.primaryStrong },
+              ]}
+            >
+              {durationWeeks}
+            </Text>
+            <Text
+              style={[
+                styles.metricLbl,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Total Weeks
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.metricDivider,
+              { backgroundColor: theme.colors.outlineVariant },
+            ]}
+          />
+          <View style={styles.metricBox}>
+            <Text
+              style={[
+                styles.metricVal,
+                { color: theme.custom.primaryStrong },
+              ]}
+            >
+              Week {currentWeekNum}
+            </Text>
+            <Text
+              style={[
+                styles.metricLbl,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Current Week
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.metricDivider,
+              { backgroundColor: theme.colors.outlineVariant },
+            ]}
+          />
+          <View style={styles.metricBox}>
+            <Text
+              style={[
+                styles.metricVal,
+                { color: theme.custom.primaryStrong },
+              ]}
+            >
+              Day {currentDayNum}
+            </Text>
+            <Text
+              style={[
+                styles.metricLbl,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Today
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Today's Workout Section */}
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <View style={styles.todayHeaderRow}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: theme.colors.onSurface },
+            ]}
+          >
+            Today's Session
+          </Text>
+          {isRestDayToday ? (
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+            >
+              <Text
                 style={[
-                  styles.progCard,
-                  isSelected && styles.progCardSelected,
-                  isActive && styles.progCardActive,
+                  styles.tagText,
+                  { color: theme.colors.onSurfaceVariant },
                 ]}
-                onPress={() => setSelectedProgramId(progId)}
               >
-                <View style={styles.cardBadgeRow}>
-                  <View style={styles.levelBadge}>
-                    <Text style={styles.levelBadgeText}>{prog.level || 'ALL LEVELS'}</Text>
-                  </View>
-                  {isActive && (
-                    <View style={styles.activeTag}>
-                      <Text style={styles.activeTagText}>Active</Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.progCardTitle} numberOfLines={2}>
-                  {prog.name}
-                </Text>
-                <Text style={styles.progCardTagline} numberOfLines={2}>
-                  {prog.description || 'Targeted training routine'}
-                </Text>
-
-                <View style={styles.progCardMeta}>
-                  <View style={styles.metaItem}>
-                    <Clock size={12} color={Colors.textSecondary} />
-                    <Text style={styles.metaText}>
-                      {prog.durationWeeks ? `${prog.durationWeeks} Weeks` : '4 Weeks'}
-                    </Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <Target size={12} color={Colors.primaryNeon} />
-                    <Text style={[styles.metaText, { color: Colors.primaryNeon }]}>
-                      {prog.goal || 'Fitness'}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      )}
-
-      {/* Selected Program Details */}
-      {selectedProgram && (
-        <View style={styles.detailCard}>
-          <View style={styles.detailHeader}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <View style={styles.levelBadge}>
-                  <Text style={styles.levelBadgeText}>{selectedProgram.level || 'ALL LEVELS'}</Text>
-                </View>
-                {activeProgramId === (selectedProgram._id || selectedProgram.id) && (
-                  <View style={styles.activeTag}>
-                    <Text style={styles.activeTagText}>Enrolled & Active</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.detailTitle}>{selectedProgram.name}</Text>
-              <Text style={styles.detailTagline}>{selectedProgram.description}</Text>
-            </View>
-          </View>
-
-          {/* Quick Metrics */}
-          <View style={styles.metricStrip}>
-            <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>{selectedProgram.durationWeeks || 4}</Text>
-              <Text style={styles.metricLbl}>Weeks Total</Text>
-            </View>
-            <View style={styles.metricDivider} />
-            <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>{selectedProgram.daysPerWeek || 5}</Text>
-              <Text style={styles.metricLbl}>Days / Week</Text>
-            </View>
-            <View style={styles.metricDivider} />
-            <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>{selectedProgram.level || 'INTERMEDIATE'}</Text>
-              <Text style={styles.metricLbl}>Difficulty</Text>
-            </View>
-          </View>
-
-          {/* Start Program Action */}
-          {activeProgramId === (selectedProgram._id || selectedProgram.id) ? (
-            <View style={styles.enrolledBox}>
-              <CheckCircle2 size={18} color={Colors.primaryNeon} />
-              <Text style={styles.enrolledText}>
-                You are currently enrolled in this program!
+                Rest Day
               </Text>
             </View>
           ) : (
-            <Pressable
-              style={styles.startBtn}
-              onPress={() => handleStartProgram(selectedProgram._id || selectedProgram.id)}
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: theme.colors.primaryContainer },
+              ]}
             >
-              <Sparkles size={16} color="#000" />
-              <Text style={styles.startBtnText}>Start This Program</Text>
-            </Pressable>
-          )}
-
-          {/* Equipment needed */}
-          {selectedProgram.equipment?.length > 0 && (
-            <View style={{ marginTop: 16 }}>
-              <Text style={styles.scheduleTitle}>Equipment Required</Text>
-              <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 4 }}>
-                {selectedProgram.equipment.join(' • ')}
+              <Text
+                style={[
+                  styles.tagText,
+                  { color: theme.colors.onPrimaryContainer },
+                ]}
+              >
+                Workout Day
               </Text>
             </View>
           )}
+        </View>
+
+        <Text
+          style={[
+            styles.workoutTitle,
+            { color: theme.colors.onSurface },
+          ]}
+        >
+          {todayWorkoutTitle}
+        </Text>
+
+        <Text
+          style={[
+            styles.workoutSubtitle,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          {isRestDayToday
+            ? 'Scheduled recovery day — stay hydrated and get adequate rest to let muscle tissues adapt.'
+            : todayData?.programDay?.exercises?.length
+            ? `${todayData.programDay.exercises.length} Exercises scheduled for today's routine`
+            : `Week ${currentWeekNum}, Day ${currentDayNum} session`}
+        </Text>
+
+        {/* Action States */}
+        {isCompletedToday ? (
+          <View
+            style={[
+              styles.completedBanner,
+              {
+                backgroundColor: theme.colors.primaryContainer,
+                borderColor: theme.colors.primary,
+              },
+            ]}
+          >
+            <CheckCircle2 size={18} color={theme.colors.onPrimaryContainer} />
+            <Text
+              style={[
+                styles.completedBannerText,
+                { color: theme.colors.onPrimaryContainer },
+              ]}
+            >
+              Today's workout completed! Great work!
+            </Text>
+          </View>
+        ) : isRestDayToday ? (
+          <View
+            style={[
+              styles.restBanner,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.colors.outlineVariant,
+              },
+            ]}
+          >
+            <Sparkles size={18} color={theme.custom.accentText} />
+            <Text
+              style={[
+                styles.restBannerText,
+                { color: theme.colors.onSurface },
+              ]}
+            >
+              Enjoy your rest day! Active recovery or stretching recommended.
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={[
+              styles.startWorkoutBtn,
+              { backgroundColor: theme.colors.primary },
+            ]}
+            onPress={() => router.push('/workout/today')}
+          >
+            <Play size={16} color={theme.colors.onPrimary} fill={theme.colors.onPrimary} />
+            <Text
+              style={[
+                styles.startWorkoutBtnText,
+                { color: theme.colors.onPrimary },
+              ]}
+            >
+              Start Today's Workout
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Week-by-Week & Day-by-Day Timeline */}
+      <Text
+        style={[
+          styles.timelineHeading,
+          { color: theme.colors.onSurface },
+        ]}
+      >
+        Program Timeline
+      </Text>
+
+      {isDetailsLoading && programWeeks.length === 0 ? (
+        <SkeletonCard lines={4} />
+      ) : programWeeks.length > 0 ? (
+        programWeeks.map((week) => {
+          const isCurrentWeek = week.weekNumber === currentWeekNum;
+          return (
+            <View
+              key={week._id || `week_${week.weekNumber}`}
+              style={[
+                styles.weekCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: isCurrentWeek
+                    ? theme.colors.primary
+                    : theme.colors.outlineVariant,
+                },
+              ]}
+            >
+              <View style={styles.weekHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                  <Calendar
+                    size={16}
+                    color={
+                      isCurrentWeek
+                        ? theme.custom.primaryStrong
+                        : theme.colors.onSurfaceVariant
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.weekTitle,
+                      {
+                        color: isCurrentWeek
+                          ? theme.custom.primaryStrong
+                          : theme.colors.onSurface,
+                      },
+                    ]}
+                  >
+                    {week.title || `Week ${week.weekNumber}`}
+                  </Text>
+                </View>
+                {isCurrentWeek && (
+                  <View
+                    style={[
+                      styles.currentWeekTag,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.currentWeekTagText,
+                        { color: theme.colors.onPrimaryContainer },
+                      ]}
+                    >
+                      Current Week
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Days in this week */}
+              <View style={styles.daysList}>
+                {(week.days || []).map((day) => {
+                  const isToday =
+                    isCurrentWeek && day.dayNumber === currentDayNum;
+                  return (
+                    <View
+                      key={day._id || `day_${day.dayNumber}`}
+                      style={[
+                        styles.dayRow,
+                        { borderBottomColor: theme.colors.outlineVariant },
+                      ]}
+                    >
+                      <View style={styles.dayLeft}>
+                        <View
+                          style={[
+                            styles.dayNumBadge,
+                            {
+                              backgroundColor: isToday
+                                ? theme.colors.primaryContainer
+                                : theme.colors.surfaceVariant,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayNumText,
+                              {
+                                color: isToday
+                                  ? theme.colors.onPrimaryContainer
+                                  : theme.colors.onSurfaceVariant,
+                              },
+                            ]}
+                          >
+                            D{day.dayNumber}
+                          </Text>
+                        </View>
+                        <View>
+                          <Text
+                            style={[
+                              styles.dayTitle,
+                              { color: theme.colors.onSurface },
+                            ]}
+                          >
+                            {day.title || (day.restDay ? 'Rest Day' : 'Workout')}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.daySub,
+                              { color: theme.colors.onSurfaceVariant },
+                            ]}
+                          >
+                            {day.restDay
+                              ? 'Recovery & Rest'
+                              : `${day.exercises?.length || 0} exercises`}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View>
+                        {isToday ? (
+                          <View
+                            style={[
+                              styles.todayPill,
+                              { backgroundColor: theme.colors.primaryContainer },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.todayPillText,
+                                { color: theme.colors.onPrimaryContainer },
+                              ]}
+                            >
+                              TODAY
+                            </Text>
+                          </View>
+                        ) : day.restDay ? (
+                          <View
+                            style={[
+                              styles.restPill,
+                              { backgroundColor: theme.colors.surfaceVariant },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.restPillText,
+                                { color: theme.colors.onSurfaceVariant },
+                              ]}
+                            >
+                              Rest
+                            </Text>
+                          </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.workoutPill,
+                              { backgroundColor: theme.colors.surfaceVariant },
+                            ]}
+                          >
+                            <Dumbbell size={11} color={theme.colors.onSurfaceVariant} />
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })
+      ) : (
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.workoutSubtitle,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            {durationWeeks} weeks planned for this curriculum. Full schedule synced with daily workouts.
+          </Text>
         </View>
       )}
     </ScrollView>
@@ -242,139 +658,78 @@ export default function ProgramsTab() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
   },
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 54,
     paddingBottom: 40,
   },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
   header: {
-    marginBottom: 24,
+    marginBottom: spacing.xl,
   },
   headerTitle: {
     fontSize: 26,
     fontWeight: '900',
-    color: Colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
     marginTop: 4,
     lineHeight: 18,
   },
-  sectionHeader: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 12,
-  },
-  progCard: {
-    width: 220,
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 18,
+  card: {
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    padding: 16,
-    justifyContent: 'space-between',
+    padding: 18,
+    marginBottom: spacing.lg,
   },
-  progCardSelected: {
-    borderColor: Colors.primaryNeon,
-    backgroundColor: 'rgba(0, 245, 155, 0.04)',
-  },
-  progCardActive: {
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primaryNeon,
-  },
-  cardBadgeRow: {
+  badgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
   },
   levelBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: radius.sm,
   },
   levelBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.textSecondary,
     letterSpacing: 0.5,
   },
   activeTag: {
-    backgroundColor: 'rgba(0, 245, 155, 0.15)',
-    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: radius.sm,
   },
   activeTagText: {
     fontSize: 10,
     fontWeight: '800',
-    color: Colors.primaryNeon,
   },
-  progCardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 6,
-  },
-  progCardTagline: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    lineHeight: 16,
-    marginBottom: 14,
-  },
-  progCardMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  detailCard: {
-    backgroundColor: Colors.bgCardGlass,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    padding: 20,
-    marginTop: 16,
-  },
-  detailHeader: {
-    marginBottom: 16,
-  },
-  detailTitle: {
+  programTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 6,
+    marginBottom: spacing.xs,
   },
-  detailTagline: {
+  programGoal: {
     fontSize: 13,
-    color: Colors.textSecondary,
-    lineHeight: 18,
+    marginBottom: spacing.md,
   },
   metricStrip: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    paddingVertical: 12,
-    marginBottom: 16,
+    paddingVertical: spacing.md,
   },
   metricBox: {
     flex: 1,
@@ -382,52 +737,171 @@ const styles = StyleSheet.create({
   },
   metricDivider: {
     width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    height: '70%',
+    alignSelf: 'center',
   },
   metricVal: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 2,
   },
   metricLbl: {
     fontSize: 11,
-    color: Colors.textSecondary,
+    marginTop: 2,
   },
-  startBtn: {
+  todayHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  tag: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+  },
+  tagText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  workoutTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  workoutSubtitle: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: spacing.md,
+  },
+  startWorkoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.primaryNeon,
+    gap: spacing.sm,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: radius.md,
   },
-  startBtnText: {
-    color: Colors.bgDarkBase,
+  startWorkoutBtnText: {
     fontWeight: '800',
     fontSize: 14,
   },
-  enrolledBox: {
+  completedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0, 245, 155, 0.1)',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(0, 245, 155, 0.25)',
-    borderRadius: 14,
-    padding: 14,
   },
-  enrolledText: {
-    color: Colors.primaryNeon,
+  completedBannerText: {
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
   },
-  scheduleTitle: {
+  restBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  restBannerText: {
+    fontSize: 12,
+    lineHeight: 16,
+    flex: 1,
+  },
+  timelineHeading: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: spacing.md,
+  },
+  weekCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: spacing.md,
+  },
+  weekHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  weekTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: 8,
+  },
+  currentWeekTag: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  currentWeekTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  daysList: {
+    marginTop: spacing.xs,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+  },
+  dayLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  dayNumBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayNumText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dayTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  daySub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  todayPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  todayPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  restPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  restPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  workoutPill: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

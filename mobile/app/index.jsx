@@ -1,5 +1,5 @@
 // Welcome / Landing Screen — Dribbble Onboarding Style with gym_hero background
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,16 +12,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Dumbbell } from 'lucide-react-native';
-import { useTheme } from '../context/ThemeContext';
-import { FontSize, BorderRadius } from '../constants/theme';
+import { useAppTheme } from '../theme/ThemeContext';
+import { spacing, radius } from '../theme/tokens';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function Landing() {
   const router = useRouter();
-  const { colors, isDark } = useTheme();
+  const { theme, isDark } = useAppTheme();
   const [activeSlide, setActiveSlide] = useState(0);
-
 
   const heroSlides = [
     {
@@ -39,7 +38,7 @@ export default function Landing() {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: '#000000' }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* Top ~65% Height Hero Background Image */}
@@ -56,9 +55,9 @@ export default function Landing() {
         <SafeAreaView style={styles.safeHeader}>
           <View style={styles.headerRow}>
             <View style={styles.brandBadge}>
-              <Dumbbell size={20} color="#B7FF00" />
+              <Dumbbell size={20} color={theme.colors.primary} />
               <Text style={styles.brandText}>
-                fit<Text style={{ color: '#B7FF00' }}>mitra</Text>
+                fit<Text style={{ color: theme.colors.primary }}>mitra</Text>
               </Text>
             </View>
           </View>
@@ -85,33 +84,42 @@ export default function Landing() {
       </ImageBackground>
 
       {/* Bottom Sheet Card with Rounded Top Corners */}
-      <View style={[styles.bottomCard, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}>
+      <View
+        style={[
+          styles.bottomCard,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+            borderWidth: 1,
+          },
+        ]}
+      >
         <View style={styles.cardContent}>
-          {/* Black Pill Log In Button */}
+          {/* Primary Pill Log In Button */}
           <Pressable
             style={[
               styles.btnLogIn,
-              { backgroundColor: isDark ? '#B7FF00' : '#111111' },
+              { backgroundColor: theme.colors.primary },
             ]}
             onPress={() => router.push('/login')}
           >
             <Text
               style={[
                 styles.btnLogInText,
-                { color: isDark ? '#000000' : '#FFFFFF' },
+                { color: theme.colors.onPrimary },
               ]}
             >
               Log in
             </Text>
           </Pressable>
 
-          {/* Light / Secondary Pill Sign Up Button */}
+          {/* Secondary Pill Sign Up Button */}
           <Pressable
             style={[
               styles.btnSignUp,
               {
-                backgroundColor: isDark ? '#171B24' : '#F5F5F7',
-                borderColor: isDark ? '#252B36' : '#E5E7EB',
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.colors.outlineVariant,
               },
             ]}
             onPress={() => router.push('/signup')}
@@ -119,7 +127,7 @@ export default function Landing() {
             <Text
               style={[
                 styles.btnSignUpText,
-                { color: isDark ? '#FFFFFF' : '#111111' },
+                { color: theme.colors.onSurface },
               ]}
             >
               Sign up
@@ -127,13 +135,28 @@ export default function Landing() {
           </Pressable>
 
           {/* Footer Terms */}
-          <Text style={[styles.footerText, { color: isDark ? '#A8AFBA' : '#6B7280' }]}>
+          <Text
+            style={[
+              styles.footerText,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
             By continuing, you agree to FitMitra's{' '}
-            <Text style={[styles.legalLink, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+            <Text
+              style={[
+                styles.legalLink,
+                { color: theme.colors.onSurface },
+              ]}
+            >
               Privacy Policy
             </Text>{' '}
             and{' '}
-            <Text style={[styles.legalLink, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+            <Text
+              style={[
+                styles.legalLink,
+                { color: theme.colors.onSurface },
+              ]}
+            >
               Terms of Use
             </Text>
             .
@@ -168,7 +191,7 @@ const styles = StyleSheet.create({
   },
   safeHeader: {
     paddingTop: 40,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
   },
   headerRow: {
     flexDirection: 'row',
@@ -178,11 +201,11 @@ const styles = StyleSheet.create({
   brandBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 24,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
@@ -193,7 +216,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   heroContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
     paddingBottom: 40,
     alignItems: 'center',
   },
@@ -204,7 +227,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 1.5,
     lineHeight: 36,
-    marginBottom: 20,
+    marginBottom: spacing.lg,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 8,
@@ -212,7 +235,7 @@ const styles = StyleSheet.create({
   indicatorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   indicatorDot: {
     height: 6,
@@ -231,9 +254,9 @@ const styles = StyleSheet.create({
     marginTop: -28,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
     paddingTop: 32,
-    paddingBottom: 24,
+    paddingBottom: spacing.xl,
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -242,30 +265,30 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   cardContent: {
-    gap: 14,
+    gap: spacing.md,
     alignItems: 'center',
   },
   btnLogIn: {
     width: '100%',
     height: 52,
-    borderRadius: 26,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnLogInText: {
-    fontSize: FontSize.lg,
+    fontSize: 16,
     fontWeight: '800',
   },
   btnSignUp: {
     width: '100%',
     height: 52,
-    borderRadius: 26,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
   btnSignUpText: {
-    fontSize: FontSize.lg,
+    fontSize: 16,
     fontWeight: '700',
   },
   footerText: {
@@ -280,4 +303,5 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
+
 

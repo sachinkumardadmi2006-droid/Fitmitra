@@ -18,18 +18,26 @@ export const storeService = {
 
   /**
    * Create an order paid via Cash (Razorpay order initiated on server)
-   * @param {object} orderData { items: [{ product: id, quantity: num, variant: string }], shippingAddress: {...} }
+   * @param {object} orderData { items: [{ productId, quantity }], deliveryAddress: {...} }
+   * @param {string} [idempotencyKey]
    */
-  async createCashOrder(orderData) {
-    return api.post('/store/orders/cash', orderData);
+  async createCashOrder(orderData, idempotencyKey) {
+    const options = idempotencyKey
+      ? { headers: { 'Idempotency-Key': String(idempotencyKey).trim() } }
+      : {};
+    return api.post('/store/orders/cash', orderData, options);
   },
 
   /**
    * Redeem product using Reward Points (⚡)
-   * @param {object} orderData { items: [{ product: id, quantity: num, variant: string }], shippingAddress: {...} }
+   * @param {object} orderData { items: [{ productId, quantity }], deliveryAddress: {...} }
+   * @param {string} [idempotencyKey]
    */
-  async createPointsOrder(orderData) {
-    return api.post('/store/orders/points', orderData);
+  async createPointsOrder(orderData, idempotencyKey) {
+    const options = idempotencyKey
+      ? { headers: { 'Idempotency-Key': String(idempotencyKey).trim() } }
+      : {};
+    return api.post('/store/orders/points', orderData, options);
   },
 
   /**

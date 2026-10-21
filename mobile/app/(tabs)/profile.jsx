@@ -27,9 +27,11 @@ import {
   Check,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useQueryClient } from '@tanstack/react-query';
-import { Colors } from '../../constants/theme';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { spacing, radius } from '../../theme/tokens';
 import { authService, profileService } from '../../services';
+import { subscriptionService } from '../../services/subscriptionService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { t } from '../../utils/i18n';
@@ -46,6 +48,7 @@ const ACTIVITIES = [
 export default function ProfileTab() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { theme } = useAppTheme();
   const { points, refreshProfile } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -61,12 +64,22 @@ export default function ProfileTab() {
   const [activity, setActivity] = useState('Moderately Active');
   const [language, setLanguage] = useState('en');
 
-  // Upgrade Modal
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradePlan, setUpgradePlan] = useState('monthly');
-  const [upgradeMethod, setUpgradeMethod] = useState('upi');
-  const [upiId, setUpiId] = useState('');
-  const [processing, setProcessing] = useState(false);
+  // Live subscription query
+  const subQuery = useQuery({
+    queryKey: queryKeys.subscriptionCurrent,
+    queryFn: async () => {
+      try {
+        const res = await subscriptionService.getMySubscription();
+        const data = res?.data || res;
+        return data && (data.status === 'ACTIVE' || data.status === 'TRIALING') ? data : null;
+      } catch (_) {
+        return null;
+      }
+    },
+    staleTime: 60 * 1000,
+  });
+
+  const isPremiumUser = Boolean(user?.isPremium || subQuery.data);
 
   const loadData = useCallback(async () => {
     try {
@@ -114,10 +127,11 @@ export default function ProfileTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [subQuery]);
 
   useEffect(() => {
     loadData();
+    subQuery.refetch();
   }, [loadData]);
 
   const handleSaveProfile = async () => {
@@ -219,23 +233,25 @@ export default function ProfileTab() {
     );
   };
 
-  const handleUpgradeSuccess = async () => {
-    setProcessing(true);
-    setTimeout(async () => {
-      setProcessing(false);
-      const updated = { ...user, isPremium: true };
-      await saveUser(updated);
-      setUser(updated);
-      setShowUpgradeModal(false);
-      Alert.alert('FitMitra PRO Activated', 'You now have full access to all PRO features!');
-    }, 1200);
-  };
+
 
   if (loading || !user) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primaryNeon} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+      <View
+        style={[
+          styles.loadingContainer,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.custom.primaryStrong} />
+        <Text
+          style={[
+            styles.loadingText,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Loading profile...
+        </Text>
       </View>
     );
   }
@@ -245,146 +261,426 @@ export default function ProfileTab() {
   const bmi = (w / ((h / 100) * (h / 100))).toFixed(1);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={styles.contentContainer}
+    >
       {/* User Header Profile Card */}
-      <View style={styles.heroCard}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarLetter}>
+      <View
+        style={[
+          styles.heroCard,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.avatarCircle,
+            { backgroundColor: theme.colors.tertiaryContainer },
+          ]}
+        >
+          <Text
+            style={[
+              styles.avatarLetter,
+              { color: theme.colors.onTertiaryContainer },
+            ]}
+          >
             {user.name ? user.name[0].toUpperCase() : 'U'}
           </Text>
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={styles.heroName}>{user.name || 'Athlete'}</Text>
-            {user.isPremium ? (
-              <View style={styles.proTag}>
-                <Sparkles size={10} color="#000" />
-                <Text style={styles.proTagText}>PRO</Text>
+            <Text
+              style={[
+                styles.heroName,
+                { color: theme.colors.onSurface },
+              ]}
+            >
+              {user.name || 'Athlete'}
+            </Text>
+            {isPremiumUser ? (
+              <View
+                style={[
+                  styles.proTag,
+                  { backgroundColor: theme.colors.secondary },
+                ]}
+              >
+                <Sparkles size={10} color={theme.colors.onSecondary} />
+                <Text
+                  style={[
+                    styles.proTagText,
+                    { color: theme.colors.onSecondary },
+                  ]}
+                >
+                  PRO
+                </Text>
               </View>
             ) : (
-              <View style={styles.freeTag}>
-                <Text style={styles.freeTagText}>FREE</Text>
+              <View
+                style={[
+                  styles.freeTag,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.freeTagText,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  FREE
+                </Text>
               </View>
             )}
           </View>
-          <Text style={styles.heroEmail}>{user.email || user.phone || 'fitmitra@app'}</Text>
+          <Text
+            style={[
+              styles.heroEmail,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            {user.email || user.phone || 'fitmitra@app'}
+          </Text>
         </View>
       </View>
 
       {/* Health Stats Summary Bar */}
-      <View style={styles.statStrip}>
+      <View
+        style={[
+          styles.statStrip,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
         <View style={styles.statBox}>
-          <Text style={styles.statVal}>{height || 0} cm</Text>
-          <Text style={styles.statLbl}>Height</Text>
+          <Text
+            style={[
+              styles.statVal,
+              { color: theme.custom.primaryStrong },
+            ]}
+          >
+            {height || 0} cm
+          </Text>
+          <Text
+            style={[
+              styles.statLbl,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            Height
+          </Text>
         </View>
-        <View style={styles.statDivider} />
+        <View
+          style={[
+            styles.statDivider,
+            { backgroundColor: theme.colors.outlineVariant },
+          ]}
+        />
         <View style={styles.statBox}>
-          <Text style={styles.statVal}>{weight || 0} kg</Text>
-          <Text style={styles.statLbl}>Weight</Text>
+          <Text
+            style={[
+              styles.statVal,
+              { color: theme.custom.primaryStrong },
+            ]}
+          >
+            {weight || 0} kg
+          </Text>
+          <Text
+            style={[
+              styles.statLbl,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            Weight
+          </Text>
         </View>
-        <View style={styles.statDivider} />
+        <View
+          style={[
+            styles.statDivider,
+            { backgroundColor: theme.colors.outlineVariant },
+          ]}
+        />
         <View style={styles.statBox}>
-          <Text style={styles.statVal}>{bmi}</Text>
-          <Text style={styles.statLbl}>BMI</Text>
+          <Text
+            style={[
+              styles.statVal,
+              { color: theme.custom.primaryStrong },
+            ]}
+          >
+            {bmi}
+          </Text>
+          <Text
+            style={[
+              styles.statLbl,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            BMI
+          </Text>
         </View>
-        <View style={styles.statDivider} />
+        <View
+          style={[
+            styles.statDivider,
+            { backgroundColor: theme.colors.outlineVariant },
+          ]}
+        />
         <Pressable
           style={styles.statBox}
           onPress={() => router.push('/(tabs)/store')}
         >
-          <Text style={[styles.statVal, { color: '#FFB800' }]}>⚡ {points}</Text>
-          <Text style={[styles.statLbl, { color: '#FFB800' }]}>Points</Text>
+          <Text
+            style={[
+              styles.statVal,
+              { color: theme.custom.accentText },
+            ]}
+          >
+            ⚡ {points}
+          </Text>
+          <Text
+            style={[
+              styles.statLbl,
+              { color: theme.custom.accentText },
+            ]}
+          >
+            Points
+          </Text>
         </Pressable>
       </View>
 
       {/* PRO Membership Banner */}
-      {!user.isPremium ? (
+      {!isPremiumUser ? (
         <Pressable
-          style={styles.upgradeBanner}
+          style={[
+            styles.upgradeBanner,
+            {
+              backgroundColor: theme.colors.secondaryContainer,
+              borderColor: theme.colors.secondary,
+            },
+          ]}
           onPress={() => router.push('/premium')}
         >
-          <View style={styles.upgradeIcon}>
-            <Sparkles size={22} color="#000" />
+          <View
+            style={[
+              styles.upgradeIcon,
+              { backgroundColor: theme.colors.secondary },
+            ]}
+          >
+            <Sparkles size={22} color={theme.colors.onSecondary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.upgradeTitle}>Upgrade to FitMitra PRO</Text>
-            <Text style={styles.upgradeSub}>
+            <Text
+              style={[
+                styles.upgradeTitle,
+                { color: theme.colors.onSecondaryContainer },
+              ]}
+            >
+              Upgrade to FitMitra PRO
+            </Text>
+            <Text
+              style={[
+                styles.upgradeSub,
+                { color: theme.colors.onSecondaryContainer },
+              ]}
+            >
               Unlock custom diets, audio coach, video routines & analytics
             </Text>
           </View>
-          <ChevronRight size={18} color={Colors.accentAmber} />
+          <ChevronRight size={18} color={theme.colors.onSecondaryContainer} />
         </Pressable>
       ) : (
-        <View style={styles.activeProCard}>
-          <Award size={20} color={Colors.primaryNeon} />
+        <View
+          style={[
+            styles.activeProCard,
+            {
+              backgroundColor: theme.colors.primaryContainer,
+              borderColor: theme.colors.primary,
+            },
+          ]}
+        >
+          <Award size={20} color={theme.colors.onPrimaryContainer} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.activeProTitle}>FitMitra PRO Active</Text>
-            <Text style={styles.activeProSub}>
-              Unlimited access to all workouts, recipes & training plans
+            <Text
+              style={[
+                styles.activeProTitle,
+                { color: theme.colors.onPrimaryContainer },
+              ]}
+            >
+              {subQuery.data?.planId?.name || 'FitMitra PRO Active'}
+            </Text>
+            <Text
+              style={[
+                styles.activeProSub,
+                { color: theme.colors.onPrimaryContainer },
+              ]}
+            >
+              {subQuery.data?.currentPeriodEnd
+                ? `Valid until ${new Date(subQuery.data.currentPeriodEnd).toLocaleDateString()}`
+                : 'Unlimited access to all workouts, recipes & training plans'}
             </Text>
           </View>
         </View>
       )}
 
       {/* Edit Form */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Personal Information</Text>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.cardTitle,
+            { color: theme.colors.onSurface },
+          ]}
+        >
+          Personal Information
+        </Text>
 
-        <Text style={styles.inputLabel}>Full Name</Text>
+        <Text
+          style={[
+            styles.inputLabel,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Full Name
+        </Text>
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              borderColor: theme.colors.outlineVariant,
+              color: theme.colors.onSurface,
+            },
+          ]}
           value={name}
           onChangeText={setName}
           placeholder="Your full name"
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={theme.colors.onSurfaceVariant}
         />
 
         <View style={styles.inputRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>Age</Text>
+            <Text
+              style={[
+                styles.inputLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Age
+            </Text>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                  color: theme.colors.onSurface,
+                },
+              ]}
               value={age}
               onChangeText={setAge}
               keyboardType="numeric"
               placeholder="Age"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={theme.colors.onSurfaceVariant}
             />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>Height (cm)</Text>
+            <Text
+              style={[
+                styles.inputLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Height (cm)
+            </Text>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                  color: theme.colors.onSurface,
+                },
+              ]}
               value={height}
               onChangeText={setHeight}
               keyboardType="numeric"
               placeholder="cm"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={theme.colors.onSurfaceVariant}
             />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>Weight (kg)</Text>
+            <Text
+              style={[
+                styles.inputLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Weight (kg)
+            </Text>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                  color: theme.colors.onSurface,
+                },
+              ]}
               value={weight}
               onChangeText={setWeight}
               keyboardType="numeric"
               placeholder="kg"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={theme.colors.onSurfaceVariant}
             />
           </View>
         </View>
 
         {/* Primary Fitness Goal */}
-        <Text style={styles.inputLabel}>Primary Goal</Text>
+        <Text
+          style={[
+            styles.inputLabel,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Primary Goal
+        </Text>
         <View style={styles.chipsWrap}>
           {GOALS.map((g) => (
             <Pressable
               key={g}
-              style={[styles.chip, goal === g && styles.chipActive]}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+                goal === g && {
+                  backgroundColor: theme.colors.primaryContainer,
+                  borderColor: theme.colors.primary,
+                },
+              ]}
               onPress={() => setGoal(g)}
             >
-              <Text style={[styles.chipText, goal === g && styles.chipTextActive]}>
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: theme.colors.onSurfaceVariant },
+                  goal === g && {
+                    color: theme.colors.onPrimaryContainer,
+                    fontWeight: '700',
+                  },
+                ]}
+              >
                 {g}
               </Text>
             </Pressable>
@@ -392,15 +688,41 @@ export default function ProfileTab() {
         </View>
 
         {/* Experience Level */}
-        <Text style={styles.inputLabel}>Experience Level</Text>
+        <Text
+          style={[
+            styles.inputLabel,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Experience Level
+        </Text>
         <View style={styles.chipsWrap}>
           {EXPERIENCES.map((exp) => (
             <Pressable
               key={exp}
-              style={[styles.chip, experience === exp && styles.chipActive]}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+                experience === exp && {
+                  backgroundColor: theme.colors.primaryContainer,
+                  borderColor: theme.colors.primary,
+                },
+              ]}
               onPress={() => setExperience(exp)}
             >
-              <Text style={[styles.chipText, experience === exp && styles.chipTextActive]}>
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: theme.colors.onSurfaceVariant },
+                  experience === exp && {
+                    color: theme.colors.onPrimaryContainer,
+                    fontWeight: '700',
+                  },
+                ]}
+              >
                 {exp}
               </Text>
             </Pressable>
@@ -408,15 +730,41 @@ export default function ProfileTab() {
         </View>
 
         {/* Activity Level */}
-        <Text style={styles.inputLabel}>Daily Activity Level</Text>
+        <Text
+          style={[
+            styles.inputLabel,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Daily Activity Level
+        </Text>
         <View style={styles.chipsWrap}>
           {ACTIVITIES.map((act) => (
             <Pressable
               key={act}
-              style={[styles.chip, activity === act && styles.chipActive]}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+                activity === act && {
+                  backgroundColor: theme.colors.primaryContainer,
+                  borderColor: theme.colors.primary,
+                },
+              ]}
               onPress={() => setActivity(act)}
             >
-              <Text style={[styles.chipText, activity === act && styles.chipTextActive]}>
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: theme.colors.onSurfaceVariant },
+                  activity === act && {
+                    color: theme.colors.onPrimaryContainer,
+                    fontWeight: '700',
+                  },
+                ]}
+              >
                 {act}
               </Text>
             </Pressable>
@@ -424,137 +772,181 @@ export default function ProfileTab() {
         </View>
 
         {/* Language Selection */}
-        <Text style={styles.inputLabel}>Preferred Language</Text>
+        <Text
+          style={[
+            styles.inputLabel,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Preferred Language
+        </Text>
         <View style={styles.langRow}>
           <Pressable
-            style={[styles.langBtn, language === 'en' && styles.langBtnActive]}
+            style={[
+              styles.langBtn,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.colors.outlineVariant,
+              },
+              language === 'en' && {
+                backgroundColor: theme.colors.tertiaryContainer,
+                borderColor: theme.colors.tertiary,
+              },
+            ]}
             onPress={() => setLanguage('en')}
           >
-            <Text style={[styles.langBtnText, language === 'en' && styles.langBtnTextActive]}>
+            <Text
+              style={[
+                styles.langBtnText,
+                { color: theme.colors.onSurfaceVariant },
+                language === 'en' && {
+                  color: theme.colors.onTertiaryContainer,
+                  fontWeight: '700',
+                },
+              ]}
+            >
               English (EN)
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.langBtn, language === 'kn' && styles.langBtnActive]}
+            style={[
+              styles.langBtn,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.colors.outlineVariant,
+              },
+              language === 'kn' && {
+                backgroundColor: theme.colors.tertiaryContainer,
+                borderColor: theme.colors.tertiary,
+              },
+            ]}
             onPress={() => setLanguage('kn')}
           >
-            <Text style={[styles.langBtnText, language === 'kn' && styles.langBtnTextActive]}>
+            <Text
+              style={[
+                styles.langBtnText,
+                { color: theme.colors.onSurfaceVariant },
+                language === 'kn' && {
+                  color: theme.colors.onTertiaryContainer,
+                  fontWeight: '700',
+                },
+              ]}
+            >
               ಕನ್ನಡ (Kannada)
             </Text>
           </Pressable>
         </View>
 
         <Pressable
-          style={styles.saveBtn}
+          style={[
+            styles.saveBtn,
+            { backgroundColor: theme.colors.primary },
+          ]}
           onPress={handleSaveProfile}
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator size="small" color="#000" />
+            <ActivityIndicator size="small" color={theme.colors.onPrimary} />
           ) : (
-            <Text style={styles.saveBtnText}>Save Profile Changes</Text>
+            <Text
+              style={[
+                styles.saveBtnText,
+                { color: theme.colors.onPrimary },
+              ]}
+            >
+              Save Profile Changes
+            </Text>
           )}
         </Pressable>
       </View>
 
       {/* Danger Zone & Account Actions */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Account Settings</Text>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.cardTitle,
+            { color: theme.colors.onSurface },
+          ]}
+        >
+          Account Settings
+        </Text>
 
         <Pressable style={styles.actionRow} onPress={handleResetData}>
-          <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(255, 68, 68, 0.1)' }]}>
-            <Trash2 size={18} color={Colors.accentRose} />
+          <View
+            style={[
+              styles.actionIconCircle,
+              { backgroundColor: theme.colors.errorContainer },
+            ]}
+          >
+            <Trash2 size={18} color={theme.colors.onErrorContainer} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.actionRowTitle}>Reset App Data</Text>
-            <Text style={styles.actionRowSub}>
+            <Text
+              style={[
+                styles.actionRowTitle,
+                { color: theme.colors.onSurface },
+              ]}
+            >
+              Reset App Data
+            </Text>
+            <Text
+              style={[
+                styles.actionRowSub,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Clear logged workouts, weights and food journal
             </Text>
           </View>
         </Pressable>
 
-        <Pressable style={[styles.actionRow, { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }]} onPress={handleLogout}>
-          <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(255, 255, 255, 0.08)' }]}>
-            <LogOut size={18} color={Colors.textSecondary} />
+        <Pressable
+          style={[
+            styles.actionRow,
+            {
+              borderTopWidth: 1,
+              borderTopColor: theme.colors.outlineVariant,
+            },
+          ]}
+          onPress={handleLogout}
+        >
+          <View
+            style={[
+              styles.actionIconCircle,
+              { backgroundColor: theme.colors.surfaceVariant },
+            ]}
+          >
+            <LogOut size={18} color={theme.colors.onSurfaceVariant} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.actionRowTitle, { color: Colors.accentRose }]}>Log Out</Text>
-            <Text style={styles.actionRowSub}>Sign out of your session on this device</Text>
+            <Text
+              style={[
+                styles.actionRowTitle,
+                { color: theme.colors.error },
+              ]}
+            >
+              Log Out
+            </Text>
+            <Text
+              style={[
+                styles.actionRowSub,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Sign out of your session on this device
+            </Text>
           </View>
         </Pressable>
       </View>
 
-      {/* PRO Upgrade Modal */}
-      <Modal
-        visible={showUpgradeModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowUpgradeModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Sparkles size={20} color={Colors.accentAmber} />
-                <Text style={styles.modalTitle}>FitMitra PRO</Text>
-              </View>
-              <Pressable onPress={() => setShowUpgradeModal(false)}>
-                <X size={20} color={Colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalSub}>
-                Join thousands of athletes transforming their fitness with PRO features.
-              </Text>
-
-              {/* Plans */}
-              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-                <Pressable
-                  style={[
-                    styles.planOption,
-                    upgradePlan === 'monthly' && styles.planOptionActive,
-                  ]}
-                  onPress={() => setUpgradePlan('monthly')}
-                >
-                  <Text style={styles.planOptionName}>Monthly Pass</Text>
-                  <Text style={styles.planOptionPrice}>₹299/mo</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.planOption,
-                    upgradePlan === 'annual' && styles.planOptionActive,
-                  ]}
-                  onPress={() => setUpgradePlan('annual')}
-                >
-                  <Text style={styles.planOptionName}>Annual Pass</Text>
-                  <Text style={styles.planOptionPrice}>₹1,999/yr</Text>
-                </Pressable>
-              </View>
-
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter UPI ID (e.g. yourname@okaxis)"
-                placeholderTextColor={Colors.textSecondary}
-                value={upiId}
-                onChangeText={setUpiId}
-              />
-
-              <Pressable
-                style={styles.confirmPayBtn}
-                onPress={handleUpgradeSuccess}
-                disabled={processing}
-              >
-                {processing ? (
-                  <ActivityIndicator size="small" color="#000" />
-                ) : (
-                  <Text style={styles.confirmPayBtnText}>Confirm & Unlock PRO</Text>
-                )}
-              </Pressable>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -562,62 +954,52 @@ export default function ProfileTab() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
   },
   contentContainer: {
-    padding: 16,
+    padding: spacing.lg,
     paddingTop: 48,
     paddingBottom: 90,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
-    color: Colors.textSecondary,
     marginTop: 10,
   },
   heroCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     padding: 18,
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   avatarCircle: {
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: Colors.secondaryCyan,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarLetter: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#000',
   },
   heroName: {
     fontSize: 18,
     fontWeight: '800',
-    color: Colors.textPrimary,
   },
   heroEmail: {
     fontSize: 12,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
   proTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: Colors.accentAmber,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -625,10 +1007,8 @@ const styles = StyleSheet.create({
   proTagText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#000',
   },
   freeTag: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -636,16 +1016,13 @@ const styles = StyleSheet.create({
   freeTagText: {
     fontSize: 9,
     fontWeight: '700',
-    color: Colors.textSecondary,
   },
   statStrip: {
     flexDirection: 'row',
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
     borderWidth: 1,
     borderRadius: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
   },
   statBox: {
     flex: 1,
@@ -654,25 +1031,20 @@ const styles = StyleSheet.create({
   statVal: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.primaryNeon,
   },
   statLbl: {
     fontSize: 11,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
   statDivider: {
     width: 1,
     height: '70%',
     alignSelf: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   upgradeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderColor: Colors.accentAmber,
+    gap: spacing.md,
     borderWidth: 1,
     borderRadius: 14,
     padding: 14,
@@ -682,26 +1054,21 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.accentAmber,
     alignItems: 'center',
     justifyContent: 'center',
   },
   upgradeTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: Colors.accentAmber,
   },
   upgradeSub: {
     fontSize: 11,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
   activeProCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(204, 255, 0, 0.08)',
-    borderColor: Colors.primaryNeon,
+    gap: spacing.md,
     borderWidth: 1,
     borderRadius: 14,
     padding: 14,
@@ -710,42 +1077,33 @@ const styles = StyleSheet.create({
   activeProTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: Colors.primaryNeon,
   },
   activeProSub: {
     fontSize: 11,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
   card: {
-    backgroundColor: Colors.bgDarkCard,
-    borderColor: Colors.borderGlass,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     padding: 18,
     marginBottom: 20,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.textSecondary,
     marginBottom: 6,
     marginTop: 10,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderColor: Colors.borderGlass,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    color: Colors.textPrimary,
     fontSize: 13,
   },
   inputRow: {
@@ -755,28 +1113,17 @@ const styles = StyleSheet.create({
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.md,
     paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  chipActive: {
-    borderColor: Colors.primaryNeon,
-    backgroundColor: 'rgba(204, 255, 0, 0.12)',
   },
   chipText: {
     fontSize: 12,
-    color: Colors.textSecondary,
     fontWeight: '500',
-  },
-  chipTextActive: {
-    color: Colors.primaryNeon,
-    fontWeight: '700',
   },
   langRow: {
     flexDirection: 'row',
@@ -786,41 +1133,28 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
     alignItems: 'center',
-  },
-  langBtnActive: {
-    borderColor: Colors.secondaryCyan,
-    backgroundColor: 'rgba(0, 240, 255, 0.1)',
   },
   langBtnText: {
     fontSize: 12,
-    color: Colors.textSecondary,
     fontWeight: '600',
   },
-  langBtnTextActive: {
-    color: Colors.secondaryCyan,
-    fontWeight: '700',
-  },
   saveBtn: {
-    backgroundColor: Colors.primaryNeon,
     paddingVertical: 13,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
     marginTop: 20,
   },
   saveBtnText: {
-    color: '#000',
     fontWeight: '800',
     fontSize: 13,
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
+    gap: spacing.md,
+    paddingVertical: spacing.md,
   },
   actionIconCircle: {
     width: 36,
@@ -832,86 +1166,9 @@ const styles = StyleSheet.create({
   actionRowTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.textPrimary,
   },
   actionRowSub: {
     fontSize: 11,
-    color: Colors.textSecondary,
     marginTop: 2,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: Colors.bgDarkCard,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.accentAmber,
-  },
-  modalSub: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  planOption: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: Colors.borderGlass,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-  },
-  planOptionActive: {
-    borderColor: Colors.accentAmber,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-  },
-  planOptionName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  planOptionPrice: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginTop: 4,
-  },
-  modalInput: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderColor: Colors.borderGlass,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: Colors.textPrimary,
-    fontSize: 13,
-    marginBottom: 16,
-  },
-  confirmPayBtn: {
-    backgroundColor: Colors.primaryNeon,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  confirmPayBtnText: {
-    color: '#000',
-    fontWeight: '800',
-    fontSize: 14,
   },
 });

@@ -81,7 +81,7 @@ export const TopBar = ({
               style={styles.brandRow}
               onPress={() => router.push('/(tabs)')}
             >
-              <View style={[styles.logoIconWrap, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '33' }]}>
+              <View style={[styles.logoIconWrap, { backgroundColor: colors.primaryGlow, borderColor: colors.borderLight }]}>
                 <Dumbbell size={20} color={colors.primary} />
               </View>
               <View>

@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { CheckCircle2, Circle, Truck, Package, Clock } from 'lucide-react-native';
-import { Colors } from '../../constants/theme';
+import { CheckCircle2, Circle, Clock } from 'lucide-react-native';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { spacing, radius } from '../../theme/tokens';
 
 const STEPS = [
   { key: 'PLACED', label: 'Order Placed' },
@@ -19,31 +20,76 @@ export function TrackingTimeline({
   estimatedDelivery = '',
   activities = [],
 }) {
+  const { theme } = useAppTheme();
   const currentStepIndex = STEPS.findIndex(
     (s) => s.key === status || (status === 'CONFIRMED' && s.key === 'PLACED')
   );
   const activeIndex = currentStepIndex >= 0 ? currentStepIndex : 0;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.outlineVariant,
+        },
+      ]}
+    >
       {/* Header Info */}
-      <View style={styles.trackingHeader}>
+      <View
+        style={[
+          styles.trackingHeader,
+          { borderBottomColor: theme.colors.outlineVariant },
+        ]}
+      >
         <View>
-          <Text style={styles.courierText}>
+          <Text style={[styles.courierText, { color: theme.colors.onSurface }]}>
             {courier || 'Shiprocket Delivery'}
           </Text>
-          {awb ? <Text style={styles.awbText}>AWB: {awb}</Text> : null}
+          {awb ? (
+            <Text
+              style={[
+                styles.awbText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              AWB: {awb}
+            </Text>
+          ) : null}
         </View>
         {estimatedDelivery ? (
-          <View style={styles.etaBadge}>
-            <Clock size={12} color="#00D8F6" />
-            <Text style={styles.etaText}>ETA: {estimatedDelivery}</Text>
+          <View
+            style={[
+              styles.etaBadge,
+              {
+                backgroundColor: theme.colors.tertiaryContainer,
+                borderColor: theme.colors.tertiary,
+              },
+            ]}
+          >
+            <Clock size={12} color={theme.colors.onTertiaryContainer} />
+            <Text
+              style={[
+                styles.etaText,
+                { color: theme.colors.onTertiaryContainer },
+              ]}
+            >
+              ETA: {estimatedDelivery}
+            </Text>
           </View>
         ) : null}
       </View>
 
       {/* Stepper */}
-      <View style={styles.stepsContainer}>
+      {status === 'NOT_AVAILABLE' ? (
+        <View style={{ padding: spacing.lg, alignItems: 'center' }}>
+          <Text style={[styles.stepLabel, { color: theme.colors.onSurfaceVariant, textAlign: 'center' }]}>
+            Live tracking is not available yet.
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.stepsContainer}>
         {STEPS.map((step, idx) => {
           const isCompleted = idx <= activeIndex;
           const isCurrent = idx === activeIndex;
@@ -55,21 +101,29 @@ export function TrackingTimeline({
                 <View
                   style={[
                     styles.node,
-                    isCompleted && styles.nodeCompleted,
-                    isCurrent && styles.nodeCurrent,
+                    { backgroundColor: theme.colors.surfaceVariant },
+                    isCompleted && { backgroundColor: theme.colors.primary },
+                    isCurrent && {
+                      backgroundColor: theme.colors.primaryContainer,
+                      borderColor: theme.colors.primary,
+                      borderWidth: 2,
+                    },
                   ]}
                 >
                   {isCompleted ? (
-                    <CheckCircle2 size={16} color={Colors.bgDarkBase} />
+                    <CheckCircle2 size={16} color={theme.colors.onPrimary} />
                   ) : (
-                    <Circle size={10} color={Colors.textSecondary} />
+                    <Circle size={10} color={theme.colors.onSurfaceVariant} />
                   )}
                 </View>
                 {!isLast && (
                   <View
                     style={[
                       styles.line,
-                      idx < activeIndex && styles.lineCompleted,
+                      { backgroundColor: theme.colors.outlineVariant },
+                      idx < activeIndex && {
+                        backgroundColor: theme.colors.primary,
+                      },
                     ]}
                   />
                 )}
@@ -79,8 +133,15 @@ export function TrackingTimeline({
                 <Text
                   style={[
                     styles.stepLabel,
-                    isCompleted && styles.stepLabelCompleted,
-                    isCurrent && styles.stepLabelCurrent,
+                    { color: theme.colors.onSurfaceVariant },
+                    isCompleted && {
+                      color: theme.colors.onSurface,
+                      fontWeight: '600',
+                    },
+                    isCurrent && {
+                      color: theme.custom.primaryStrong,
+                      fontWeight: '800',
+                    },
                   ]}
                 >
                   {step.label}
@@ -90,19 +151,51 @@ export function TrackingTimeline({
           );
         })}
       </View>
+      )}
 
       {/* Checkpoints Activities */}
       {activities && activities.length > 0 && (
-        <View style={styles.activitiesSection}>
-          <Text style={styles.activitiesTitle}>Activity History</Text>
+        <View
+          style={[
+            styles.activitiesSection,
+            { borderTopColor: theme.colors.outlineVariant },
+          ]}
+        >
+          <Text
+            style={[
+              styles.activitiesTitle,
+              { color: theme.colors.onSurface },
+            ]}
+          >
+            Activity History
+          </Text>
           {activities.map((act, i) => (
             <View key={i} style={styles.activityItem}>
-              <Text style={styles.activityText}>{act.activity || act.status}</Text>
+              <Text
+                style={[
+                  styles.activityText,
+                  { color: theme.colors.onSurface },
+                ]}
+              >
+                {act.activity || act.status}
+              </Text>
               {act.location ? (
-                <Text style={styles.activitySub}>{act.location}</Text>
+                <Text
+                  style={[
+                    styles.activitySub,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  {act.location}
+                </Text>
               ) : null}
               {act.timestamp ? (
-                <Text style={styles.activityDate}>
+                <Text
+                  style={[
+                    styles.activityDate,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
                   {new Date(act.timestamp).toLocaleString()}
                 </Text>
               ) : null}
@@ -116,10 +209,8 @@ export function TrackingTimeline({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: Colors.bgCardGlass,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.borderGlass,
     padding: 20,
   },
   trackingHeader: {
@@ -127,39 +218,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 20,
-    paddingBottom: 16,
+    paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   courierText: {
     fontSize: 16,
     fontWeight: '700',
-    color: Colors.textPrimary,
   },
   awbText: {
     fontSize: 12,
-    color: Colors.textSecondary,
     marginTop: 2,
     fontFamily: 'monospace',
   },
   etaBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0, 216, 246, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'rgba(0, 216, 246, 0.25)',
   },
   etaText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#00D8F6',
   },
   stepsContainer: {
-    paddingLeft: 4,
+    paddingLeft: spacing.xs,
   },
   stepRow: {
     flexDirection: 'row',
@@ -173,71 +258,45 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  nodeCompleted: {
-    backgroundColor: Colors.primaryNeon,
-  },
-  nodeCurrent: {
-    backgroundColor: '#00D8F6',
-    borderWidth: 2,
-    borderColor: Colors.bgDarkBase,
   },
   line: {
     flex: 1,
     width: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginVertical: 4,
-  },
-  lineCompleted: {
-    backgroundColor: Colors.primaryNeon,
+    marginVertical: spacing.xs,
   },
   stepContent: {
     flex: 1,
-    paddingLeft: 12,
+    paddingLeft: spacing.md,
     paddingTop: 2,
   },
   stepLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
     fontWeight: '500',
   },
-  stepLabelCompleted: {
-    color: Colors.textPrimary,
-    fontWeight: '600',
-  },
-  stepLabelCurrent: {
-    color: '#00D8F6',
-    fontWeight: '800',
-  },
   activitiesSection: {
-    marginTop: 16,
-    paddingTop: 16,
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   activitiesTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   activityItem: {
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   activityText: {
     fontSize: 12,
-    color: Colors.textPrimary,
   },
   activitySub: {
     fontSize: 11,
-    color: Colors.textSecondary,
   },
   activityDate: {
     fontSize: 10,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
 });
+

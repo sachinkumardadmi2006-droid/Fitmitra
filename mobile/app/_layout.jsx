@@ -1,9 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors } from '../constants/theme';
 import { onDbUpdate } from '../utils/events';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
@@ -12,6 +10,7 @@ import { AppThemeProvider, useAppTheme } from '../theme/ThemeContext';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../services/queryClient';
 import { LoadingScreen, SnackbarProvider } from '../components/ui';
+import PaymentCheckoutModal from '../components/payment/PaymentCheckoutModal';
 
 function ThemedStack() {
   const { theme } = useAppTheme();
@@ -123,6 +122,7 @@ export default function RootLayout() {
         <AuthProvider>
           <ThemedRoot>
             <RootNavigator />
+            <PaymentCheckoutModal />
           </ThemedRoot>
         </AuthProvider>
       </ThemeProvider>
@@ -130,11 +130,3 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.bgDarkBase,
-  },
-});

@@ -42,6 +42,7 @@ export const queryKeys = {
   // Subscriptions
   subscriptionPlans: ['subscriptions', 'plans'],
   subscriptionCurrent: ['subscriptions', 'current'],
+  subscriptionMe: ['subscriptions', 'current'],
 
   // Progress
   progressSummary: (days = 90) => ['progress', 'summary', Number(days)],

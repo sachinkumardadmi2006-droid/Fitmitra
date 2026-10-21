@@ -17,15 +17,15 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ArrowLeft, Dumbbell } from 'lucide-react-native';
 import { authService } from '../../services/authService';
-import { useTheme } from '../../context/ThemeContext';
-import { FontSize, BorderRadius } from '../../constants/theme';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { spacing, radius } from '../../theme/tokens';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function OtpVerification() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { colors, isDark } = useTheme();
+  const { theme, isDark } = useAppTheme();
 
   const rawEmail = (params.email || 'alexsmith.mobbin@gmail.com').toString();
 
@@ -96,7 +96,7 @@ export default function OtpVerification() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#000000' }}
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
@@ -126,9 +126,9 @@ export default function OtpVerification() {
               </Pressable>
 
               <View style={styles.brandRow}>
-                <Dumbbell size={18} color="#B7FF00" />
+                <Dumbbell size={18} color={theme.custom.primaryStrong} />
                 <Text style={styles.brandText}>
-                  fit<Text style={{ color: '#B7FF00' }}>mitra</Text>
+                  fit<Text style={{ color: theme.custom.primaryStrong }}>mitra</Text>
                 </Text>
               </View>
               <View style={{ width: 36 }} />
@@ -137,19 +137,53 @@ export default function OtpVerification() {
         </ImageBackground>
 
         {/* Bottom Sheet Card Container */}
-        <View style={[styles.bottomCard, { backgroundColor: isDark ? '#10131A' : '#FFFFFF' }]}>
-          <Text style={[styles.cardTag, { color: isDark ? '#A8AFBA' : '#6B7280' }]}>
+        <View
+          style={[
+            styles.bottomCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.outlineVariant,
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.cardTag,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
             Signup
           </Text>
 
-          <Text style={[styles.cardTitle, { color: isDark ? '#FFFFFF' : '#111111' }]}>
+          <Text
+            style={[
+              styles.cardTitle,
+              { color: theme.colors.onSurface },
+            ]}
+          >
             Enter the 6-digit code send to your at{' '}
             <Text style={{ fontWeight: '800' }}>{maskedEmail}</Text>
           </Text>
 
           {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
+            <View
+              style={[
+                styles.errorBox,
+                {
+                  backgroundColor: theme.colors.errorContainer,
+                  borderColor: theme.colors.error,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.errorText,
+                  { color: theme.colors.onErrorContainer },
+                ]}
+              >
+                {error}
+              </Text>
             </View>
           ) : null}
 
@@ -161,16 +195,25 @@ export default function OtpVerification() {
                 style={[
                   styles.otpBox,
                   {
-                    backgroundColor: isDark ? '#171B24' : '#F9FAFB',
+                    backgroundColor: digit
+                      ? theme.colors.primaryContainer
+                      : theme.colors.surfaceVariant,
                     borderColor: digit
-                      ? isDark ? '#B7FF00' : '#111111'
-                      : isDark ? '#252B36' : '#E5E7EB',
+                      ? theme.colors.primary
+                      : theme.colors.outlineVariant,
                   },
                 ]}
               >
                 <TextInput
                   ref={inputRefs[index]}
-                  style={[styles.otpInput, { color: isDark ? '#FFFFFF' : '#111111' }]}
+                  style={[
+                    styles.otpInput,
+                    {
+                      color: digit
+                        ? theme.colors.onPrimaryContainer
+                        : theme.colors.onSurface,
+                    },
+                  ]}
                   keyboardType="number-pad"
                   maxLength={1}
                   value={digit}
@@ -182,22 +225,22 @@ export default function OtpVerification() {
             ))}
           </View>
 
-          {/* Black Pill Continue Button */}
+          {/* Primary Pill Continue Button */}
           <Pressable
             style={[
               styles.primaryBtn,
-              { backgroundColor: isDark ? '#B7FF00' : '#111111' },
+              { backgroundColor: theme.colors.primary },
             ]}
             onPress={handleVerify}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+              <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
               <Text
                 style={[
                   styles.primaryBtnText,
-                  { color: isDark ? '#000000' : '#FFFFFF' },
+                  { color: theme.colors.onPrimary },
                 ]}
               >
                 Continue
@@ -206,10 +249,23 @@ export default function OtpVerification() {
           </Pressable>
 
           {/* Interactive Resend Code link */}
-          <Pressable style={styles.resendBtn} onPress={() => setOtp(['', '', '', '', '', ''])}>
-            <Text style={[styles.resendText, { color: isDark ? '#A8AFBA' : '#6B7280' }]}>
+          <Pressable
+            style={styles.resendBtn}
+            onPress={() => setOtp(['', '', '', '', '', ''])}
+          >
+            <Text
+              style={[
+                styles.resendText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Didn't receive code?{' '}
-              <Text style={{ color: isDark ? '#B7FF00' : '#111111', fontWeight: '800' }}>
+              <Text
+                style={{
+                  color: theme.custom.primaryStrong,
+                  fontWeight: '800',
+                }}
+              >
                 Resend Code
               </Text>
             </Text>
@@ -259,7 +315,7 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   brandText: {
     fontSize: 20,
@@ -272,7 +328,7 @@ const styles = StyleSheet.create({
     marginTop: -28,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xl,
     paddingTop: 28,
     paddingBottom: 32,
   },
@@ -286,18 +342,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     lineHeight: 28,
-    marginBottom: 24,
+    marginBottom: spacing.xl,
   },
   errorBox: {
-    padding: 12,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(255, 92, 105, 0.15)',
+    padding: spacing.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(255, 92, 105, 0.3)',
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   errorText: {
-    color: '#FF5C69',
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
@@ -305,13 +358,13 @@ const styles = StyleSheet.create({
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 28,
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
   },
   otpBox: {
     flex: 1,
     height: 52,
-    borderRadius: 14,
+    borderRadius: radius.md,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -325,7 +378,7 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     height: 52,
-    borderRadius: 26,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -334,11 +387,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   resendBtn: {
-    marginTop: 20,
+    marginTop: spacing.lg,
     alignItems: 'center',
   },
   resendText: {
     fontSize: 14,
   },
 });
+
 

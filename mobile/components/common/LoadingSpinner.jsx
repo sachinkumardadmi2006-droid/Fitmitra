@@ -1,14 +1,22 @@
 import React from 'react';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import { Colors } from '../../constants/theme';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { spacing } from '../../theme/tokens';
 
 export function LoadingSpinner({ message = 'Loading...', fullScreen = false }) {
-  const containerStyle = fullScreen ? styles.fullScreen : styles.inline;
+  const { theme } = useAppTheme();
+  const containerStyle = fullScreen
+    ? [styles.fullScreen, { backgroundColor: theme.colors.background }]
+    : styles.inline;
 
   return (
     <View style={containerStyle}>
-      <ActivityIndicator size="large" color={Colors.primaryNeon} />
-      {message ? <Text style={styles.text}>{message}</Text> : null}
+      <ActivityIndicator size="large" color={theme.custom.primaryStrong} />
+      {message ? (
+        <Text style={[styles.text, { color: theme.colors.onSurfaceVariant }]}>
+          {message}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -16,20 +24,19 @@ export function LoadingSpinner({ message = 'Loading...', fullScreen = false }) {
 const styles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    backgroundColor: Colors.bgDarkBase,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   inline: {
-    padding: 24,
+    padding: spacing.xl,
     justifyContent: 'center',
     alignItems: 'center',
   },
   text: {
-    marginTop: 12,
+    marginTop: spacing.md,
     fontSize: 14,
-    color: Colors.textSecondary,
     fontWeight: '500',
   },
 });
+

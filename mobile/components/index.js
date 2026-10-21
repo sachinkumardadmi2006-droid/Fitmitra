@@ -8,4 +8,4 @@ export { PointsCelebrationModal } from './modals/PointsCelebrationModal';
 export { ProductCard } from './store/ProductCard';
 export { TrackingTimeline } from './store/TrackingTimeline';
 export { OrderCard } from './store/OrderCard';
-export { OrderModal } from './store/OrderModal';
+

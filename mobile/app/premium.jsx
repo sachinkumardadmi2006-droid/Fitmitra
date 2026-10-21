@@ -22,6 +22,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { subscriptionService } from '../services/subscriptionService';
+import { openCheckout } from '../services/paymentCheckout';
 import { api } from '../services/api';
 import { queryKeys } from '../constants/queryKeys';
 import { useAuth } from '../context/AuthContext';
@@ -87,64 +88,124 @@ export default function PremiumScreen() {
     ]);
   }, [plansQuery, subQuery, refreshProfile]);
 
-  const handleOpenPlanModal = async (plan) => {
+  const pollSubscriptionActive = async () => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const subRes = await subscriptionService.getMySubscription();
+        const s = subRes?.data || subRes;
+        if (s && (s.status === 'ACTIVE' || s.status === 'TRIALING')) {
+          return true;
+        }
+      } catch (_) {}
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
+    return false;
+  };
+
+  const invalidateSuccessQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionMe }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionCurrent }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+    ]);
+    refreshProfile?.();
+  };
+
+  const handleOpenPlanModal = (plan) => {
     setSelectedPlan(plan);
     setPaymentOrder(null);
     setModalVisible(true);
-
-    // If plan has no trial, prepare the payment order from real backend
-    if (!plan.trialDays || plan.trialDays <= 0) {
-      try {
-        const orderRes = await api.post('/payments/create-order', {
-          subscriptionPlanId: plan._id || plan.id,
-        });
-        const orderData = orderRes?.data || orderRes;
-        setPaymentOrder(orderData);
-      } catch (err) {
-        console.warn('[Premium] Failed to prepare payment order:', err.message);
-      }
-    }
   };
 
   const handleConfirmSubscription = async () => {
     if (!selectedPlan) return;
+    const plan = selectedPlan;
+    const planId = plan._id || plan.id;
+
     try {
       setSubmitting(true);
-      const planId = selectedPlan._id || selectedPlan.id;
-      const res = await subscriptionService.createSubscription({ planId });
-      const resData = res?.data || res;
+      setModalVisible(false);
 
-      if (resData?.type === 'TRIAL_STARTED') {
-        setModalVisible(false);
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionCurrent }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
-        ]);
-        refreshProfile?.();
+      // Step b.1: POST /subscriptions/create { planId }
+      const createRes = await subscriptionService.createSubscription({ planId });
+      const createData = createRes?.data || createRes;
+
+      if (createData?.type === 'TRIAL_STARTED') {
+        await invalidateSuccessQueries();
         Alert.alert(
           'Free Trial Activated! 🎉',
-          `Your ${selectedPlan.trialDays}-day trial of ${selectedPlan.name} is now active. All Pro programs are unlocked!`
+          `Your ${plan.trialDays || 7}-day trial of ${plan.name} is now active. All Pro programs are unlocked!`
         );
-      } else if (resData?.type === 'PAYMENT_REQUIRED') {
-        // Real payment requirement
-        Alert.alert(
-          'Payment Required',
-          `This plan requires an active Razorpay payment of ₹${Math.round((selectedPlan.priceInPaise || 0) / 100)}. Online payment gateway integration is processing server-side.`
-        );
-      } else {
-        setModalVisible(false);
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionCurrent }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
-        ]);
-        refreshProfile?.();
+        return;
+      }
+
+      if (createData?.type === 'PAYMENT_REQUIRED') {
+        // Step b.2: POST /payments/create-order { subscriptionPlanId: plan._id }
+        const paymentOrderRes = await subscriptionService.createPaymentOrder({
+          subscriptionPlanId: planId,
+        });
+        const paymentOrderData = paymentOrderRes?.data || paymentOrderRes;
+
+        if (!paymentOrderData?.providerOrderId) {
+          throw new Error('Server order creation did not return valid payment credentials.');
+        }
+
+        // Step b.3: openCheckout
+        const checkoutResult = await openCheckout({
+          providerOrderId: paymentOrderData.providerOrderId,
+          keyId: paymentOrderData.keyId,
+          amountInPaise: paymentOrderData.amountInPaise || plan.priceInPaise,
+          currency: paymentOrderData.currency || 'INR',
+          prefill: {
+            name: user?.name || user?.displayName || '',
+            email: user?.email || '',
+            phone: user?.phone || '',
+          },
+          verifyPayload: {
+            subscriptionPlanId: planId,
+          },
+        });
+
+        // Step c: After status 'success' or 'pending': poll GET /subscriptions/me up to 3 times, 3 seconds apart
+        if (checkoutResult.status === 'success' || checkoutResult.status === 'pending') {
+          const confirmed = await pollSubscriptionActive();
+          await invalidateSuccessQueries();
+
+          if (confirmed) {
+            Alert.alert(
+              'FitMitra PRO Activated! 🏆',
+              `Welcome to ${plan.name}! Your subscription is now active.`
+            );
+          } else {
+            Alert.alert(
+              'Payment Processing',
+              'Payment received, confirming... Your subscription will activate shortly once confirmed by the bank.'
+            );
+          }
+        } else if (checkoutResult.status === 'failed') {
+          Alert.alert(
+            'Payment Failed',
+            checkoutResult.message || 'Payment could not be completed. Please retry.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Retry', onPress: () => handleConfirmSubscription() },
+            ]
+          );
+        } else if (checkoutResult.status === 'cancelled') {
+          // Cancelled: back to the plans, nothing changes
+        }
       }
     } catch (err) {
       Alert.alert(
-        'Subscription Request',
-        err.message || 'Unable to complete subscription request right now.'
+        'Subscription Error',
+        err.message || 'Unable to complete subscription request right now.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: () => handleConfirmSubscription() },
+        ]
       );
     } finally {
       setSubmitting(false);
@@ -225,7 +286,19 @@ export default function PremiumScreen() {
           Available Membership Tiers
         </Text>
 
-        {loading && plans.length === 0 ? (
+        {plansQuery.isError ? (
+          <AppCard variant="outlined" style={styles.noPlansCard}>
+            <Text style={[styles.noPlansText, { color: colors.error, marginBottom: 8 }]}>
+              Unable to load subscription plans.
+            </Text>
+            <AppButton
+              tone="primary"
+              label="Retry"
+              onPress={() => plansQuery.refetch()}
+              style={{ marginTop: 8 }}
+            />
+          </AppCard>
+        ) : loading && plans.length === 0 ? (
           <View style={styles.skeletonWrap}>
             <Skeleton height={140} radius={custom.radius.lg} style={styles.mbLg} />
             <Skeleton height={140} radius={custom.radius.lg} style={styles.mbLg} />
@@ -349,21 +422,14 @@ export default function PremiumScreen() {
                 : `Plan pricing: ₹${Math.round((selectedPlan?.priceInPaise || 0) / 100)} per ${selectedPlan?.billingPeriod?.toLowerCase() || 'month'}.`}
             </Text>
 
-            {paymentOrder && (
-              <View style={[styles.paymentOrderBox, { backgroundColor: colors.surfaceVariant }]}>
-                <Text style={[styles.paymentOrderLabel, { color: colors.onSurfaceVariant }]}>
-                  Razorpay Order: {paymentOrder.razorpayOrderId || 'Pending gateway'}
-                </Text>
-                <Text style={[styles.paymentOrderAmount, { color: colors.onSurface }]}>
-                  Amount: ₹{Math.round((paymentOrder.amountInPaise || selectedPlan?.priceInPaise || 0) / 100)}
-                </Text>
-              </View>
-            )}
-
             <View style={styles.modalActionWrap}>
               <AppButton
                 tone="primary"
-                label={selectedPlan?.trialDays > 0 ? 'Activate Free Trial' : 'Confirm Order'}
+                label={
+                  selectedPlan?.trialDays > 0
+                    ? `Start ${selectedPlan.trialDays}-Day Free Trial`
+                    : `Confirm & Pay ₹${Math.round((selectedPlan?.priceInPaise || 0) / 100)}`
+                }
                 loading={submitting}
                 onPress={handleConfirmSubscription}
               />

@@ -32,6 +32,7 @@ export const workoutService = {
 
   /**
    * Fetch current active user program enrollment
+   * @returns {Promise<{ program: { id: string, title: string, goal: string, level: string, durationWeeks: number } | null, startDateKey: string, weekNumber: number, dayNumber: number }>}
    */
   async getCurrentProgram() {
     return api.get('/programs/me/current');

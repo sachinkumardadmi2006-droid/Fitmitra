@@ -24,6 +24,14 @@ export const subscriptionService = {
   },
 
   /**
+   * Create Razorpay payment order for subscription
+   * @param {object} orderData { subscriptionPlanId: string }
+   */
+  async createPaymentOrder(orderData) {
+    return api.post('/payments/create-order', orderData);
+  },
+
+  /**
    * Verify Razorpay payment signature
    * @param {object} paymentData { razorpay_order_id, razorpay_payment_id, razorpay_signature }
    */

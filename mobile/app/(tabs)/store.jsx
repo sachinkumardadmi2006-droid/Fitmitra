@@ -29,8 +29,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useAppConfig } from '../../hooks/useAppConfig';
 import { ProductCard } from '../../components/store/ProductCard';
 import { OrderCard } from '../../components/store/OrderCard';
-import { OrderModal } from '../../components/store/OrderModal';
 import { TrackingTimeline } from '../../components/store/TrackingTimeline';
+import { useCart } from '../../hooks/useCart';
 import { TopBar } from '../../components/common/TopBar';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from '../../components/ui/AppCard';
@@ -60,10 +60,7 @@ export default function StoreTab() {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Checkout modal
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [checkoutMode, setCheckoutMode] = useState('CASH'); // 'CASH' | 'POINTS'
-  const [showOrderModal, setShowOrderModal] = useState(false);
+  const { addItem, totalQuantity } = useCart();
 
   // Live tracking modal
   const [trackingModalVisible, setTrackingModalVisible] = useState(false);
@@ -90,7 +87,7 @@ export default function StoreTab() {
         ? data
         : [];
     },
-    enabled: activeTab === 'PRODUCTS',
+    enabled: storeEnabled && activeTab === 'PRODUCTS',
     staleTime: 60 * 1000,
   });
 
@@ -133,13 +130,14 @@ export default function StoreTab() {
     }
   }, [activeTab, productsQuery, ordersQuery, refreshProfile]);
 
-  const handleBuyCash = (product) => {
-    setSelectedProduct(product);
-    setCheckoutMode('CASH');
-    setShowOrderModal(true);
+  const handleBuyCash = async (product) => {
+    const added = await addItem(product, 1);
+    if (added) {
+      router.push('/cart');
+    }
   };
 
-  const handleRedeemPoints = (product) => {
+  const handleRedeemPoints = async (product) => {
     if ((points || 0) < (product.pointsPrice || 0)) {
       Alert.alert(
         'Insufficient Points',
@@ -147,9 +145,10 @@ export default function StoreTab() {
       );
       return;
     }
-    setSelectedProduct(product);
-    setCheckoutMode('POINTS');
-    setShowOrderModal(true);
+    const added = await addItem(product, 1);
+    if (added) {
+      router.push('/cart');
+    }
   };
 
   const handleTrackOrder = async (order) => {
@@ -183,24 +182,6 @@ export default function StoreTab() {
     }
   };
 
-  // Truthful Feature-Flag Guard
-  if (!configLoading && !storeEnabled) {
-    return (
-      <View style={[styles.root, { backgroundColor: colors.background }]}>
-        <TopBar title="FitMitra Store" subtitle="Supplements & Gear" icon={ShoppingBag} showBack />
-        <View style={styles.centerWrap}>
-          <EmptyState
-            icon="shopping-bag"
-            title="Store Currently Closed"
-            description="The FitMitra store is currently disabled. Check back soon for supplements and fitness gear."
-            actionLabel="Back to Home"
-            onAction={() => router.replace('/(tabs)')}
-          />
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <TopBar
@@ -209,16 +190,36 @@ export default function StoreTab() {
         icon={ShoppingBag}
         showBack
         rightAction={
-          <View
-            style={[
-              styles.pointsPill,
-              { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-            ]}
-          >
-            <Zap size={14} color={colors.secondary} fill={colors.secondary} />
-            <Text style={[styles.pointsPillText, { color: colors.onSurface }]}>
-              {points || 0} pts
-            </Text>
+          <View style={styles.topBarActions}>
+            <View
+              style={[
+                styles.pointsPill,
+                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+              ]}
+            >
+              <Zap size={14} color={colors.secondary} fill={colors.secondary} />
+              <Text style={[styles.pointsPillText, { color: colors.onSurface }]}>
+                {points || 0} pts
+              </Text>
+            </View>
+            <Pressable
+              style={[
+                styles.cartIconBtn,
+                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+              ]}
+              onPress={() => router.push('/cart')}
+              accessibilityLabel="Shopping Cart"
+              hitSlop={8}
+            >
+              <ShoppingBag size={18} color={colors.onSurface} />
+              {totalQuantity > 0 && (
+                <View style={[styles.cartBadge, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.cartBadgeText, { color: colors.onPrimary }]}>
+                    {totalQuantity > 99 ? '99+' : totalQuantity}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
           </View>
         }
       />
@@ -279,6 +280,17 @@ export default function StoreTab() {
       </View>
 
       {activeTab === 'PRODUCTS' ? (
+        !storeEnabled ? (
+          <View style={styles.centerWrap}>
+            <EmptyState
+              icon="shopping-bag"
+              title="Store Currently Closed"
+              description="The FitMitra store is currently disabled. Check back soon for supplements and fitness gear."
+              actionLabel="Back to Home"
+              onAction={() => router.replace('/(tabs)')}
+            />
+          </View>
+        ) : (
         <>
           {/* Search Box */}
           <View style={styles.searchContainer}>
@@ -379,6 +391,7 @@ export default function StoreTab() {
             )}
           </ScrollView>
         </>
+        )
       ) : (
         /* Orders Tab */
         <ScrollView
@@ -421,23 +434,7 @@ export default function StoreTab() {
         </ScrollView>
       )}
 
-      {/* Order / Checkout Modal */}
-      <OrderModal
-        visible={showOrderModal}
-        product={selectedProduct}
-        mode={checkoutMode}
-        userPoints={points || 0}
-        onClose={() => setShowOrderModal(false)}
-        onSuccess={async () => {
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: queryKeys.storeOrders }),
-            queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-            queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
-          ]);
-          refreshProfile?.();
-          setActiveTab('ORDERS');
-        }}
-      />
+
 
       {/* Live Shiprocket Tracking Modal */}
       <Modal visible={trackingModalVisible} transparent animationType="slide" onRequestClose={() => setTrackingModalVisible(false)}>
@@ -492,6 +489,35 @@ const styles = StyleSheet.create({
   },
   mbLg: {
     marginBottom: 16,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cartIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
   pointsPill: {
     flexDirection: 'row',
