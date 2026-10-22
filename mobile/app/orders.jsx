@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Package, Truck, X } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
 import { storeService } from '../services/storeService';
 import { queryKeys } from '../constants/queryKeys';
 import { useAuth } from '../context/AuthContext';
@@ -22,7 +22,7 @@ import { openCheckout, mapCashOrderToCheckout } from '../services/paymentCheckou
 import { useAppTheme } from '../theme/ThemeContext';
 import AppHeader from '../components/ui/AppHeader';
 import EmptyState from '../components/ui/EmptyState';
-import Skeleton from '../components/ui/Skeleton';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export default function OrdersScreen() {
   const router = useRouter();
@@ -30,10 +30,11 @@ export default function OrdersScreen() {
   const { user } = useAuth();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
-  const { shippingEnabled } = useAppConfig();
+  const { storeEnabled, shippingEnabled } = useAppConfig();
+  const isOrderingAvailable = Boolean(storeEnabled && shippingEnabled);
 
   // Complete payment in-progress indicator
-  const [completingPayment, setCompletingPayment] = useState(false);
+  const [, setCompletingPayment] = useState(false);
 
   // Live tracking modal
   const [trackingModalVisible, setTrackingModalVisible] = useState(false);
@@ -81,102 +82,105 @@ export default function OrdersScreen() {
   };
 
   // Resume payment for PENDING_PAYMENT cash order
-  const handleCompletePayment = async (order) => {
-    if (!order.idempotencyKey) {
-      Alert.alert(
-        'Cannot Resume Payment',
-        'This order is missing idempotency credentials. Please place a new order from the store.'
-      );
-      return;
-    }
-
-    const orderAgeMs = order.createdAt ? Date.now() - new Date(order.createdAt).getTime() : 0;
-    if (orderAgeMs >= 60 * 60 * 1000) {
-      Alert.alert('This order expired', 'Please place a new order.');
-      await ordersQuery.refetch();
-      return;
-    }
-
-    try {
-      setCompletingPayment(true);
-
-      const formattedItems = (order.items || []).map((i) => ({
-        productId: i.productId?._id || i.productId,
-        quantity: i.quantity,
-      }));
-
-      // Replay POST /store/orders/cash with the order's items, address and idempotencyKey
-      const res = await storeService.createCashOrder(
-        {
-          items: formattedItems,
-          deliveryAddress: order.deliveryAddress,
-        },
-        order.idempotencyKey
-      );
-
-      const orderDoc = res?.order || res?.data?.order;
-      const paymentInfo = res?.payment || res?.data?.payment;
-
-      if (!orderDoc?._id) {
-        throw new Error('Unable to retrieve payment session from server.');
-      }
-
-      // Replayed order status check
-      if (orderDoc.status === 'PAID') {
-        Alert.alert('Order Already Paid', 'This order has already been confirmed as paid.');
-        await ordersQuery.refetch();
+  const handleCompletePayment = useCallback(
+    async function completePayment(order) {
+      if (!order.idempotencyKey) {
+        Alert.alert(
+          'Cannot Resume Payment',
+          'This order is missing idempotency credentials. Please place a new order from the store.'
+        );
         return;
       }
 
-      if (orderDoc.status !== 'PENDING_PAYMENT') {
+      const orderAgeMs = order.createdAt ? Date.now() - new Date(order.createdAt).getTime() : 0;
+      if (orderAgeMs >= 60 * 60 * 1000) {
         Alert.alert('This order expired', 'Please place a new order.');
         await ordersQuery.refetch();
         return;
       }
 
-      if (!paymentInfo?.providerOrderId) {
-        throw new Error('Server order replay did not return valid payment credentials.');
-      }
+      try {
+        setCompletingPayment(true);
 
-      // Map response using shared mapping and open Razorpay Checkout
-      const checkoutOptions = mapCashOrderToCheckout(orderDoc, paymentInfo, user, order.deliveryAddress);
-      const checkoutResult = await openCheckout(checkoutOptions);
+        const formattedItems = (order.items || []).map((i) => ({
+          productId: i.productId?._id || i.productId,
+          quantity: i.quantity,
+        }));
 
-      if (checkoutResult.status === 'success' || checkoutResult.status === 'pending') {
-        const confirmed = await pollOrderPaid(orderDoc._id);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.storeOrders });
+        // Replay POST /store/orders/cash with the order's items, address and idempotencyKey
+        const res = await storeService.createCashOrder(
+          {
+            items: formattedItems,
+            deliveryAddress: order.deliveryAddress,
+          },
+          order.idempotencyKey
+        );
 
-        if (confirmed) {
-          Alert.alert('Payment Confirmed!', 'Your payment was verified and your order is confirmed!');
-        } else {
+        const orderDoc = res?.order || res?.data?.order;
+        const paymentInfo = res?.payment || res?.data?.payment;
+
+        if (!orderDoc?._id) {
+          throw new Error('Unable to retrieve payment session from server.');
+        }
+
+        // Replayed order status check
+        if (orderDoc.status === 'PAID') {
+          Alert.alert('Order Already Paid', 'This order has already been confirmed as paid.');
+          await ordersQuery.refetch();
+          return;
+        }
+
+        if (orderDoc.status !== 'PENDING_PAYMENT') {
+          Alert.alert('This order expired', 'Please place a new order.');
+          await ordersQuery.refetch();
+          return;
+        }
+
+        if (!paymentInfo?.providerOrderId) {
+          throw new Error('Server order replay did not return valid payment credentials.');
+        }
+
+        // Map response using shared mapping and open Razorpay Checkout
+        const checkoutOptions = mapCashOrderToCheckout(orderDoc, paymentInfo, user, order.deliveryAddress);
+        const checkoutResult = await openCheckout(checkoutOptions);
+
+        if (checkoutResult.status === 'success' || checkoutResult.status === 'pending') {
+          const confirmed = await pollOrderPaid(orderDoc._id);
+          await queryClient.invalidateQueries({ queryKey: queryKeys.storeOrders });
+
+          if (confirmed) {
+            Alert.alert('Payment Confirmed!', 'Your payment was verified and your order is confirmed!');
+          } else {
+            Alert.alert(
+              'Payment Processing',
+              'Payment received, confirming... Your order status will update shortly.'
+            );
+          }
+        } else if (checkoutResult.status === 'failed') {
           Alert.alert(
-            'Payment Processing',
-            'Payment received, confirming... Your order status will update shortly.'
+            'Payment Failed',
+            checkoutResult.message || 'Payment could not be completed.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Retry', onPress: () => completePayment(order) },
+            ]
           );
         }
-      } else if (checkoutResult.status === 'failed') {
+      } catch (err) {
         Alert.alert(
-          'Payment Failed',
-          checkoutResult.message || 'Payment could not be completed.',
+          'Payment Error',
+          err.message || 'Failed to initiate payment resumption.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Retry', onPress: () => handleCompletePayment(order) },
+            { text: 'Retry', onPress: () => completePayment(order) },
           ]
         );
+      } finally {
+        setCompletingPayment(false);
       }
-    } catch (err) {
-      Alert.alert(
-        'Payment Error',
-        err.message || 'Failed to initiate payment resumption.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Retry', onPress: () => handleCompletePayment(order) },
-        ]
-      );
-    } finally {
-      setCompletingPayment(false);
-    }
-  };
+    },
+    [user, queryClient, ordersQuery]
+  );
 
   // Live Shiprocket Tracking
   const handleTrackOrder = async (order) => {
@@ -207,7 +211,7 @@ export default function OrdersScreen() {
         estimatedDelivery: res?.tracking?.etd || '',
         activities: res?.tracking?.scans || res?.checkpoints || [],
       });
-    } catch (err) {
+    } catch (_err) {
       setActiveTracking({
         order,
         awb,
@@ -254,11 +258,12 @@ export default function OrdersScreen() {
             <Skeleton height={130} radius={custom.radius.lg} />
           </View>
         ) : orders.length > 0 ? (
-          orders.map((ord) => (
+          orders.map((ord, idx) => (
             <OrderCard
-              key={ord._id || ord.id}
+              key={typeof ord._id === 'object' ? String(ord._id?._id || idx) : String(ord._id || ord.id || idx)}
               order={ord}
               showTracking={shippingEnabled}
+              isOrderingAvailable={isOrderingAvailable}
               onTrack={handleTrackOrder}
               onCompletePayment={handleCompletePayment}
             />

@@ -270,7 +270,7 @@ export default function WorkoutsScreen() {
                   mode="outlined"
                   label="Review Completed Routine"
                   icon="check-circle"
-                  onPress={() => router.push(`/workout/${todayWorkoutId}`)}
+                  onPress={() => router.push(`/workout/${todayWorkoutId}?kind=today`)}
                 />
               ) : isRestDay ? (
                 <AppButton
@@ -284,14 +284,14 @@ export default function WorkoutsScreen() {
                   tone="primary"
                   label="Resume Workout Session"
                   icon="play"
-                  onPress={() => router.push(`/workout/${todayWorkoutId}`)}
+                  onPress={() => router.push(`/workout/${todayWorkoutId}?kind=today`)}
                 />
               ) : (
                 <AppButton
                   tone="primary"
                   label="Start Today's Workout"
                   icon="play"
-                  onPress={() => router.push(`/workout/${todayWorkoutId}`)}
+                  onPress={() => router.push(`/workout/${todayWorkoutId}?kind=today`)}
                 />
               )}
             </View>
@@ -333,7 +333,7 @@ export default function WorkoutsScreen() {
               label="View Program Details"
               icon="arrow-right"
               style={{ alignSelf: 'flex-start', marginTop: 4 }}
-              onPress={() => router.push(`/workout/${currentProgram.program.id}`)}
+              onPress={() => router.push(`/workout/${currentProgram.program.id}?kind=program`)}
             />
           </AppCard>
         )}
@@ -380,15 +380,15 @@ export default function WorkoutsScreen() {
             <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
           </View>
         ) : programs.length > 0 ? (
-          programs.map((prog) => {
-            const progId = prog._id || prog.id;
+          programs.map((prog, pIdx) => {
+            const progId = String(prog._id?._id || prog._id || prog.id || pIdx);
             const isLocked = Boolean(prog.locked);
 
             return (
               <AppCard
                 key={progId}
                 variant="elevated"
-                onPress={() => router.push(`/workout/${progId}`)}
+                onPress={() => router.push(`/workout/${progId}?kind=program`)}
                 style={styles.programCard}
               >
                 <View style={styles.programCardTop}>
@@ -479,7 +479,7 @@ export default function WorkoutsScreen() {
 
             return (
               <AppCard
-                key={session._id || session.id || index}
+                key={String(session._id?._id || session._id || session.id || index)}
                 variant="outlined"
                 style={styles.historyCard}
               >

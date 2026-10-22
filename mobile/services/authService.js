@@ -133,7 +133,7 @@ export const authService = {
   },
 
   /**
-   * Request password reset email from backend /auth/forgot-password
+   * Request password reset OTP email from backend /auth/forgot-password
    * @param {string} email
    */
   async forgotPassword(email) {
@@ -141,6 +141,86 @@ export const authService = {
       return await api.post('/auth/forgot-password', {
         email: email.trim().toLowerCase(),
       });
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Verify password reset 6-digit OTP code with backend /auth/verify-reset-otp
+   * @param {string} email
+   * @param {string} otp
+   * @returns {Promise<string>} resetToken
+   */
+  async verifyResetOtp(email, otp) {
+    try {
+      const result = await api.post('/auth/verify-reset-otp', {
+        email: email.trim().toLowerCase(),
+        otp: String(otp).trim(),
+      });
+      return result?.resetToken || result;
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Reset user password with verified resetToken via /auth/reset-password
+   * @param {string} resetToken
+   * @param {string} newPassword
+   */
+  async resetPassword(resetToken, newPassword) {
+    try {
+      return await api.post('/auth/reset-password', {
+        resetToken,
+        newPassword,
+      });
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Log in via Google ID token with backend /auth/google
+   * @param {string} idToken
+   */
+  async googleLogin(idToken) {
+    try {
+      await clearUserCache();
+      const result = await api.post('/auth/google', {
+        idToken,
+      });
+
+      const user = result?.user;
+      const tokens = result?.tokens;
+
+      if (!tokens?.idToken) {
+        throw new Error('Google authentication succeeded but server returned no access token.');
+      }
+
+      // Save tokens securely in expo-secure-store
+      await setAuthTokens({
+        accessToken: tokens.idToken,
+        refreshToken: tokens.refreshToken,
+      });
+
+      if (user) {
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+      }
+
+      // Check onboarding state from server profile or user biometrics
+      const hasBiometrics = Boolean(user?.profile?.heightCm && user?.profile?.weightKg);
+      if (hasBiometrics) {
+        await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
+      } else {
+        await AsyncStorage.removeItem(ONBOARDED_KEY);
+      }
+
+      emitDbUpdate();
+      return {
+        user,
+        isOnboarded: hasBiometrics,
+      };
     } catch (err) {
       throw new Error(formatAuthError(err));
     }

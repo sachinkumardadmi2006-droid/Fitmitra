@@ -1,31 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
+/* eslint-disable react-hooks/immutability */
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   Pressable,
   ScrollView,
   StyleSheet,
-  Alert,
+  Image,
+  AppState,
+  ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import {
-  ArrowLeft,
   Clock,
   Flame,
   Dumbbell,
   Play,
   Pause,
   RotateCcw,
-  CheckCircle2,
-  ChevronRight,
-  ChevronLeft,
   X,
-  Sparkles,
   Zap,
   Info,
   Check,
-  FastForward,
+  Volume2,
+  VolumeX,
+  RefreshCw,
 } from 'lucide-react-native';
+import { useTranslation } from '../../utils/i18n';
+import { resolveMediaUrl } from '../../utils/media';
 import { ProgressBar } from 'react-native-paper';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { workoutService, normalizeTodayWorkout } from '../../services/workoutService';
@@ -37,13 +40,286 @@ import AppHeader from '../../components/ui/AppHeader';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import Skeleton from '../../components/ui/Skeleton';
+import { Skeleton } from '../../components/ui/Skeleton';
+
+function resolveExerciseVideo(ex) {
+  if (!ex) return null;
+  return ex.videoUrl || resolveMediaUrl(ex.videoKey || ex.video);
+}
+
+function resolveExerciseThumbnail(ex) {
+  if (!ex) return null;
+  return ex.thumbnailUrl || resolveMediaUrl(ex.thumbnailKey || ex.imageKey || ex.image);
+}
+
+function DualExerciseVideoArea({
+  currentEx,
+  nextEx,
+  isResting,
+  isPaused,
+  theme,
+  t,
+}) {
+  const { colors, radius } = theme;
+  const currentVideo = useMemo(() => resolveExerciseVideo(currentEx), [currentEx]);
+  const nextVideo = useMemo(() => resolveExerciseVideo(nextEx), [nextEx]);
+  const thumbnail = useMemo(() => resolveExerciseThumbnail(currentEx), [currentEx]);
+
+  const [activeSlot, setActiveSlot] = useState(0); // 0 -> playerA, 1 -> playerB
+  const [isMuted, setIsMuted] = useState(true);
+  const [isPlayingVideo, setIsPlayingVideo] = useState(true);
+  const [statusA, setStatusA] = useState('idle');
+  const [statusB, setStatusB] = useState('idle');
+  const [showPoster, setShowPoster] = useState(true);
+
+  const playerA = useVideoPlayer(currentVideo, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  const playerB = useVideoPlayer(nextVideo, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  const prevExIdRef = useRef(currentEx?.exerciseId || currentEx?._id);
+
+  // Sync / Swap video on exercise change
+  useEffect(() => {
+    const curId = currentEx?.exerciseId || currentEx?._id;
+    if (curId && curId !== prevExIdRef.current) {
+      prevExIdRef.current = curId;
+      setActiveSlot((prev) => {
+        const nextSlot = prev === 0 ? 1 : 0;
+        const nowActive = nextSlot === 0 ? playerA : playerB;
+        const nowBg = nextSlot === 0 ? playerB : playerA;
+
+        if (currentVideo) {
+          nowActive.replace(currentVideo);
+          nowActive.muted = isMuted;
+          if (!isResting && !isPaused) {
+            nowActive.play();
+          }
+        }
+        if (nextVideo) {
+          nowBg.replace(nextVideo);
+          nowBg.muted = true;
+          nowBg.pause();
+        }
+        return nextSlot;
+      });
+      setShowPoster(true);
+    } else {
+      const activeP = activeSlot === 0 ? playerA : playerB;
+      const bgP = activeSlot === 0 ? playerB : playerA;
+      if (currentVideo) {
+        activeP.replace(currentVideo);
+        activeP.muted = isMuted;
+        if (!isResting && !isPaused) {
+          activeP.play();
+        }
+      }
+      if (nextVideo) {
+        bgP.replace(nextVideo);
+        bgP.muted = true;
+        bgP.pause();
+      }
+    }
+  }, [currentEx, nextEx, currentVideo, nextVideo, isResting, isPaused, isMuted, playerA, playerB, activeSlot]);
+
+  // Listen to status changes on player A
+  useEffect(() => {
+    const sub = playerA.addListener('statusChange', (payload) => {
+      setStatusA(payload.status);
+      if (activeSlot === 0 && payload.status === 'readyToPlay') {
+        setShowPoster(false);
+      }
+    });
+    const playSub = playerA.addListener('playingChange', (payload) => {
+      if (activeSlot === 0) setIsPlayingVideo(payload.isPlaying);
+    });
+    return () => {
+      sub.remove();
+      playSub.remove();
+    };
+  }, [playerA, activeSlot]);
+
+  // Listen to status changes on player B
+  useEffect(() => {
+    const sub = playerB.addListener('statusChange', (payload) => {
+      setStatusB(payload.status);
+      if (activeSlot === 1 && payload.status === 'readyToPlay') {
+        setShowPoster(false);
+      }
+    });
+    const playSub = playerB.addListener('playingChange', (payload) => {
+      if (activeSlot === 1) setIsPlayingVideo(payload.isPlaying);
+    });
+    return () => {
+      sub.remove();
+      playSub.remove();
+    };
+  }, [playerB, activeSlot]);
+
+  // Handle rest timer or workout paused state
+  useEffect(() => {
+    const activeP = activeSlot === 0 ? playerA : playerB;
+    if (isResting || isPaused) {
+      activeP.pause();
+    } else if (currentVideo && (activeSlot === 0 ? statusA : statusB) === 'readyToPlay') {
+      activeP.play();
+    }
+  }, [isResting, isPaused, activeSlot, currentVideo, statusA, statusB, playerA, playerB]);
+
+  // Pause on screen blur or background
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        playerA.pause();
+        playerB.pause();
+      };
+    }, [playerA, playerB])
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        playerA.pause();
+        playerB.pause();
+      }
+    });
+    return () => sub.remove();
+  }, [playerA, playerB]);
+
+  const activeP = activeSlot === 0 ? playerA : playerB;
+  const currentStatus = activeSlot === 0 ? statusA : statusB;
+
+  const togglePlayPause = () => {
+    if (activeP.playing) {
+      activeP.pause();
+      setIsPlayingVideo(false);
+    } else {
+      activeP.play();
+      setIsPlayingVideo(true);
+    }
+  };
+
+  const toggleMute = () => {
+    const nextM = !isMuted;
+    setIsMuted(nextM);
+    activeP.muted = nextM;
+  };
+
+  const handleRetry = () => {
+    setShowPoster(true);
+    if (currentVideo) {
+      activeP.replace(currentVideo);
+      activeP.play();
+    }
+  };
+
+  if (!currentVideo) {
+    return (
+      <View style={[styles.videoContainer, { backgroundColor: colors.surfaceVariant, borderRadius: radius.lg }]}>
+        {thumbnail ? (
+          <Image source={{ uri: thumbnail }} style={[styles.videoPoster, { borderRadius: radius.lg }]} resizeMode="cover" />
+        ) : (
+          <View style={styles.noVideoPlaceholder}>
+            <Dumbbell size={36} color={colors.onSurfaceVariant} />
+            <Text style={[styles.noVideoText, { color: colors.onSurfaceVariant }]}>
+              {t('workout.videoComingSoon')}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.videoContainer, { backgroundColor: '#000', borderRadius: radius.lg }]}>
+      {/* Player A Slot */}
+      <View style={[styles.videoSlot, { display: activeSlot === 0 ? 'flex' : 'none' }]}>
+        <VideoView
+          player={playerA}
+          style={styles.fullVideo}
+          contentFit="cover"
+          nativeControls={false}
+        />
+      </View>
+
+      {/* Player B Slot */}
+      <View style={[styles.videoSlot, { display: activeSlot === 1 ? 'flex' : 'none' }]}>
+        <VideoView
+          player={playerB}
+          style={styles.fullVideo}
+          contentFit="cover"
+          nativeControls={false}
+        />
+      </View>
+
+      {/* Poster until ready */}
+      {showPoster && thumbnail ? (
+        <Image source={{ uri: thumbnail }} style={[styles.videoPoster, { borderRadius: radius.lg }]} resizeMode="cover" />
+      ) : null}
+
+      {/* Buffering Indicator */}
+      {currentStatus === 'loading' && (
+        <View style={[styles.videoOverlayCenter, { backgroundColor: colors.backdrop }]}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      )}
+
+      {/* Video Unavailable Error Overlay */}
+      {currentStatus === 'error' && (
+        <View style={[styles.videoOverlayCenter, { backgroundColor: colors.backdrop }]}>
+          <Text style={[styles.errorOverlayText, { color: colors.onSurface }]}>
+            {t('workout.videoUnavailable')}
+          </Text>
+          <Pressable
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={handleRetry}
+          >
+            <RefreshCw size={14} color={colors.onPrimary} />
+            <Text style={[styles.retryBtnText, { color: colors.onPrimary }]}>
+              {t('workout.retry')}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Transparent Tap Overlay for play/pause */}
+      <Pressable style={styles.tapOverlay} onPress={togglePlayPause} />
+
+      {/* Mute / Unmute Button */}
+      <Pressable
+        style={[styles.muteBtn, { backgroundColor: colors.surface }]}
+        onPress={toggleMute}
+        hitSlop={8}
+      >
+        {isMuted ? (
+          <VolumeX size={16} color={colors.onSurface} />
+        ) : (
+          <Volume2 size={16} color={colors.onSurface} />
+        )}
+      </Pressable>
+
+      {/* Paused icon indicator */}
+      {!isPlayingVideo && currentStatus === 'readyToPlay' && !isResting && (
+        <View style={[styles.centerPlayBadge, { backgroundColor: colors.primary }]}>
+          <Play size={18} color={colors.onPrimary} style={{ marginLeft: 2 }} />
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function WorkoutDetailAndPlayerScreen() {
-  const { workoutId } = useLocalSearchParams();
+  const { workoutId, kind: rawKind } = useLocalSearchParams();
+  const kind = rawKind || (workoutId === 'today' ? 'today' : 'session');
   const router = useRouter();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
+  const { t } = useTranslation();
 
   const [workout, setWorkout] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -76,8 +352,7 @@ export default function WorkoutDetailAndPlayerScreen() {
     const fetchWorkout = async () => {
       setLoading(true);
       try {
-        // 1. If "today" or matches today, check today's workout endpoint first
-        if (workoutId === 'today' || !workoutId) {
+        if (kind === 'today' || workoutId === 'today') {
           const todayRes = await workoutService.getTodayWorkout();
           if (todayRes && isMounted) {
             const norm = normalizeTodayWorkout(todayRes);
@@ -93,14 +368,21 @@ export default function WorkoutDetailAndPlayerScreen() {
               if (norm.session?.id) {
                 setSessionId(norm.session.id);
               }
-              setLoading(false);
-              return;
+            } else {
+              setWorkout({
+                id: 'today',
+                title: norm?.workout?.title || "Today's Workout",
+                programName: norm?.workout?.programName || 'Daily Routine',
+                level: 'Beginner',
+                estimatedMin: 0,
+                exercises: [],
+              });
             }
           }
+          return;
         }
 
-        // 2. Try fetching as Program by ID
-        try {
+        if (kind === 'program') {
           const progRes = await workoutService.getProgram(workoutId);
           const prog = progRes?.data || progRes;
           if (prog && isMounted) {
@@ -113,6 +395,8 @@ export default function WorkoutDetailAndPlayerScreen() {
               restSec: Number(ex.restSec || ex.restSeconds || 60),
               instructions: Array.isArray(ex.instructions) ? ex.instructions : [],
               muscleGroups: Array.isArray(ex.muscleGroups) ? ex.muscleGroups : [],
+              videoUrl: ex.videoUrl || null,
+              thumbnailUrl: ex.thumbnailUrl || null,
             }));
 
             setWorkout({
@@ -124,30 +408,38 @@ export default function WorkoutDetailAndPlayerScreen() {
               description: prog.description,
               exercises,
             });
-            setLoading(false);
-            return;
           }
-        } catch (_) {}
+          return;
+        }
 
-        // 3. Fallback: check today's workout
-        const todayRes = await workoutService.getTodayWorkout();
-        if (todayRes && isMounted) {
-          const norm = normalizeTodayWorkout(todayRes);
-          if (norm?.workout?.exercises?.length > 0) {
+        if (kind === 'session') {
+          const sessionRes = await workoutService.getWorkoutById(workoutId);
+          const sessionData = sessionRes?.data || sessionRes;
+          if (sessionData && isMounted) {
+            setSessionId(sessionData._id || sessionData.id || workoutId);
+            const rawLogs = sessionData.exerciseLogs || [];
+            const exercises = rawLogs.map((log, idx) => ({
+              exerciseId: String(log.exerciseId?._id || log.exerciseId || `ex_${idx}`),
+              name: log.exerciseId?.name || log.name || 'Exercise',
+              sets: Number(log.sets?.length || 3),
+              reps: log.sets?.[0]?.reps ? String(log.sets[0].reps) : '10-12',
+              restSec: 60,
+              instructions: Array.isArray(log.exerciseId?.instructions) ? log.exerciseId.instructions : [],
+              muscleGroups: Array.isArray(log.exerciseId?.muscleGroups) ? log.exerciseId.muscleGroups : [],
+              videoUrl: log.exerciseId?.videoUrl || null,
+              thumbnailUrl: log.exerciseId?.thumbnailUrl || null,
+            }));
+
             setWorkout({
-              id: norm.workout.id || workoutId,
-              title: norm.workout.title,
-              programName: norm.workout.programName || 'Daily Routine',
-              level: norm.workout.level || 'Beginner',
-              estimatedMin: norm.workout.estimatedMin || 40,
-              exercises: norm.workout.exercises,
+              id: sessionData._id || sessionData.id || workoutId,
+              title: sessionData.title || 'Completed Session',
+              programName: sessionData.title || 'Workout Session',
+              level: 'Beginner',
+              estimatedMin: Math.round((sessionData.durationSeconds || 1800) / 60),
+              exercises,
             });
-            if (norm.session?.id) {
-              setSessionId(norm.session.id);
-            }
-            setLoading(false);
-            return;
           }
+          return;
         }
       } catch (err) {
         console.warn('[WorkoutDetail] Fetch error:', err.message);
@@ -160,7 +452,7 @@ export default function WorkoutDetailAndPlayerScreen() {
     return () => {
       isMounted = false;
     };
-  }, [workoutId]);
+  }, [workoutId, kind]);
 
   // Elapsed Session Timer
   useEffect(() => {
@@ -180,10 +472,14 @@ export default function WorkoutDetailAndPlayerScreen() {
     let restTimer;
     if (isResting && restTimeLeft > 0) {
       restTimer = setInterval(() => {
-        setRestTimeLeft((prev) => prev - 1);
+        setRestTimeLeft((prev) => {
+          if (prev <= 1) {
+            setIsResting(false);
+            return 0;
+          }
+          return prev - 1;
+        });
       }, 1000);
-    } else if (isResting && restTimeLeft <= 0) {
-      setIsResting(false);
     }
     return () => {
       if (restTimer) clearInterval(restTimer);
@@ -484,6 +780,16 @@ export default function WorkoutDetailAndPlayerScreen() {
 
           {/* Current Exercise Card */}
           <AppCard variant="elevated" style={styles.currentExCard}>
+            {/* 16:9 Video Area with Alternating Players */}
+            <DualExerciseVideoArea
+              currentEx={currentEx}
+              nextEx={exerciseList[currentExIndex + 1] || null}
+              isResting={isResting}
+              isPaused={isPaused}
+              theme={theme}
+              t={t}
+            />
+
             <View style={styles.exTagRow}>
               <View style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}>
                 <Dumbbell size={12} color={colors.onPrimaryContainer} />
@@ -795,7 +1101,7 @@ export default function WorkoutDetailAndPlayerScreen() {
 
           return (
             <AppCard
-              key={ex.exerciseId || index}
+              key={typeof ex.exerciseId === 'object' ? (ex.exerciseId?._id || index) : (ex.exerciseId || ex._id || index)}
               variant="outlined"
               style={styles.exerciseCard}
             >
@@ -1211,5 +1517,85 @@ const styles = StyleSheet.create({
   rowAlign: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  videoContainer: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: 14,
+  },
+  videoSlot: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  fullVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  videoPoster: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  noVideoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 8,
+  },
+  noVideoText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  videoOverlayCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    zIndex: 5,
+  },
+  errorOverlayText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
+  muteBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    elevation: 3,
+  },
+  centerPlayBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '38%',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 8,
+    elevation: 4,
   },
 });

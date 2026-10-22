@@ -1,7 +1,7 @@
 // FitMitra — Multi-Item Shopping Cart & Checkout Screen
 // Powered by live store catalog, AsyncStorage persistence, and unified Razorpay WebView checkout
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,14 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Crypto from 'expo-crypto';
 import {
-  ArrowLeft,
   Trash2,
   Plus,
   Minus,
@@ -26,30 +28,46 @@ import {
   ShoppingBag,
   AlertCircle,
   Truck,
-  CheckCircle2,
 } from 'lucide-react-native';
 import { useAppTheme } from '../theme/ThemeContext';
 import { spacing, radius } from '../theme/tokens';
 import { useCart } from '../hooks/useCart';
 import { useAuth } from '../context/AuthContext';
 import { useAppConfig } from '../hooks/useAppConfig';
+import { useTranslation } from '../utils/i18n';
 import { storeService } from '../services/storeService';
 import { openCheckout, mapCashOrderToCheckout } from '../services/paymentCheckout';
 import { queryKeys } from '../constants/queryKeys';
-import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
+import AppHeader from '../components/ui/AppHeader';
+import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import ErrorState from '../components/ui/ErrorState';
+
+const FIELD_KEYS = [
+  'fullName',
+  'phone',
+  'fullAddress',
+  'floor',
+  'areaLandmark',
+  'city',
+  'state',
+  'pincode',
+];
 
 export default function CartScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
-  const { user, points: userPoints, refreshProfile } = useAuth();
+  const { user, profile, points: userPoints, refreshProfile } = useAuth();
   const { storeEnabled, shippingEnabled } = useAppConfig();
+  const { t } = useTranslation();
+
+  const isOrderingAvailable = Boolean(storeEnabled && shippingEnabled);
+
   const {
     items: cartItems,
-    itemCount,
     totalQuantity,
     updateQuantity,
     removeItem,
@@ -66,36 +84,71 @@ export default function CartScreen() {
 
   // Delivery Address Form State
   const [address, setAddress] = useState({
-    fullName: user?.name || '',
-    phone: user?.phone || '',
-    addressLine1: '',
-    addressLine2: '',
+    fullName: user?.name || profile?.name || '',
+    phone: user?.phone || profile?.phone || '',
+    fullAddress: '',
+    floor: '',
+    areaLandmark: '',
     city: '',
     state: '',
     pincode: '',
-    country: 'India',
   });
+
   const [addressErrors, setAddressErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  // Layout refs for scrolling to first invalid field
+  const scrollViewRef = useRef(null);
+  const addressCardYRef = useRef(0);
+  const fieldYMapRef = useRef({});
+
+  const handleFieldLayout = (fieldName, event) => {
+    fieldYMapRef.current[fieldName] = event.nativeEvent.layout.y;
+  };
+
+  // Prefill full name and phone when user/profile loads (React state adjustment pattern)
+  const currentPhone = user?.phone || profile?.phone || '';
+  const currentName = user?.name || profile?.name || '';
+  const [prevUserPhone, setPrevUserPhone] = useState(currentPhone);
+  const [prevUserName, setPrevUserName] = useState(currentName);
+
+  if (currentPhone && currentPhone !== prevUserPhone) {
+    setPrevUserPhone(currentPhone);
+    if (!address.phone) {
+      setAddress((prev) => ({ ...prev, phone: currentPhone }));
+    }
+  }
+  if (currentName && currentName !== prevUserName) {
+    setPrevUserName(currentName);
+    if (!address.fullName) {
+      setAddress((prev) => ({ ...prev, fullName: currentName }));
+    }
+  }
 
   // Idempotency Key Ref: created once per checkout attempt, reused on retry of same cart
   const idempotencyKeyRef = useRef(Crypto.randomUUID());
   const pendingOrderIdRef = useRef(null);
 
-  // Cart Fingerprint: item ids + quantities + payment method + delivery address fields
+  // Cart Fingerprint: item ids + quantities + payment method + all address fields
   const cartFingerprint = useMemo(() => {
     const itemsPart = cartItems
-      .map((i) => `${i.productId}:${i.quantity}`)
+      .map((i) => {
+        const id = typeof i.productId === 'object' ? i.productId?._id : i.productId;
+        return `${id}:${i.quantity}`;
+      })
       .sort()
       .join('|');
     const addressPart = [
       (address.fullName || '').trim(),
       (address.phone || '').trim(),
-      (address.addressLine1 || '').trim(),
-      (address.addressLine2 || '').trim(),
+      (address.fullAddress || '').trim(),
+      (address.floor || '').trim(),
+      (address.areaLandmark || '').trim(),
       (address.city || '').trim(),
       (address.state || '').trim(),
       (address.pincode || '').trim(),
-      address.country || 'India',
+      'India',
     ].join('~');
     return `${paymentMethod}::${itemsPart}::${addressPart}`;
   }, [cartItems, paymentMethod, address]);
@@ -112,16 +165,17 @@ export default function CartScreen() {
 
   // Fetch live product details from server for each item in the cart
   const productQueries = useQuery({
-    queryKey: ['cart', 'products', cartSignature],
+    queryKey: ['cart', 'products', cartFingerprint],
     queryFn: async () => {
       if (cartItems.length === 0) return {};
       const results = await Promise.all(
         cartItems.map(async (item) => {
+          const id = typeof item.productId === 'object' ? item.productId?._id : item.productId;
           try {
             const prod = await storeService.getProduct(item.slug);
-            return { [item.productId]: prod };
-          } catch (e) {
-            return { [item.productId]: null };
+            return { [id]: prod };
+          } catch (_e) {
+            return { [id]: null };
           }
         })
       );
@@ -131,32 +185,66 @@ export default function CartScreen() {
     staleTime: 60 * 1000,
   });
 
-  const serverProducts = productQueries.data || {};
+  const serverProducts = useMemo(() => productQueries.data || {}, [productQueries.data]);
   const isFetchingProducts = productQueries.isLoading;
 
-  // Validate Delivery Address matching store.validators.ts exactly
-  const validateAddress = () => {
+  // Validation function matching server/src/modules/store/store.validators.ts exactly
+  const validateField = (name, value) => {
+    const val = (value || '').trim();
+    switch (name) {
+      case 'fullName':
+        if (!val || val.length < 2) return 'Full name is required (min 2 characters)';
+        return null;
+      case 'phone':
+        if (!/^[6-9]\d{9}$/.test(val)) return 'Valid 10-digit Indian phone number required';
+        return null;
+      case 'fullAddress':
+        if (!val || val.length < 5) return 'Full address is required (min 5 characters)';
+        return null;
+      case 'city':
+        if (!val || val.length < 2) return 'City is required (min 2 characters)';
+        return null;
+      case 'state':
+        if (!val || val.length < 2) return 'State is required (min 2 characters)';
+        return null;
+      case 'pincode':
+        if (!/^\d{6}$/.test(val)) return 'Valid 6-digit Indian PIN code required';
+        return null;
+      default:
+        return null;
+    }
+  };
+
+  const validateAllAddressFields = () => {
     const errors = {};
-    if (!address.fullName || address.fullName.trim().length < 2) {
-      errors.fullName = 'Full name is required (min 2 characters)';
-    }
-    if (!address.phone || !/^[6-9]\d{9}$/.test(address.phone.trim())) {
-      errors.phone = 'Valid 10-digit Indian phone number required';
-    }
-    if (!address.addressLine1 || address.addressLine1.trim().length < 5) {
-      errors.addressLine1 = 'Address line 1 is required (min 5 characters)';
-    }
-    if (!address.city || address.city.trim().length < 2) {
-      errors.city = 'City is required (min 2 characters)';
-    }
-    if (!address.state || address.state.trim().length < 2) {
-      errors.state = 'State is required (min 2 characters)';
-    }
-    if (!address.pincode || !/^\d{6}$/.test(address.pincode.trim())) {
-      errors.pincode = 'Valid 6-digit Indian PIN code required';
-    }
+    const required = ['fullName', 'phone', 'fullAddress', 'city', 'state', 'pincode'];
+    required.forEach((f) => {
+      const err = validateField(f, address[f]);
+      if (err) errors[f] = err;
+    });
     setAddressErrors(errors);
-    return Object.keys(errors).length === 0;
+    return errors;
+  };
+
+  const handleFieldChange = (name, val) => {
+    setAddress((prev) => ({ ...prev, [name]: val }));
+    if (hasSubmitted || touchedFields[name]) {
+      const err = validateField(name, val);
+      setAddressErrors((prev) => ({ ...prev, [name]: err }));
+    }
+  };
+
+  const handleFieldBlur = (name) => {
+    setTouchedFields((prev) => ({ ...prev, [name]: true }));
+    const err = validateField(name, address[name]);
+    setAddressErrors((prev) => ({ ...prev, [name]: err }));
+  };
+
+  const getFieldError = (name) => {
+    if (hasSubmitted || touchedFields[name]) {
+      return addressErrors[name] || null;
+    }
+    return null;
   };
 
   // Calculations: Cash total in paise, Points total, stock validity
@@ -174,7 +262,8 @@ export default function CartScreen() {
     let unpublished = false;
 
     cartItems.forEach((item) => {
-      const prod = serverProducts[item.productId];
+      const pId = typeof item.productId === 'object' ? item.productId?._id : item.productId;
+      const prod = serverProducts[pId];
       if (prod) {
         totalCash += (prod.priceInPaise || 0) * item.quantity;
         totalPoints += (prod.pointsPrice || 0) * item.quantity;
@@ -184,7 +273,7 @@ export default function CartScreen() {
         if ((prod.stockQuantity || 0) < item.quantity) {
           outOfStock = true;
         }
-      } else if (!isFetchingProducts && serverProducts[item.productId] === null) {
+      } else if (!isFetchingProducts && serverProducts[pId] === null) {
         unpublished = true;
       }
     });
@@ -230,11 +319,7 @@ export default function CartScreen() {
 
   // Checkout submission handler
   const handleCheckout = async () => {
-    if (!storeEnabled) {
-      Alert.alert(
-        'Store Closed',
-        'The store is currently closed. Orders cannot be processed.'
-      );
+    if (!isOrderingAvailable) {
       return;
     }
 
@@ -246,8 +331,17 @@ export default function CartScreen() {
       return;
     }
 
-    if (!validateAddress()) {
-      Alert.alert('Delivery Address Incomplete', 'Please check and complete all required address fields.');
+    setHasSubmitted(true);
+    const errors = validateAllAddressFields();
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      const firstInvalidField = FIELD_KEYS.find((f) => errors[f]);
+      if (firstInvalidField && fieldYMapRef.current[firstInvalidField] !== undefined) {
+        const targetY = Math.max(0, addressCardYRef.current + fieldYMapRef.current[firstInvalidField] - 20);
+        scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+      } else if (addressCardYRef.current) {
+        scrollViewRef.current?.scrollTo({ y: Math.max(0, addressCardYRef.current - 20), animated: true });
+      }
       return;
     }
 
@@ -255,15 +349,15 @@ export default function CartScreen() {
     setPollStatus('');
 
     const formattedItems = cartItems.map((item) => ({
-      productId: item.productId,
+      productId: typeof item.productId === 'object' ? item.productId?._id : item.productId,
       quantity: item.quantity,
     }));
 
     const formattedAddress = {
       fullName: address.fullName.trim(),
       phone: address.phone.trim(),
-      addressLine1: address.addressLine1.trim(),
-      addressLine2: address.addressLine2 ? address.addressLine2.trim() : null,
+      addressLine1: (address.fullAddress.trim() + (address.floor?.trim() ? `, Floor ${address.floor.trim()}` : '')).trim(),
+      addressLine2: address.areaLandmark?.trim() || null,
       city: address.city.trim(),
       state: address.state.trim(),
       pincode: address.pincode.trim(),
@@ -282,7 +376,7 @@ export default function CartScreen() {
       }
 
       try {
-        const res = await storeService.createPointsOrder(
+        await storeService.createPointsOrder(
           {
             items: formattedItems,
             deliveryAddress: formattedAddress,
@@ -400,10 +494,8 @@ export default function CartScreen() {
           [{ text: 'View Orders', onPress: () => router.replace('/orders') }]
         );
       } else if (checkoutResult.status === 'cancelled') {
-        // Cart kept, order remains PENDING_PAYMENT. Retry reuses the same order and idempotency key
         Alert.alert('Checkout Cancelled', 'Payment was cancelled. You can retry checkout when ready.');
       } else {
-        // Failed
         Alert.alert('Payment Failed', checkoutResult.message || 'Payment could not be completed. Please retry.');
       }
     } catch (err) {
@@ -421,15 +513,36 @@ export default function CartScreen() {
     }
   };
 
-  // Loading Screen
-  if (cartLoading) {
+  const isPlaceOrderDisabled =
+    !isOrderingAvailable ||
+    submitting ||
+    hasOutOfStock ||
+    hasUnpublished ||
+    (paymentMethod === 'POINTS' && (!allAllowPoints || !canAffordPoints));
+
+  // Error & Retry Screen
+  if (productQueries.isError && cartItems.length > 0) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Skeleton width="40%" height={24} />
+        <AppHeader title="Cart" onBack={() => router.back()} />
+        <ErrorState
+          error={productQueries.error}
+          onRetry={() => productQueries.refetch()}
+        />
+      </View>
+    );
+  }
+
+  // Loading Screen
+  if (cartLoading || (isFetchingProducts && cartItems.length > 0 && !productQueries.data)) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AppHeader title="Cart" onBack={() => router.back()} />
+        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={2} />
         </View>
-        <SkeletonCard lines={3} style={{ margin: spacing.lg }} />
-        <SkeletonCard lines={4} style={{ margin: spacing.lg }} />
       </View>
     );
   }
@@ -438,18 +551,12 @@ export default function CartScreen() {
   if (cartItems.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.header, { borderBottomColor: colors.outlineVariant }]}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-            <ArrowLeft size={22} color={colors.onSurface} />
-          </Pressable>
-          <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Cart</Text>
-          <View style={{ width: 36 }} />
-        </View>
+        <AppHeader title="Cart" onBack={() => router.back()} />
         <EmptyState
-          icon="cart-outline"
+          icon="shopping-outline"
           title="Your Cart is Empty"
           message="Browse the FitMitra store for premium supplements, shaker bottles, and accessories."
-          actionLabel="Browse Supplements"
+          actionLabel="Browse Store"
           onAction={() => router.replace('/(tabs)/store')}
         />
       </View>
@@ -457,37 +564,47 @@ export default function CartScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: colors.outlineVariant }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-          <ArrowLeft size={22} color={colors.onSurface} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.onSurface }]}>
-          Shopping Cart ({totalQuantity})
-        </Text>
-        <Pressable onPress={clearCart} hitSlop={8}>
-          <Text style={[styles.clearBtnText, { color: colors.error }]}>Clear</Text>
-        </Pressable>
-      </View>
+      <AppHeader
+        title={`Shopping Cart (${totalQuantity})`}
+        onBack={() => router.back()}
+        actions={[
+          {
+            icon: 'trash-can-outline',
+            onPress: clearCart,
+            accessibilityLabel: 'Clear Cart',
+          },
+        ]}
+      />
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.flex}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 110 },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Store Closed Banner if disabled */}
-        {!storeEnabled && (
+        {/* 1. Ordering Notice Card (only when unavailable) */}
+        {!isOrderingAvailable && (
           <View
             style={[
-              styles.closedBanner,
-              { backgroundColor: colors.errorContainer, borderColor: colors.error },
+              styles.orderingNoticeCard,
+              {
+                backgroundColor: colors.surfaceVariant,
+                borderColor: colors.outlineVariant,
+              },
             ]}
           >
-            <AlertCircle size={18} color={colors.onErrorContainer} />
-            <Text style={[styles.closedBannerText, { color: colors.onErrorContainer }]}>
-              The store is currently closed. Orders cannot be processed.
+            <AlertCircle size={18} color={colors.onSurfaceVariant} style={{ marginTop: 2 }} />
+            <Text style={[styles.orderingNoticeText, { color: colors.onSurfaceVariant }]}>
+              {t('store.cartNotice')}
             </Text>
           </View>
         )}
@@ -499,10 +616,11 @@ export default function CartScreen() {
           </Text>
         </View>
 
-        {/* Cart Item Cards */}
+        {/* 2. Items List */}
         <View style={styles.itemsSection}>
-          {cartItems.map((item) => {
-            const product = serverProducts[item.productId];
+          {cartItems.map((item, index) => {
+            const pId = typeof item.productId === 'object' ? String(item.productId?._id) : String(item.productId);
+            const product = serverProducts[pId];
             const isOutOfStock = product && product.stockQuantity < item.quantity;
             const priceRupees = product ? Math.round(product.priceInPaise / 100) : 0;
             const pointsPrice = product?.pointsPrice || 0;
@@ -512,7 +630,7 @@ export default function CartScreen() {
 
             return (
               <View
-                key={item.productId}
+                key={typeof item.productId === 'object' ? String(item.productId?._id || index) : String(item.productId || index)}
                 style={[
                   styles.itemCard,
                   {
@@ -579,7 +697,10 @@ export default function CartScreen() {
                         hitSlop={6}
                         disabled={item.quantity >= MAX_QTY_PER_ITEM}
                       >
-                        <Plus size={14} color={item.quantity >= MAX_QTY_PER_ITEM ? colors.onSurfaceVariant : colors.onSurface} />
+                        <Plus
+                          size={14}
+                          color={item.quantity >= MAX_QTY_PER_ITEM ? colors.onSurfaceVariant : colors.onSurface}
+                        />
                       </Pressable>
                     </View>
 
@@ -597,7 +718,7 @@ export default function CartScreen() {
           })}
         </View>
 
-        {/* Payment Method Selector (One per checkout: Cash or Points) */}
+        {/* 3. Payment Method Selector */}
         <View
           style={[
             styles.card,
@@ -609,6 +730,7 @@ export default function CartScreen() {
           <View style={styles.methodSelector}>
             {/* Cash via Razorpay Option */}
             <Pressable
+              disabled={!isOrderingAvailable}
               style={[
                 styles.methodOption,
                 {
@@ -616,8 +738,9 @@ export default function CartScreen() {
                     paymentMethod === 'CASH' ? colors.primaryContainer : colors.surfaceVariant,
                   borderColor: paymentMethod === 'CASH' ? colors.primary : colors.outlineVariant,
                 },
+                !isOrderingAvailable && { opacity: 0.5 },
               ]}
-              onPress={() => setPaymentMethod('CASH')}
+              onPress={() => isOrderingAvailable && setPaymentMethod('CASH')}
             >
               <CreditCard
                 size={18}
@@ -638,7 +761,7 @@ export default function CartScreen() {
 
             {/* Points Redemption Option */}
             <Pressable
-              disabled={!allAllowPoints || !canAffordPoints}
+              disabled={!isOrderingAvailable || !allAllowPoints || !canAffordPoints}
               style={[
                 styles.methodOption,
                 {
@@ -646,9 +769,9 @@ export default function CartScreen() {
                     paymentMethod === 'POINTS' ? colors.secondaryContainer : colors.surfaceVariant,
                   borderColor: paymentMethod === 'POINTS' ? colors.secondary : colors.outlineVariant,
                 },
-                (!allAllowPoints || !canAffordPoints) && { opacity: 0.5 },
+                (!isOrderingAvailable || !allAllowPoints || !canAffordPoints) && { opacity: 0.5 },
               ]}
-              onPress={() => setPaymentMethod('POINTS')}
+              onPress={() => isOrderingAvailable && setPaymentMethod('POINTS')}
             >
               <Zap
                 size={18}
@@ -685,8 +808,11 @@ export default function CartScreen() {
           )}
         </View>
 
-        {/* Delivery Address Form */}
+        {/* 4. Delivery Address Form */}
         <View
+          onLayout={(e) => {
+            addressCardYRef.current = e.nativeEvent.layout.y;
+          }}
           style={[
             styles.card,
             { backgroundColor: colors.surface, borderColor: colors.outlineVariant },
@@ -699,174 +825,193 @@ export default function CartScreen() {
             </Text>
           </View>
 
-          {/* Full Name */}
-          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Full Name *</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.surfaceVariant,
-                borderColor: addressErrors.fullName ? colors.error : colors.outlineVariant,
-                color: colors.onSurface,
-              },
-            ]}
-            placeholder="Recipient's Name"
-            placeholderTextColor={colors.onSurfaceVariant}
-            value={address.fullName}
-            onChangeText={(val) => setAddress((prev) => ({ ...prev, fullName: val }))}
-          />
-          {addressErrors.fullName && (
-            <Text style={[styles.errorText, { color: colors.error }]}>{addressErrors.fullName}</Text>
-          )}
-
-          {/* Phone */}
-          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>10-Digit Mobile *</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.surfaceVariant,
-                borderColor: addressErrors.phone ? colors.error : colors.outlineVariant,
-                color: colors.onSurface,
-              },
-            ]}
-            placeholder="e.g. 9876543210"
-            placeholderTextColor={colors.onSurfaceVariant}
-            keyboardType="phone-pad"
-            maxLength={10}
-            value={address.phone}
-            onChangeText={(val) => setAddress((prev) => ({ ...prev, phone: val }))}
-          />
-          {addressErrors.phone && (
-            <Text style={[styles.errorText, { color: colors.error }]}>{addressErrors.phone}</Text>
-          )}
-
-          {/* Address Line 1 */}
-          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Address Line 1 *</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.surfaceVariant,
-                borderColor: addressErrors.addressLine1 ? colors.error : colors.outlineVariant,
-                color: colors.onSurface,
-              },
-            ]}
-            placeholder="House/Flat No, Building, Street"
-            placeholderTextColor={colors.onSurfaceVariant}
-            value={address.addressLine1}
-            onChangeText={(val) => setAddress((prev) => ({ ...prev, addressLine1: val }))}
-          />
-          {addressErrors.addressLine1 && (
-            <Text style={[styles.errorText, { color: colors.error }]}>{addressErrors.addressLine1}</Text>
-          )}
-
-          {/* Address Line 2 */}
-          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Address Line 2 (Optional)</Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.surfaceVariant,
-                borderColor: colors.outlineVariant,
-                color: colors.onSurface,
-              },
-            ]}
-            placeholder="Landmark, Area, Sector"
-            placeholderTextColor={colors.onSurfaceVariant}
-            value={address.addressLine2}
-            onChangeText={(val) => setAddress((prev) => ({ ...prev, addressLine2: val }))}
-          />
-
-          {/* City & State Row */}
-          <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>City *</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: addressErrors.city ? colors.error : colors.outlineVariant,
-                    color: colors.onSurface,
-                  },
-                ]}
-                placeholder="City"
-                placeholderTextColor={colors.onSurfaceVariant}
-                value={address.city}
-                onChangeText={(val) => setAddress((prev) => ({ ...prev, city: val }))}
-              />
-              {addressErrors.city && (
-                <Text style={[styles.errorText, { color: colors.error }]}>{addressErrors.city}</Text>
-              )}
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>State *</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: addressErrors.state ? colors.error : colors.outlineVariant,
-                    color: colors.onSurface,
-                  },
-                ]}
-                placeholder="State"
-                placeholderTextColor={colors.onSurfaceVariant}
-                value={address.state}
-                onChangeText={(val) => setAddress((prev) => ({ ...prev, state: val }))}
-              />
-              {addressErrors.state && (
-                <Text style={[styles.errorText, { color: colors.error }]}>{addressErrors.state}</Text>
-              )}
-            </View>
+          {/* 1. Full name */}
+          <View onLayout={(e) => handleFieldLayout('fullName', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Full Name *</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: getFieldError('fullName') ? colors.error : colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="Recipient's Name"
+              placeholderTextColor={colors.onSurfaceVariant}
+              value={address.fullName}
+              onChangeText={(val) => handleFieldChange('fullName', val)}
+              onBlur={() => handleFieldBlur('fullName')}
+            />
+            {getFieldError('fullName') ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{getFieldError('fullName')}</Text>
+            ) : null}
           </View>
 
-          {/* PIN code & Country Row */}
-          <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>PIN Code *</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: addressErrors.pincode ? colors.error : colors.outlineVariant,
-                    color: colors.onSurface,
-                  },
-                ]}
-                placeholder="6 Digits"
-                placeholderTextColor={colors.onSurfaceVariant}
-                keyboardType="numeric"
-                maxLength={6}
-                value={address.pincode}
-                onChangeText={(val) => setAddress((prev) => ({ ...prev, pincode: val }))}
-              />
-              {addressErrors.pincode && (
-                <Text style={[styles.errorText, { color: colors.error }]}>{addressErrors.pincode}</Text>
-              )}
-            </View>
+          {/* 2. Phone */}
+          <View onLayout={(e) => handleFieldLayout('phone', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Phone *</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: getFieldError('phone') ? colors.error : colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="10-digit mobile number"
+              placeholderTextColor={colors.onSurfaceVariant}
+              keyboardType="numeric"
+              maxLength={10}
+              value={address.phone}
+              onChangeText={(val) => handleFieldChange('phone', val)}
+              onBlur={() => handleFieldBlur('phone')}
+            />
+            {getFieldError('phone') ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{getFieldError('phone')}</Text>
+            ) : null}
+          </View>
 
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Country</Text>
-              <TextInput
-                editable={false}
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.outlineVariant,
-                    color: colors.onSurfaceVariant,
-                  },
-                ]}
-                value="India"
-              />
-            </View>
+          {/* 3. Flat / House / Building and full address (multiline) */}
+          <View onLayout={(e) => handleFieldLayout('fullAddress', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>
+              Flat / House / Building and full address *
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                styles.multilineInput,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: getFieldError('fullAddress') ? colors.error : colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="Flat, House, Building, Street, Society"
+              placeholderTextColor={colors.onSurfaceVariant}
+              multiline
+              numberOfLines={3}
+              value={address.fullAddress}
+              onChangeText={(val) => handleFieldChange('fullAddress', val)}
+              onBlur={() => handleFieldBlur('fullAddress')}
+            />
+            {getFieldError('fullAddress') ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{getFieldError('fullAddress')}</Text>
+            ) : null}
+          </View>
+
+          {/* 4. Floor (optional) */}
+          <View onLayout={(e) => handleFieldLayout('floor', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Floor (Optional)</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="e.g. 3rd Floor"
+              placeholderTextColor={colors.onSurfaceVariant}
+              value={address.floor}
+              onChangeText={(val) => handleFieldChange('floor', val)}
+            />
+          </View>
+
+          {/* 5. Area / Landmark */}
+          <View onLayout={(e) => handleFieldLayout('areaLandmark', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Area / Landmark</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="Nearby landmark or area name"
+              placeholderTextColor={colors.onSurfaceVariant}
+              value={address.areaLandmark}
+              onChangeText={(val) => handleFieldChange('areaLandmark', val)}
+            />
+          </View>
+
+          {/* 6. City */}
+          <View onLayout={(e) => handleFieldLayout('city', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>City *</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: getFieldError('city') ? colors.error : colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="City"
+              placeholderTextColor={colors.onSurfaceVariant}
+              value={address.city}
+              onChangeText={(val) => handleFieldChange('city', val)}
+              onBlur={() => handleFieldBlur('city')}
+            />
+            {getFieldError('city') ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{getFieldError('city')}</Text>
+            ) : null}
+          </View>
+
+          {/* 7. State */}
+          <View onLayout={(e) => handleFieldLayout('state', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>State *</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: getFieldError('state') ? colors.error : colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="State"
+              placeholderTextColor={colors.onSurfaceVariant}
+              value={address.state}
+              onChangeText={(val) => handleFieldChange('state', val)}
+              onBlur={() => handleFieldBlur('state')}
+            />
+            {getFieldError('state') ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{getFieldError('state')}</Text>
+            ) : null}
+          </View>
+
+          {/* 8. PIN code (numeric keypad, maxLength 6) */}
+          <View onLayout={(e) => handleFieldLayout('pincode', e)} style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>PIN Code *</Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: getFieldError('pincode') ? colors.error : colors.outlineVariant,
+                  color: colors.onSurface,
+                },
+              ]}
+              placeholder="6 Digits"
+              placeholderTextColor={colors.onSurfaceVariant}
+              keyboardType="numeric"
+              maxLength={6}
+              value={address.pincode}
+              onChangeText={(val) => handleFieldChange('pincode', val)}
+              onBlur={() => handleFieldBlur('pincode')}
+            />
+            {getFieldError('pincode') ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{getFieldError('pincode')}</Text>
+            ) : null}
           </View>
         </View>
 
-        {/* Order Summary & Price Breakdown */}
+        {/* 5. Order Summary */}
         <View
           style={[
             styles.card,
@@ -877,7 +1022,7 @@ export default function CartScreen() {
 
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>
-              Items ({totalQuantity} units)
+              Items Subtotal ({totalQuantity} units)
             </Text>
             <Text style={[styles.summaryValue, { color: colors.onSurface }]}>
               {paymentMethod === 'CASH'
@@ -899,7 +1044,7 @@ export default function CartScreen() {
           />
 
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryTotalLabel, { color: colors.onSurface }]}>Total Payable</Text>
+            <Text style={[styles.summaryTotalLabel, { color: colors.onSurface }]}>Total</Text>
             <Text style={[styles.summaryTotalValue, { color: custom.primaryStrong }]}>
               {paymentMethod === 'CASH'
                 ? `₹${Math.round(totalCashPaise / 100)}`
@@ -908,49 +1053,57 @@ export default function CartScreen() {
           </View>
         </View>
 
-        {/* Checkout Button */}
-        <Pressable
-          style={[
-            styles.checkoutBtn,
-            { backgroundColor: colors.primary },
-            (submitting ||
-              !storeEnabled ||
-              hasOutOfStock ||
-              hasUnpublished ||
-              (paymentMethod === 'POINTS' && (!allAllowPoints || !canAffordPoints))) && {
-              opacity: 0.5,
-            },
-          ]}
-          onPress={handleCheckout}
-          disabled={
-            submitting ||
-            !storeEnabled ||
-            hasOutOfStock ||
-            hasUnpublished ||
-            (paymentMethod === 'POINTS' && (!allAllowPoints || !canAffordPoints))
-          }
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color={colors.onPrimary} />
-          ) : (
-            <>
-              <ShoppingBag size={18} color={colors.onPrimary} />
-              <Text style={[styles.checkoutBtnText, { color: colors.onPrimary }]}>
-                {paymentMethod === 'CASH'
-                  ? `Pay ₹${Math.round(totalCashPaise / 100)}`
-                  : `Redeem ${totalPointsRequired} Points`}
-              </Text>
-            </>
-          )}
-        </Pressable>
-
         {pollStatus ? (
           <Text style={[styles.pollStatusText, { color: custom.accentText }]}>
             {pollStatus}
           </Text>
         ) : null}
       </ScrollView>
-    </View>
+
+      {/* 6. Sticky Bottom Bar */}
+      <View
+        style={[
+          styles.stickyBottomBar,
+          {
+            backgroundColor: colors.surface,
+            borderTopColor: colors.outlineVariant,
+            paddingBottom: Math.max(insets.bottom, 12),
+          },
+        ]}
+      >
+        <View style={styles.bottomBarInfo}>
+          <Text style={[styles.bottomBarTotalLabel, { color: colors.onSurfaceVariant }]}>
+            Total Payable
+          </Text>
+          <Text style={[styles.bottomBarTotalValue, { color: custom.primaryStrong }]}>
+            {paymentMethod === 'CASH'
+              ? `₹${Math.round(totalCashPaise / 100)}`
+              : `${totalPointsRequired} pts`}
+          </Text>
+        </View>
+
+        <Pressable
+          style={[
+            styles.placeOrderBtn,
+            { backgroundColor: colors.primary },
+            isPlaceOrderDisabled && { opacity: 0.5 },
+          ]}
+          onPress={isPlaceOrderDisabled ? undefined : handleCheckout}
+          disabled={isPlaceOrderDisabled}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.onPrimary} />
+          ) : (
+            <>
+              <ShoppingBag size={18} color={colors.onPrimary} />
+              <Text style={[styles.placeOrderBtnText, { color: colors.onPrimary }]}>
+                {t('store.placeOrder')}
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -961,43 +1114,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 54,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-  },
-  backBtn: {
-    padding: spacing.xs,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  clearBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
   scrollContent: {
     padding: spacing.lg,
-    paddingBottom: 60,
   },
-  closedBanner: {
+  orderingNoticeCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.sm,
     padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: spacing.md,
   },
-  closedBannerText: {
+  orderingNoticeText: {
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
+    lineHeight: 18,
   },
   limitNoticeRow: {
     marginBottom: spacing.md,
@@ -1120,11 +1253,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 16,
   },
+  inputGroup: {
+    marginBottom: spacing.sm,
+  },
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 4,
-    marginTop: 8,
+    marginTop: 4,
   },
   input: {
     borderWidth: 1,
@@ -1133,13 +1269,14 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     fontSize: 13,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
+  multilineInput: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+    paddingTop: 10,
   },
   errorText: {
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 3,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -1166,23 +1303,43 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
   },
-  checkoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: 15,
-    borderRadius: radius.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  checkoutBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
   pollStatusText: {
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
+    marginVertical: spacing.sm,
+  },
+  stickyBottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  bottomBarInfo: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  bottomBarTotalLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  bottomBarTotalValue: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  placeOrderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: 13,
+    paddingHorizontal: 22,
+    borderRadius: radius.md,
+  },
+  placeOrderBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

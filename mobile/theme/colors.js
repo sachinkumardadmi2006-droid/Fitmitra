@@ -1,5 +1,5 @@
 export const lightColors = {
-  primary: '#66BB6A', onPrimary: '#08260F', primaryContainer: '#D7F0D8', onPrimaryContainer: '#0B3D1A',
+  primary: '#71bc75fc', onPrimary: '#08260F', primaryContainer: '#D7F0D8', onPrimaryContainer: '#0B3D1A',
   secondary: '#FBC02D', onSecondary: '#3A2A00', secondaryContainer: '#FFF0B8', onSecondaryContainer: '#3A2A00',
   tertiary: '#00897B', onTertiary: '#FFFFFF', tertiaryContainer: '#B2DFDB', onTertiaryContainer: '#00352F',
   error: '#BA1A1A', onError: '#FFFFFF', errorContainer: '#FFDAD6', onErrorContainer: '#410002',

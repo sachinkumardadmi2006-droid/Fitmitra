@@ -140,7 +140,50 @@ export const TRANSLATIONS = {
     Thursday: "Thursday",
     Friday: "Friday",
     Saturday: "Saturday",
-    Sunday: "Sunday"
+    Sunday: "Sunday",
+
+    // Store & Cart
+    "store.orderingOpensSoon": "Ordering opens soon. We are setting up delivery.",
+    "store.cartNotice": "Ordering opens soon. We are setting up delivery. You can keep items in your cart.",
+    "store.placeOrder": "Place Order",
+    "store.paymentResumesSoon": "Payment will open when ordering resumes.",
+
+    // Recipes
+    "recipes.catalogTitle": "Recipes Catalog",
+    "recipes.headerTitle": "Recipe",
+    "recipes.notFoundTitle": "Recipe Not Found",
+    "recipes.notFoundDesc": "This recipe may be unpublished or is no longer available.",
+    "recipes.backToRecipes": "Back to Recipes",
+    "recipes.minsPrep": "mins prep",
+    "recipes.serving": "serving",
+    "recipes.servings": "servings",
+    "recipes.ingredients": "Ingredients",
+    "recipes.noIngredients": "No ingredients listed.",
+    "recipes.instructions": "Instructions",
+    "recipes.noInstructions": "No instructions available.",
+    "recipes.logRecipeBtn": "Log Recipe as Meal",
+    "recipes.logModalTitle": "Log Recipe to Meal",
+    "recipes.selectMealType": "Select Meal Type:",
+    "recipes.servingsToLog": "Number of Servings:",
+    "recipes.logToDiary": "Log to Diary",
+    "recipes.logging": "Logging...",
+    "recipes.logSuccessTitle": "Recipe Logged!",
+    "recipes.logFailed": "Logging Failed",
+    "recipes.goals.all": "All Goals",
+    "recipes.goals.highProtein": "High Protein",
+    "recipes.goals.muscleGain": "Muscle Gain",
+    "recipes.goals.fatLoss": "Fat Loss",
+    "recipes.goals.vegetarian": "Vegetarian",
+    "recipes.goals.quickMeal": "Quick Meal",
+    "recipes.goals.diabetesFriendly": "Diabetes Friendly",
+    "recipes.noRecipesFound": "No Recipes Found",
+    "recipes.noRecipesMatched": "No recipes matched your query.",
+    "recipes.noRecipesLoaded": "No recipes are currently loaded.",
+
+    // Workout Player & Video
+    "workout.videoUnavailable": "Video unavailable",
+    "workout.videoComingSoon": "Demonstration video coming soon",
+    "workout.retry": "Retry",
   },
   kn: {
     // Navigation
@@ -281,7 +324,50 @@ export const TRANSLATIONS = {
     Thursday: "ಗುರುವಾರ",
     Friday: "ಶುಕ್ರವಾರ",
     Saturday: "ಶನಿವಾರ",
-    Sunday: "ಭಾನುವಾರ"
+    Sunday: "ಭಾನುವಾರ",
+
+    // Store & Cart
+    "store.orderingOpensSoon": "ಆರ್ಡರ್ ಶೀಘ್ರದಲ್ಲೇ ಪ್ರಾರಂಭವಾಗಲಿದೆ. ಡೆಲಿವರಿ ವ್ಯವಸ್ಥೆ ಮಾಡಲಾಗುತ್ತಿದೆ.",
+    "store.cartNotice": "ಆರ್ಡರ್ ಶೀಘ್ರದಲ್ಲೇ ಪ್ರಾರಂಭವಾಗಲಿದೆ. ಡೆಲಿವರಿ ವ್ಯವಸ್ಥೆ ಮಾಡಲಾಗುತ್ತಿದೆ. ನೀವು ಕಾರ್ಟ್‌ನಲ್ಲಿ ವಸ್ತುಗಳನ್ನು ಉಳಿಸಿಕೊಳ್ಳಬಹುದು.",
+    "store.placeOrder": "ಆರ್ಡರ್ ಮಾಡಿ",
+    "store.paymentResumesSoon": "ಆರ್ಡರ್ ಮಾಡುವಿಕೆ ಪುನರಾರಂಭಗೊಂಡಾಗ ಪಾವತಿ ತೆರೆಯುತ್ತದೆ.",
+
+    // Recipes
+    "recipes.catalogTitle": "ಆಹಾರ ವಿಧಾನಗಳ ಪಟ್ಟಿ",
+    "recipes.headerTitle": "ಆಹಾರ ವಿಧಾನ",
+    "recipes.notFoundTitle": "ಆಹಾರ ವಿಧಾನ ಕಂಡುಬಂದಿಲ್ಲ",
+    "recipes.notFoundDesc": "ಈ ಆಹಾರ ವಿಧಾನ ಅಲಭ್ಯವಾಗಿದೆ ಅಥವಾ ಪ್ರಕಟವಾಗಿಲ್ಲ.",
+    "recipes.backToRecipes": "ಆಹಾರ ಪಟ್ಟಿಗೆ ಹಿಂತಿರುಗಿ",
+    "recipes.minsPrep": "ನಿಮಿಷ ತಯಾರಿ",
+    "recipes.serving": "ಸರ್ವಿಂಗ್",
+    "recipes.servings": "ಸರ್ವಿಂಗ್‌ಗಳು",
+    "recipes.ingredients": "ಬೇಕಾಗುವ ಪದಾರ್ಥಗಳು",
+    "recipes.noIngredients": "ಯಾವುದೇ ಪದಾರ್ಥಗಳ ಪಟ್ಟಿ ಇಲ್ಲ.",
+    "recipes.instructions": "ತಯಾರಿಸುವ ವಿಧಾನ",
+    "recipes.noInstructions": "ಯಾವುದೇ ವಿಧಾನ ಲಭ್ಯವಿಲ್ಲ.",
+    "recipes.logRecipeBtn": "ಆಹಾರವಾಗಿ ದಾಖಲಿಸಿ",
+    "recipes.logModalTitle": "ದಿನದ ಆಹಾರಕ್ಕೆ ಸೇರಿಸಿ",
+    "recipes.selectMealType": "ಆಹಾರದ ಪ್ರಕಾರ ಆಯ್ಕೆಮಾಡಿ:",
+    "recipes.servingsToLog": "ಸರ್ವಿಂಗ್‌ಗಳ ಸಂಖ್ಯೆ:",
+    "recipes.logToDiary": "ದಿನಚರಿಗೆ ದಾಖಲಿಸಿ",
+    "recipes.logging": "ದಾಖಲಿಸಲಾಗುತ್ತಿದೆ...",
+    "recipes.logSuccessTitle": "ಆಹಾರ ದಾಖಲಾಗಿದೆ!",
+    "recipes.logFailed": "ದಾಖಲಿಸಲು ವಿಫಲವಾಗಿದೆ",
+    "recipes.goals.all": "ಎಲ್ಲಾ ಗುರಿಗಳು",
+    "recipes.goals.highProtein": "ಹೆಚ್ಚಿನ ಪ್ರೋಟೀನ್",
+    "recipes.goals.muscleGain": "ಸ್ನಾಯು ಗಳಿಕೆ",
+    "recipes.goals.fatLoss": "ಕೊಬ್ಬು ಕರಗಿಸುವಿಕೆ",
+    "recipes.goals.vegetarian": "ಸಸ್ಯಾಹಾರಿ",
+    "recipes.goals.quickMeal": "ತ್ವರಿತ ಊಟ",
+    "recipes.goals.diabetesFriendly": "ಮಧುಮೇಹ ಸ್ನೇಹಿ",
+    "recipes.noRecipesFound": "ಯಾವುದೇ ಆಹಾರ ವಿಧಾನ ಕಂಡುಬಂದಿಲ್ಲ",
+    "recipes.noRecipesMatched": "ನಿಮ್ಮ ಹುಡುಕಾಟಕ್ಕೆ ಯಾವುದೇ ಫಲಿತಾಂಶವಿಲ್ಲ.",
+    "recipes.noRecipesLoaded": "ಯಾವುದೇ ಆಹಾರ ವಿಧಾನಗಳು ಲೋಡ್ ಆಗಿಲ್ಲ.",
+
+    // Workout Player & Video
+    "workout.videoUnavailable": "ವೀಡಿಯೊ ಲಭ್ಯವಿಲ್ಲ",
+    "workout.videoComingSoon": "ಪ್ರದರ್ಶನ ವೀಡಿಯೊ ಶೀಘ್ರದಲ್ಲೇ ಬರಲಿದೆ",
+    "workout.retry": "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
   }
 };
 
@@ -305,6 +391,7 @@ export const useTranslation = () => {
   let lang = 'en';
   try {
     const { useAuth } = require('../context/AuthContext');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     const auth = useAuth();
     if (auth?.profile?.language) lang = auth.profile.language;
     else if (auth?.user?.language) lang = auth.user.language;

@@ -63,7 +63,7 @@ export default function MoreHub() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <TopBar title="More" subtitle="Feature Hub & Preferences" icon={Layers} />
+      <TopBar title="More" subtitle="Feature Hub & Preferences" icon={Layers} showCart />
 
       <ScrollView
         style={styles.flex}

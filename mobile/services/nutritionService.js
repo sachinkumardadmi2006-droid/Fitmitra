@@ -10,10 +10,22 @@ export const nutritionService = {
   },
 
   /**
-   * Fetch recipe catalog
+   * Fetch recipe catalog with automatic Kannada -> English fallback
    */
   async getRecipes(params = {}) {
-    return api.get('/nutrition/recipes', params);
+    const res = await api.get('/nutrition/recipes', params);
+    const items = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res?.items)
+      ? res.items
+      : Array.isArray(res)
+      ? res
+      : [];
+
+    if (params.language === 'kn' && items.length === 0) {
+      return api.get('/nutrition/recipes', { ...params, language: 'en' });
+    }
+    return res;
   },
 
   /**

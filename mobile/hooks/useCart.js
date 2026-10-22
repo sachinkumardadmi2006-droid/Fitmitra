@@ -10,13 +10,18 @@ const CART_STORAGE_KEY = 'fitmitra_cart_items';
 const MAX_ITEMS = 20;
 const MAX_QTY_PER_ITEM = 10;
 
-// Listeners array for multi-component sync without heavy context
+// Listeners set for multi-component sync without heavy context
 const listeners = new Set();
 let memoryItems = [];
 let isInitialized = false;
+let initPromise = null;
 
 const notifyListeners = () => {
-  listeners.forEach((listener) => listener([...memoryItems]));
+  listeners.forEach((listener) => {
+    try {
+      listener([...memoryItems]);
+    } catch (_) {}
+  });
 };
 
 export function useCart() {
@@ -27,32 +32,40 @@ export function useCart() {
     listeners.add(setItems);
 
     if (!isInitialized) {
-      AsyncStorage.getItem(CART_STORAGE_KEY)
-        .then((raw) => {
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                memoryItems = parsed.map((item) => ({
-                  productId: String(item.productId || item._id || item.id),
-                  slug: String(item.slug || ''),
-                  quantity: Math.min(MAX_QTY_PER_ITEM, Math.max(1, Number(item.quantity) || 1)),
-                }));
+      if (!initPromise) {
+        initPromise = AsyncStorage.getItem(CART_STORAGE_KEY)
+          .then((raw) => {
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                  memoryItems = parsed.map((item) => ({
+                    productId: String(item.productId || item._id || item.id),
+                    slug: String(item.slug || ''),
+                    quantity: Math.min(MAX_QTY_PER_ITEM, Math.max(1, Number(item.quantity) || 1)),
+                  }));
+                }
+              } catch (_) {
+                memoryItems = [];
               }
-            } catch (_) {
-              memoryItems = [];
             }
-          }
-          isInitialized = true;
-          setItems([...memoryItems]);
-          setLoading(false);
-          notifyListeners();
-        })
-        .catch(() => {
-          isInitialized = true;
-          setLoading(false);
-        });
+            isInitialized = true;
+            notifyListeners();
+          })
+          .catch(() => {
+            isInitialized = true;
+          })
+          .finally(() => {
+            initPromise = null;
+          });
+      }
+
+      initPromise.then(() => {
+        setItems([...memoryItems]);
+        setLoading(false);
+      });
     } else {
+      setItems([...memoryItems]);
       setLoading(false);
     }
 

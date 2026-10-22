@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Target, Dumbbell, UserCheck, Flame, ChevronRight, ArrowLeft } from 'lucide-react-native';
+import { Target, UserCheck, Flame, ArrowLeft } from 'lucide-react-native';
 import { profileService, authService } from '../../services';
 import { emitDbUpdate } from '../../utils/events';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -162,8 +162,8 @@ export default function Onboarding() {
         goal === 'Fat Loss'
           ? Math.round(w * 0.9)
           : goal === 'Muscle Gain'
-          ? Math.round(w * 1.08)
-          : Math.round(w);
+            ? Math.round(w * 1.08)
+            : Math.round(w);
       const safeTargetWeight = Math.min(300, Math.max(20, calculatedTargetWeight));
 
       await profileService.updateProfile({
@@ -193,8 +193,8 @@ export default function Onboarding() {
           goal === 'Fat Loss'
             ? Math.round(w * 0.9)
             : goal === 'Muscle Gain'
-            ? Math.round(w * 1.08)
-            : w,
+              ? Math.round(w * 1.08)
+              : w,
         gender,
         activityLevel: activity,
         targetCal,

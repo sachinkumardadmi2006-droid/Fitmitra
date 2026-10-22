@@ -436,7 +436,7 @@ export default function ProgramsTab() {
               styles.startWorkoutBtn,
               { backgroundColor: theme.colors.primary },
             ]}
-            onPress={() => router.push('/workout/today')}
+            onPress={() => router.push('/workout/today?kind=today')}
           >
             <Play size={16} color={theme.colors.onPrimary} fill={theme.colors.onPrimary} />
             <Text
@@ -468,7 +468,7 @@ export default function ProgramsTab() {
           const isCurrentWeek = week.weekNumber === currentWeekNum;
           return (
             <View
-              key={week._id || `week_${week.weekNumber}`}
+              key={String(week._id || `week_${week.weekNumber}`)}
               style={[
                 styles.weekCard,
                 {
@@ -528,7 +528,7 @@ export default function ProgramsTab() {
                     isCurrentWeek && day.dayNumber === currentDayNum;
                   return (
                     <View
-                      key={day._id || `day_${day.dayNumber}`}
+                      key={String(day._id || `day_${day.dayNumber}`)}
                       style={[
                         styles.dayRow,
                         { borderBottomColor: theme.colors.outlineVariant },

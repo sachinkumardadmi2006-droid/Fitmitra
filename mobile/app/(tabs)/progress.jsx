@@ -385,7 +385,7 @@ export default function ProgressScreen() {
 
             {weightHistory.length > 0 ? (
               weightHistory.map((item, idx) => (
-                <AppCard key={item._id || item.id || idx} variant="elevated" style={styles.historyCard}>
+                <AppCard key={String(item._id?._id || item._id || item.id || idx)} variant="elevated" style={styles.historyCard}>
                   <View style={styles.historyRow}>
                     <View style={styles.rowAlign}>
                       <View style={[styles.scaleIconWrap, { backgroundColor: colors.primaryContainer }]}>
@@ -445,7 +445,7 @@ export default function ProgressScreen() {
 
                 return (
                   <AppCard
-                    key={session._id || session.id || idx}
+                    key={String(session._id?._id || session._id || session.id || idx)}
                     variant="outlined"
                     style={styles.sessionCard}
                   >

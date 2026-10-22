@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Dumbbell, Bell, ChevronLeft } from 'lucide-react-native';
+import { Dumbbell, Bell, ChevronLeft, ShoppingBag } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useCart } from '../../hooks/useCart';
 import { notificationService } from '../../services/notificationService';
 import { FontSize, BorderRadius } from '../../constants/theme';
 
@@ -11,12 +12,14 @@ export const TopBar = ({
   title,
   subtitle,
   showBack = false,
+  showCart = false,
   rightAction,
   icon: TitleIcon,
 }) => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { totalQuantity: cartCount } = useCart();
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -98,24 +101,45 @@ export const TopBar = ({
 
         {/* Right Section */}
         <View style={styles.rightSection}>
-          {rightAction ? (
-            rightAction
-          ) : (
-            <Pressable
-              onPress={() => router.push('/notifications')}
-              style={[styles.iconBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-              hitSlop={8}
-            >
-              <Bell size={20} color={colors.textPrimary} />
-              {unreadCount > 0 ? (
-                <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.badgeText}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          )}
+          <View style={styles.rightActionsRow}>
+            {rightAction}
+
+            {showCart && (
+              <Pressable
+                onPress={() => router.push('/cart')}
+                style={[styles.iconBtn, { borderColor: colors.borderLight || colors.border, backgroundColor: colors.surface }]}
+                hitSlop={8}
+                accessibilityLabel="Shopping Cart"
+              >
+                <ShoppingBag size={20} color={colors.textPrimary} />
+                {cartCount > 0 ? (
+                  <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+                    <Text style={[styles.badgeText, { color: colors.onPrimary }]}>
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            )}
+
+            {!rightAction && (
+              <Pressable
+                onPress={() => router.push('/notifications')}
+                style={[styles.iconBtn, { borderColor: colors.borderLight || colors.border, backgroundColor: colors.surface }]}
+                hitSlop={8}
+                accessibilityLabel="Notifications"
+              >
+                <Bell size={20} color={colors.textPrimary} />
+                {unreadCount > 0 ? (
+                  <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+                    <Text style={[styles.badgeText, { color: colors.onPrimary }]}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            )}
+          </View>
         </View>
       </View>
     </View>
@@ -192,6 +216,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  rightActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   iconBtn: {
     width: 40,
     height: 40,
@@ -213,7 +242,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    color: '#000',
     fontSize: 9,
     fontWeight: '800',
   },

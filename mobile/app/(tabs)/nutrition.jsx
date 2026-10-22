@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,25 +18,25 @@ import {
   Plus,
   Trash2,
   Clock,
-  Check,
   X,
   Search,
   Droplets,
   Flame,
-  Info,
   ChevronRight,
-  BookOpen,
 } from 'lucide-react-native';
 import { ProgressBar, Chip } from 'react-native-paper';
 import { nutritionService } from '../../services/nutritionService';
 import { queryKeys } from '../../constants/queryKeys';
 import { TopBar } from '../../components/common/TopBar';
 import { useAppTheme } from '../../theme/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../utils/i18n';
+import { resolveMediaUrl } from '../../utils/media';
 import AppCard from '../../components/ui/AppCard';
 import AppButton from '../../components/ui/AppButton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
-import Skeleton from '../../components/ui/Skeleton';
+import { Skeleton } from '../../components/ui/Skeleton';
 
 const MEAL_CATEGORIES = [
   { key: 'BREAKFAST', label: 'Breakfast' },
@@ -44,11 +45,35 @@ const MEAL_CATEGORIES = [
   { key: 'SNACK', label: 'Snacks' },
 ];
 
+const GOAL_OPTIONS = [
+  { key: 'ALL', labelKey: 'recipes.goals.all', fallback: 'All Goals' },
+  { key: 'HIGH_PROTEIN', labelKey: 'recipes.goals.highProtein', fallback: 'High Protein' },
+  { key: 'MUSCLE_GAIN', labelKey: 'recipes.goals.muscleGain', fallback: 'Muscle Gain' },
+  { key: 'FAT_LOSS', labelKey: 'recipes.goals.fatLoss', fallback: 'Fat Loss' },
+  { key: 'VEGETARIAN', labelKey: 'recipes.goals.vegetarian', fallback: 'Vegetarian' },
+  { key: 'QUICK_MEAL', labelKey: 'recipes.goals.quickMeal', fallback: 'Quick Meal' },
+  { key: 'DIABETES_FRIENDLY', labelKey: 'recipes.goals.diabetesFriendly', fallback: 'Diabetes Friendly' },
+];
+
+const formatGoalLabel = (tag, t) => {
+  if (!tag) return '';
+  const match = GOAL_OPTIONS.find((g) => g.key === tag);
+  if (match) return t(match.labelKey);
+  return tag
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+};
+
 export default function NutritionScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
+  const { user, profile } = useAuth();
+  const { t } = useTranslation();
+  const language = profile?.language || user?.language || 'en';
 
   const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -64,10 +89,8 @@ export default function NutritionScreen() {
   const [unitInput, setUnitInput] = useState('serving');
   const [submittingMeal, setSubmittingMeal] = useState(false);
 
-  // Recipe detail modal
-  const [recipeModalVisible, setRecipeModalVisible] = useState(false);
-  const [activeRecipe, setActiveRecipe] = useState(null);
-  const [recipeMealType, setRecipeMealType] = useState('LUNCH');
+  // Recipe filters
+  const [selectedGoalTag, setSelectedGoalTag] = useState('ALL');
   const [recipeSearch, setRecipeSearch] = useState('');
 
   // 1. Targets Query
@@ -104,9 +127,13 @@ export default function NutritionScreen() {
 
   // 4. Recipes Query
   const recipesQuery = useQuery({
-    queryKey: queryKeys.recipes(20),
+    queryKey: ['nutrition', 'recipes', language, selectedGoalTag],
     queryFn: async () => {
-      const res = await nutritionService.getRecipes({ limit: 20 });
+      const params = { limit: 50, language };
+      if (selectedGoalTag !== 'ALL') {
+        params.goal = selectedGoalTag;
+      }
+      const res = await nutritionService.getRecipes(params);
       return Array.isArray(res?.data)
         ? res.data
         : Array.isArray(res?.items)
@@ -121,7 +148,7 @@ export default function NutritionScreen() {
   const targets = targetsQuery.data || { calories: 2200, protein: 140, carbs: 240, fat: 65, waterMl: 3000 };
   const dailyLog = logsQuery.data || null;
   const waterMl = waterQuery.data ?? 0;
-  const recipes = recipesQuery.data || [];
+  const recipes = useMemo(() => recipesQuery.data || [], [recipesQuery.data]);
 
   const loading =
     (targetsQuery.isLoading && !targetsQuery.data) &&
@@ -215,46 +242,6 @@ export default function NutritionScreen() {
     }
   };
 
-  const handleOpenRecipeDetail = (recipe) => {
-    setActiveRecipe(recipe);
-    setRecipeModalVisible(true);
-  };
-
-  const handleLogRecipeAsMeal = async () => {
-    if (!activeRecipe) return;
-
-    setSubmittingMeal(true);
-    try {
-      await nutritionService.addNutritionLog({
-        date: todayDate,
-        mealType: recipeMealType,
-        items: [
-          {
-            recipeId: activeRecipe._id || activeRecipe.id,
-            name: activeRecipe.name,
-            quantity: 1,
-            unit: 'serving',
-            calories: Number(activeRecipe.calories) || 0,
-            protein: Number(activeRecipe.protein) || 0,
-            carbs: Number(activeRecipe.carbs) || 0,
-            fat: Number(activeRecipe.fat || activeRecipe.fats) || 0,
-          },
-        ],
-      });
-
-      setRecipeModalVisible(false);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(todayDate) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-      ]);
-      Alert.alert('Recipe Logged!', `${activeRecipe.name} added to your ${recipeMealType.toLowerCase()} log.`);
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to log recipe.');
-    } finally {
-      setSubmittingMeal(false);
-    }
-  };
-
   // Compute live daily totals from server log
   const totals = dailyLog?.dailyTotals || dailyLog?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const currentCalories = Math.round(totals.calories || 0);
@@ -286,11 +273,15 @@ export default function NutritionScreen() {
 
   const totalItemsCount = Object.values(mealsMap).reduce((sum, items) => sum + (items?.length || 0), 0);
 
-  const filteredRecipes = recipes.filter((r) =>
-    recipeSearch.trim()
-      ? r.name?.toLowerCase().includes(recipeSearch.toLowerCase())
-      : true
-  );
+  const filteredRecipes = useMemo(() => {
+    return recipes.filter((r) => {
+      const titleMatches = (r.title || '').toLowerCase().includes(recipeSearch.toLowerCase().trim());
+      const goalMatches =
+        selectedGoalTag === 'ALL' ||
+        (Array.isArray(r.goalTags) && r.goalTags.includes(selectedGoalTag));
+      return titleMatches && goalMatches;
+    });
+  }, [recipes, recipeSearch, selectedGoalTag]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -327,7 +318,7 @@ export default function NutritionScreen() {
                     Daily Macro Intake
                   </Text>
                   <Text style={[styles.summaryDate, { color: colors.onSurfaceVariant }]}>
-                    Today's Goals & Targets
+                    {"Today's Goals & Targets"}
                   </Text>
                 </View>
                 <View
@@ -471,7 +462,7 @@ export default function NutritionScreen() {
                     <View style={styles.itemsList}>
                       {items.map((item, idx) => (
                         <View
-                          key={item._id || item.id || idx}
+                          key={String(item._id?._id || item._id || item.id || idx)}
                           style={[
                             styles.itemRow,
                             idx > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.outlineVariant } : null,
@@ -509,7 +500,7 @@ export default function NutritionScreen() {
 
             {/* 4. Healthy Recipes Section */}
             <SectionHeader
-              title={`Recipes Catalog (${recipes.length})`}
+              title={`${t('recipes.catalogTitle')} (${recipes.length})`}
               style={{ marginTop: 20 }}
             />
 
@@ -523,7 +514,7 @@ export default function NutritionScreen() {
               <Search size={16} color={colors.onSurfaceVariant} />
               <TextInput
                 style={[styles.searchInput, { color: colors.onSurface }]}
-                placeholder="Search healthy recipes..."
+                placeholder={t('searchRecipes') || 'Search healthy recipes...'}
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={recipeSearch}
                 onChangeText={setRecipeSearch}
@@ -535,41 +526,131 @@ export default function NutritionScreen() {
               ) : null}
             </View>
 
+            {/* Goal filter chips */}
+            <View style={styles.goalChipsContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.goalChipsScroll}
+              >
+                {GOAL_OPTIONS.map((goal) => {
+                  const isSelected = selectedGoalTag === goal.key;
+                  return (
+                    <Pressable
+                      key={goal.key}
+                      style={[
+                        styles.goalChip,
+                        {
+                          backgroundColor: isSelected ? colors.primary : colors.surfaceVariant,
+                          borderColor: isSelected ? colors.primary : colors.outlineVariant,
+                        },
+                      ]}
+                      onPress={() => setSelectedGoalTag(goal.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.goalChipText,
+                          {
+                            color: isSelected ? colors.onPrimary : colors.onSurfaceVariant,
+                          },
+                        ]}
+                      >
+                        {t(goal.labelKey)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
             {filteredRecipes.length > 0 ? (
-              filteredRecipes.map((recipe) => (
-                <AppCard
-                  key={recipe._id || recipe.id}
-                  variant="outlined"
-                  style={styles.recipeCard}
-                  onPress={() => handleOpenRecipeDetail(recipe)}
-                >
-                  <View style={styles.recipeCardRow}>
-                    <View style={styles.recipeMetaCol}>
-                      <Text style={[styles.recipeTitle, { color: colors.onSurface }]}>
-                        {recipe.name}
-                      </Text>
-                      <Text style={[styles.recipeMacros, { color: colors.onSurfaceVariant }]}>
-                        {recipe.calories || 0} kcal • {recipe.protein || 0}g protein • {recipe.carbs || 0}g carbs
-                      </Text>
-                      {recipe.prepTimeMinutes && (
-                        <View style={styles.rowAlign}>
-                          <Clock size={12} color={colors.onSurfaceVariant} />
-                          <Text style={[styles.recipeTime, { color: colors.onSurfaceVariant }]}>
-                            {recipe.prepTimeMinutes} mins prep
-                          </Text>
+              filteredRecipes.map((recipe, rIdx) => {
+                const recipeId = recipe._id?._id || recipe._id || recipe.id;
+                const imgUrl = recipe.imageUrl || resolveMediaUrl(recipe.imageKey);
+                const cal = recipe.nutritionPerServing?.calories ?? recipe.calories ?? 0;
+                const p = recipe.nutritionPerServing?.protein ?? recipe.protein ?? 0;
+                const c = recipe.nutritionPerServing?.carbs ?? recipe.carbs ?? 0;
+                const f = recipe.nutritionPerServing?.fat ?? recipe.fat ?? 0;
+                const servings = recipe.servings || 1;
+                const prepTime = recipe.preparationTimeMinutes;
+                const firstGoal = Array.isArray(recipe.goalTags) && recipe.goalTags.length > 0 ? recipe.goalTags[0] : null;
+
+                return (
+                  <AppCard
+                    key={String(recipeId || rIdx)}
+                    variant="outlined"
+                    style={styles.recipeCard}
+                    onPress={() => router.push(`/recipe/${recipeId}`)}
+                  >
+                    <View style={styles.recipeCardContent}>
+                      {imgUrl ? (
+                        <Image
+                          source={{ uri: imgUrl }}
+                          style={styles.recipeThumb}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.recipeThumbPlaceholder,
+                            { backgroundColor: colors.surfaceVariant },
+                          ]}
+                        >
+                          <Utensils size={24} color={colors.onSurfaceVariant} />
                         </View>
                       )}
-                    </View>
 
-                    <ChevronRight size={18} color={custom.primaryStrong} />
-                  </View>
-                </AppCard>
-              ))
+                      <View style={styles.recipeInfoCol}>
+                        <Text style={[styles.recipeTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                          {recipe.title || 'Untitled Recipe'}
+                        </Text>
+                        <Text style={[styles.recipeMacroText, { color: colors.onSurfaceVariant }]}>
+                          {cal} kcal • P: {p}g • C: {c}g • F: {f}g
+                        </Text>
+
+                        <View style={styles.recipeMetaRow}>
+                          <Text style={[styles.recipeMetaText, { color: colors.onSurfaceVariant }]}>
+                            {servings} {servings === 1 ? 'serving' : 'servings'}
+                          </Text>
+                          {prepTime ? (
+                            <>
+                              <Text style={[styles.recipeMetaDot, { color: colors.onSurfaceVariant }]}>•</Text>
+                              <Clock size={11} color={colors.onSurfaceVariant} />
+                              <Text style={[styles.recipeMetaText, { color: colors.onSurfaceVariant }]}>
+                                {prepTime}m
+                              </Text>
+                            </>
+                          ) : null}
+                          {firstGoal ? (
+                            <View
+                              style={[
+                                styles.recipeGoalTag,
+                                { backgroundColor: colors.secondaryContainer },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.recipeGoalTagText,
+                                  { color: colors.onSecondaryContainer },
+                                ]}
+                              >
+                                {formatGoalLabel(firstGoal, t)}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+
+                      <ChevronRight size={18} color={custom.primaryStrong} />
+                    </View>
+                  </AppCard>
+                );
+              })
             ) : (
               <EmptyState
-                icon="utensils"
-                title="No Recipes Found"
-                description={recipeSearch ? "No recipes matched your query." : "No recipes are currently loaded."}
+                icon="silverware-fork-knife"
+                title={t('recipes.noRecipesFound')}
+                description={recipeSearch ? t('recipes.noRecipesMatched') : t('recipes.noRecipesLoaded')}
               />
             )}
           </>
@@ -704,93 +785,6 @@ export default function NutritionScreen() {
                 label="Save Food to Daily Log"
                 loading={submittingMeal}
                 onPress={handleSubmitCustomMeal}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* 6. Recipe Details & Log Modal */}
-      <Modal visible={recipeModalVisible} transparent animationType="slide" onRequestClose={() => setRecipeModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.outlineVariant,
-              },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]} numberOfLines={1}>
-                {activeRecipe?.name || 'Recipe Details'}
-              </Text>
-              <Pressable onPress={() => setRecipeModalVisible(false)} hitSlop={8}>
-                <X size={20} color={colors.onSurfaceVariant} />
-              </Pressable>
-            </View>
-
-            <View style={styles.recipeBadgeRow}>
-              <View style={[styles.recipeMetricPill, { backgroundColor: colors.primaryContainer }]}>
-                <Flame size={13} color={colors.onPrimaryContainer} />
-                <Text style={[styles.recipeMetricText, { color: colors.onPrimaryContainer }]}>
-                  {activeRecipe?.calories || 0} kcal
-                </Text>
-              </View>
-
-              <View style={[styles.recipeMetricPill, { backgroundColor: colors.secondaryContainer }]}>
-                <Text style={[styles.recipeMetricText, { color: colors.onSecondaryContainer }]}>
-                  {activeRecipe?.protein || 0}g Protein
-                </Text>
-              </View>
-
-              <View style={[styles.recipeMetricPill, { backgroundColor: colors.surfaceVariant }]}>
-                <Text style={[styles.recipeMetricText, { color: colors.onSurfaceVariant }]}>
-                  {activeRecipe?.carbs || 0}g Carbs
-                </Text>
-              </View>
-            </View>
-
-            {activeRecipe?.description && (
-              <Text style={[styles.recipeModalDesc, { color: colors.onSurfaceVariant }]}>
-                {activeRecipe.description}
-              </Text>
-            )}
-
-            {/* Meal Destination Selector */}
-            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant, marginTop: 12 }]}>
-              Log To Meal:
-            </Text>
-            <View style={styles.chipRow}>
-              {MEAL_CATEGORIES.map((cat) => (
-                <Chip
-                  key={cat.key}
-                  selected={recipeMealType === cat.key}
-                  onPress={() => setRecipeMealType(cat.key)}
-                  style={[
-                    styles.categoryChip,
-                    recipeMealType === cat.key
-                      ? { backgroundColor: colors.primaryContainer }
-                      : { backgroundColor: colors.surfaceVariant },
-                  ]}
-                  textStyle={{
-                    color: recipeMealType === cat.key ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-                    fontSize: 12,
-                    fontWeight: '700',
-                  }}
-                >
-                  {cat.label}
-                </Chip>
-              ))}
-            </View>
-
-            <View style={styles.modalActionWrap}>
-              <AppButton
-                tone="primary"
-                label={`Log as ${recipeMealType.toLowerCase()}`}
-                loading={submittingMeal}
-                onPress={handleLogRecipeAsMeal}
               />
             </View>
           </View>
@@ -1016,34 +1010,76 @@ const styles = StyleSheet.create({
     fontSize: 13,
     padding: 0,
   },
-  recipeCard: {
-    marginBottom: 8,
+  goalChipsContainer: {
+    marginBottom: 12,
   },
-  recipeCardRow: {
+  goalChipsScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  goalChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  goalChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  recipeCard: {
+    marginBottom: 10,
+  },
+  recipeCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
   },
-  recipeMetaCol: {
+  recipeThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+  },
+  recipeThumbPlaceholder: {
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recipeInfoCol: {
     flex: 1,
-    marginRight: 8,
   },
   recipeTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     marginBottom: 2,
   },
-  recipeMacros: {
+  recipeMacroText: {
     fontSize: 12,
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  recipeTime: {
-    fontSize: 11,
-    marginLeft: 4,
-  },
-  rowAlign: {
+  recipeMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  recipeMetaText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  recipeMetaDot: {
+    fontSize: 10,
+  },
+  recipeGoalTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  recipeGoalTagText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
@@ -1096,27 +1132,5 @@ const styles = StyleSheet.create({
   modalActionWrap: {
     marginTop: 8,
     marginBottom: 16,
-  },
-  recipeBadgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  recipeMetricPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  recipeMetricText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  recipeModalDesc: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 8,
   },
 });

@@ -16,13 +16,16 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F8F9FA"
       },
-      "package": "fitmitra.in"
+      "package": "fitmitra.in",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "expo-router",
       "expo-video",
       "expo-status-bar",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

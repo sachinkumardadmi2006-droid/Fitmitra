@@ -5,6 +5,9 @@ import { PaperProvider } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { buildTheme, buildNavigationTheme } from './index';
+import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const STORAGE_KEY = 'fitmitra.themePreference';
 const ThemeContext = createContext(null);
@@ -22,7 +25,10 @@ export function AppThemeProvider({ language, children }) {
       })
       .catch(() => {})
       .finally(() => {
-        if (active) setIsReady(true);
+        if (active) {
+          setIsReady(true);
+          SplashScreen.hideAsync().catch(() => {});
+        }
       });
     return () => {
       active = false;

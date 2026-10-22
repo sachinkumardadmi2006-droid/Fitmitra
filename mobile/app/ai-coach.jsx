@@ -281,13 +281,13 @@ export default function AiCoachScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {messages.map((msg) => {
+          {messages.map((msg, mIdx) => {
             const isUser = msg.role === 'user';
             const isExpanded = Boolean(expandedReasoning[msg.id]);
 
             return (
               <View
-                key={msg.id}
+                key={String(msg.id || mIdx)}
                 style={[
                   styles.msgRow,
                   isUser ? styles.msgRowUser : styles.msgRowAssistant,
@@ -411,7 +411,7 @@ export default function AiCoachScreen() {
               </Text>
               {QUICK_PROMPTS.map((prompt, idx) => (
                 <Pressable
-                  key={idx}
+                  key={String(idx)}
                   style={[
                     styles.quickPromptBtn,
                     {
@@ -581,9 +581,9 @@ export default function AiCoachScreen() {
             {/* Memories List */}
             <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
               {memories.length > 0 ? (
-                memories.map((mem) => (
+                memories.map((mem, memIdx) => (
                   <View
-                    key={mem._id || mem.id}
+                    key={String(mem._id?._id || mem._id || mem.id || memIdx)}
                     style={[
                       styles.memoryItemRow,
                       { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },

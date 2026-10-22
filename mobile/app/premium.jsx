@@ -61,6 +61,7 @@ export default function PremiumScreen() {
       return planItems;
     },
     staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // 2. Current Active Subscription Query
@@ -72,6 +73,7 @@ export default function PremiumScreen() {
       return s && s.status !== 'INACTIVE' ? s : null;
     },
     staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const plans = plansQuery.data || [];
@@ -305,7 +307,7 @@ export default function PremiumScreen() {
           </View>
         ) : plans.length > 0 ? (
           plans.map((plan) => {
-            const planId = plan._id || plan.id;
+            const planId = typeof plan._id === 'object' ? String(plan._id?._id || plan.id) : String(plan._id || plan.id || plan.tier);
             const priceRupees = Math.round((plan.priceInPaise || 0) / 100);
             const regularRupees = Math.round((plan.regularPriceInPaise || 0) / 100);
             const isActive = isCurrentPlanActive(plan);

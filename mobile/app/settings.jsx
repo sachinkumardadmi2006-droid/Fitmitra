@@ -193,8 +193,8 @@ export default function SettingsScreen() {
 
               {/* Points & Streak Alerts */}
               <View style={styles.settingRow}>
-                <View style={[styles.iconWrap, { backgroundColor: '#FFB80020' }]}>
-                  <Activity size={20} color="#FFB800" />
+                <View style={[styles.iconWrap, { backgroundColor: theme.colors.secondaryContainer }]}>
+                  <Activity size={20} color={theme.custom.accentText} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.settingTitle, { color: colors.onSurface }]}>

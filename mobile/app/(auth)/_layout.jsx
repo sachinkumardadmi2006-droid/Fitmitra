@@ -16,6 +16,10 @@ export default function AuthLayout() {
       <Stack.Screen name="signup" />
       <Stack.Screen name="otp" />
       <Stack.Screen name="onboarding" />
+      <Stack.Screen name="forgot-password" />
+      <Stack.Screen name="reset-otp" />
+      <Stack.Screen name="reset-password" />
+      <Stack.Screen name="reset-success" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }

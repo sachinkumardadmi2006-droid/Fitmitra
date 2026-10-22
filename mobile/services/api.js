@@ -174,12 +174,13 @@ const request = async (path, options = {}) => {
     }
 
     if (!response.ok) {
-      const message =
-        data?.message ||
-        data?.error ||
+      const serverMessage =
+        (typeof data?.error === 'string' ? data.error : data?.error?.message) ||
+        (typeof data?.message === 'string' ? data.message : null) ||
         `Request failed with status ${response.status}`;
-      const apiErr = new Error(message);
+      const apiErr = new Error(serverMessage);
       apiErr.status = response.status;
+      apiErr.code = data?.error?.code;
       apiErr.data = data;
       throw apiErr;
     }
@@ -187,7 +188,7 @@ const request = async (path, options = {}) => {
     return data?.data !== undefined ? data.data : data;
   } catch (err) {
     clearTimeout(timeoutId);
-    console.warn(`[FitMitra API Error] ${fetchOptions.method} ${fullUrl} ->`, err.message);
+    console.warn(`[FitMitra API Error] ${fetchOptions.method} ${fullUrl}${err.status ? ` [${err.status}]` : ''} ->`, err.message);
     if (err.name === 'AbortError') {
       const timeoutErr = new Error('Connection timed out. Server taking too long to respond.');
       timeoutErr.code = 'ERR_NETWORK';

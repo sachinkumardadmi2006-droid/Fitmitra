@@ -390,7 +390,7 @@ export default function HomeDashboard() {
                     mode="outlined"
                     label="View Completed Session"
                     icon="check-circle"
-                    onPress={() => router.push(`/workout/${workoutId}`)}
+                    onPress={() => router.push(`/workout/${workoutId}?kind=today`)}
                   />
                 ) : isRestDay ? (
                   <AppButton
@@ -404,14 +404,14 @@ export default function HomeDashboard() {
                     tone="primary"
                     label="Resume Workout"
                     icon="play"
-                    onPress={() => router.push(`/workout/${workoutId}`)}
+                    onPress={() => router.push(`/workout/${workoutId}?kind=today`)}
                   />
                 ) : (
                   <AppButton
                     tone="primary"
                     label="Start Today's Workout"
                     icon="play"
-                    onPress={() => router.push(`/workout/${workoutId}`)}
+                    onPress={() => router.push(`/workout/${workoutId}?kind=today`)}
                   />
                 )}
               </View>

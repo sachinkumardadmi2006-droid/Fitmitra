@@ -117,13 +117,13 @@ export default function LeaderboardScreen() {
             <Skeleton height={70} radius={custom.radius.md} style={styles.mbSm} />
           </View>
         ) : leaderboard.length > 0 ? (
-          leaderboard.map((item) => {
+          leaderboard.map((item, index) => {
             const isTop3 = item.rank <= 3;
             const badgeColor = getRankBadgeColor(item.rank);
 
             return (
               <AppCard
-                key={item.rank}
+                key={item.userId || item.rank || index}
                 variant={item.isMe ? 'elevated' : 'outlined'}
                 style={[
                   styles.rankCard,
@@ -202,7 +202,7 @@ export default function LeaderboardScreen() {
           })
         ) : (
           <EmptyState
-            icon="award"
+            icon="trophy"
             title="Leaderboard Resetting"
             description="Leaderboard rankings will appear once athlete workouts are logged."
           />

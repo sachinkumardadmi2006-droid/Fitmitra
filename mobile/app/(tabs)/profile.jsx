@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -34,6 +35,7 @@ import { authService, profileService } from '../../services';
 import { subscriptionService } from '../../services/subscriptionService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
+import { initDb } from '../../utils/db';
 import { t } from '../../utils/i18n';
 
 const GOALS = ['Muscle Gain', 'Fat Loss', 'Strength', 'General Fitness'];
@@ -77,6 +79,7 @@ export default function ProfileTab() {
       }
     },
     staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const isPremiumUser = Boolean(user?.isPremium || subQuery.data);
@@ -115,10 +118,8 @@ export default function ProfileTab() {
       if (u) {
         setName(u.name || '');
         setAge(u.age ? String(u.age) : '');
-        if (!height && u.height) setHeight(String(u.height));
-        if (!weight && (u.weight || u.currentWeight)) {
-          setWeight(String(u.weight || u.currentWeight));
-        }
+        setHeight((prev) => (!prev && u.height ? String(u.height) : prev));
+        setWeight((prev) => (!prev && (u.weight || u.currentWeight) ? String(u.weight || u.currentWeight) : prev));
         setActivity(u.activityLevel || 'Moderately Active');
         setLanguage(u.language || 'en');
       }
@@ -127,12 +128,24 @@ export default function ProfileTab() {
     } finally {
       setLoading(false);
     }
-  }, [subQuery]);
+  }, []);
 
   useEffect(() => {
     loadData();
-    subQuery.refetch();
   }, [loadData]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadData(),
+        subQuery.refetch(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData, subQuery]);
 
   const handleSaveProfile = async () => {
     if (!name.trim() || !height.trim() || !weight.trim()) {
@@ -264,6 +277,14 @@ export default function ProfileTab() {
     <ScrollView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={[theme.colors.primary]}
+          tintColor={theme.custom.primaryStrong}
+        />
+      }
     >
       {/* User Header Profile Card */}
       <View

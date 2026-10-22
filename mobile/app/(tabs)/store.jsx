@@ -14,28 +14,22 @@ import {
   ShoppingBag,
   Zap,
   Search,
-  Package,
   Truck,
   X,
-  Filter,
-  ArrowRight,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Chip } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
+import { Chip, Snackbar } from 'react-native-paper';
 import { storeService } from '../../services/storeService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { useAppConfig } from '../../hooks/useAppConfig';
 import { ProductCard } from '../../components/store/ProductCard';
+import { ProductDetailModal } from '../../components/store/ProductDetailModal';
 import { OrderCard } from '../../components/store/OrderCard';
 import { TrackingTimeline } from '../../components/store/TrackingTimeline';
-import { useCart } from '../../hooks/useCart';
 import { TopBar } from '../../components/common/TopBar';
 import { useAppTheme } from '../../theme/ThemeContext';
-import AppCard from '../../components/ui/AppCard';
-import AppButton from '../../components/ui/AppButton';
-import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import Skeleton from '../../components/ui/Skeleton';
 
@@ -50,24 +44,28 @@ const CATEGORIES = [
 
 export default function StoreTab() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { points, refreshProfile } = useAuth();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
-  const { storeEnabled, shippingEnabled, isLoading: configLoading } = useAppConfig();
+  const { storeEnabled, shippingEnabled } = useAppConfig();
 
   const [activeTab, setActiveTab] = useState('PRODUCTS'); // 'PRODUCTS' | 'ORDERS'
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { addItem, totalQuantity } = useCart();
+  // Product detail sheet & Cart toast
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productModalVisible, setProductModalVisible] = useState(false);
+  const [cartSnackbarVisible, setCartSnackbarVisible] = useState(false);
 
   // Live tracking modal
   const [trackingModalVisible, setTrackingModalVisible] = useState(false);
   const [activeTracking, setActiveTracking] = useState(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
 
-  // 1. Products Query (cached per category and search)
+  const isOrderingAvailable = Boolean(storeEnabled && shippingEnabled);
+
+  // 1. Products Query (cached per category and search) — always enabled for browsing on PRODUCTS tab
   const productsQuery = useQuery({
     queryKey: queryKeys.storeProducts(selectedCategory, searchQuery),
     queryFn: async () => {
@@ -87,7 +85,7 @@ export default function StoreTab() {
         ? data
         : [];
     },
-    enabled: storeEnabled && activeTab === 'PRODUCTS',
+    enabled: activeTab === 'PRODUCTS',
     staleTime: 60 * 1000,
   });
 
@@ -130,27 +128,6 @@ export default function StoreTab() {
     }
   }, [activeTab, productsQuery, ordersQuery, refreshProfile]);
 
-  const handleBuyCash = async (product) => {
-    const added = await addItem(product, 1);
-    if (added) {
-      router.push('/cart');
-    }
-  };
-
-  const handleRedeemPoints = async (product) => {
-    if ((points || 0) < (product.pointsPrice || 0)) {
-      Alert.alert(
-        'Insufficient Points',
-        `You need ${product.pointsPrice} points to redeem this item. You currently have ${points || 0} points. Complete workouts to earn +5 points each session!`
-      );
-      return;
-    }
-    const added = await addItem(product, 1);
-    if (added) {
-      router.push('/cart');
-    }
-  };
-
   const handleTrackOrder = async (order) => {
     if (!shippingEnabled) {
       Alert.alert('Tracking Unavailable', 'Shipment tracking is currently disabled.');
@@ -189,37 +166,18 @@ export default function StoreTab() {
         subtitle="Supplements & Gear"
         icon={ShoppingBag}
         showBack
+        showCart
         rightAction={
-          <View style={styles.topBarActions}>
-            <View
-              style={[
-                styles.pointsPill,
-                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-              ]}
-            >
-              <Zap size={14} color={colors.secondary} fill={colors.secondary} />
-              <Text style={[styles.pointsPillText, { color: colors.onSurface }]}>
-                {points || 0} pts
-              </Text>
-            </View>
-            <Pressable
-              style={[
-                styles.cartIconBtn,
-                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-              ]}
-              onPress={() => router.push('/cart')}
-              accessibilityLabel="Shopping Cart"
-              hitSlop={8}
-            >
-              <ShoppingBag size={18} color={colors.onSurface} />
-              {totalQuantity > 0 && (
-                <View style={[styles.cartBadge, { backgroundColor: colors.primary }]}>
-                  <Text style={[styles.cartBadgeText, { color: colors.onPrimary }]}>
-                    {totalQuantity > 99 ? '99+' : totalQuantity}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
+          <View
+            style={[
+              styles.pointsPill,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+            ]}
+          >
+            <Zap size={14} color={colors.secondary} fill={colors.secondary} />
+            <Text style={[styles.pointsPillText, { color: colors.onSurface }]}>
+              {points || 0} pts
+            </Text>
           </View>
         }
       />
@@ -280,18 +238,24 @@ export default function StoreTab() {
       </View>
 
       {activeTab === 'PRODUCTS' ? (
-        !storeEnabled ? (
-          <View style={styles.centerWrap}>
-            <EmptyState
-              icon="shopping-bag"
-              title="Store Currently Closed"
-              description="The FitMitra store is currently disabled. Check back soon for supplements and fitness gear."
-              actionLabel="Back to Home"
-              onAction={() => router.replace('/(tabs)')}
-            />
-          </View>
-        ) : (
         <>
+          {/* Ordering Availability Banner */}
+          {!isOrderingAvailable && (
+            <View
+              style={[
+                styles.orderingBanner,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: colors.outlineVariant,
+                },
+              ]}
+            >
+              <Text style={[styles.orderingBannerText, { color: colors.onSurfaceVariant }]}>
+                Ordering opens soon. We are setting up delivery.
+              </Text>
+            </View>
+          )}
+
           {/* Search Box */}
           <View style={styles.searchContainer}>
             <View
@@ -307,7 +271,7 @@ export default function StoreTab() {
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                onSubmitEditing={loadStoreData}
+                onSubmitEditing={() => productsQuery.refetch()}
               />
               {searchQuery ? (
                 <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
@@ -369,29 +333,29 @@ export default function StoreTab() {
                 <Skeleton height={220} radius={custom.radius.lg} style={styles.mbLg} />
               </View>
             ) : products.length > 0 ? (
-              products.map((prod) => (
+              products.map((prod, index) => (
                 <ProductCard
-                  key={prod._id || prod.id}
+                  key={String(prod._id?._id || prod._id || prod.id || index)}
                   product={prod}
-                  userPoints={points || 0}
-                  onBuyCash={handleBuyCash}
-                  onRedeemPoints={handleRedeemPoints}
+                  onPress={(selected) => {
+                    setSelectedProduct(selected);
+                    setProductModalVisible(true);
+                  }}
                 />
               ))
             ) : (
               <EmptyState
-                icon="shopping-bag"
+                icon="shopping-outline"
                 title="No Products Found"
                 description={
                   searchQuery
                     ? `No products matched "${searchQuery}".`
-                    : 'The supplements catalog is currently being updated.'
+                    : 'The supplements catalog is being updated. Check back shortly.'
                 }
               />
             )}
           </ScrollView>
         </>
-        )
       ) : (
         /* Orders Tab */
         <ScrollView
@@ -414,9 +378,9 @@ export default function StoreTab() {
               <Skeleton height={110} radius={custom.radius.lg} style={styles.mbLg} />
             </View>
           ) : orders.length > 0 ? (
-            orders.map((ord) => (
+            orders.map((ord, index) => (
               <OrderCard
-                key={ord._id || ord.id}
+                key={typeof ord._id === 'object' ? String(ord._id?._id || index) : String(ord._id || ord.id || index)}
                 order={ord}
                 showTracking={shippingEnabled}
                 onTrack={handleTrackOrder}
@@ -434,11 +398,37 @@ export default function StoreTab() {
         </ScrollView>
       )}
 
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        key={String(selectedProduct?._id || selectedProduct?.slug || 'none')}
+        visible={productModalVisible}
+        product={selectedProduct}
+        onClose={() => setProductModalVisible(false)}
+        onAddedToCart={() => setCartSnackbarVisible(true)}
+      />
 
+      {/* Added to Cart Feedback Toast */}
+      <Snackbar
+        visible={cartSnackbarVisible}
+        onDismiss={() => setCartSnackbarVisible(false)}
+        duration={3500}
+        action={{
+          label: 'View cart',
+          textColor: colors.primary,
+          onPress: () => router.push('/cart'),
+        }}
+        style={{
+          backgroundColor: colors.inverseSurface,
+          borderRadius: custom.radius.md,
+          marginBottom: 72,
+        }}
+      >
+        <Text style={{ color: colors.inverseOnSurface }}>Added to cart</Text>
+      </Snackbar>
 
       {/* Live Shiprocket Tracking Modal */}
       <Modal visible={trackingModalVisible} transparent animationType="slide" onRequestClose={() => setTrackingModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.backdrop }]}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.outlineVariant }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Live Tracking</Text>
@@ -578,9 +568,22 @@ const styles = StyleSheet.create({
   catChip: {
     borderRadius: 16,
   },
+  orderingBanner: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  orderingBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
   },
   modalCard: {

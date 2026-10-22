@@ -83,7 +83,8 @@ export default function NotificationsScreen() {
     if (data.orderId || item.type === 'ORDER_UPDATE' || item.type === 'ORDER_CONFIRMED') {
       router.push('/orders');
     } else if (data.workoutId) {
-      router.push(`/workout/${data.workoutId}`);
+      const targetKind = data.kind || (data.workoutId === 'today' ? 'today' : 'session');
+      router.push(`/workout/${data.workoutId}?kind=${targetKind}`);
     } else if (item.type === 'WORKOUT_REMINDER') {
       router.push('/workouts');
     } else if (item.type === 'SUBSCRIPTION_UPDATE' || item.type === 'SUBSCRIPTION_ACTIVATED') {
@@ -108,8 +109,8 @@ export default function NotificationsScreen() {
         };
       case 'POINTS_EARNED':
         return {
-          icon: <Zap size={20} color="#FFB800" />,
-          bgColor: '#FFB80025',
+          icon: <Zap size={20} color={theme.custom.accentText} />,
+          bgColor: theme.colors.secondaryContainer,
         };
       case 'SUBSCRIPTION_UPDATE':
       case 'SUBSCRIPTION_ACTIVATED':

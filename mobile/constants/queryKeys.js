@@ -37,6 +37,7 @@ export const queryKeys = {
     String(category || 'ALL'),
     String(search || ''),
   ],
+  storeProduct: (slug) => ['store', 'products', 'detail', String(slug)],
   storeOrders: ['store', 'orders'],
 
   // Subscriptions

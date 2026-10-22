@@ -112,22 +112,41 @@ export default function OtpVerification() {
           style={styles.heroBackground}
           resizeMode="cover"
         >
-          <View style={styles.topVignette} />
-          <View style={styles.bottomVignette} />
+          <View style={[styles.topVignette, { backgroundColor: theme.colors.backdrop }]} />
+          <View style={[styles.bottomVignette, { backgroundColor: theme.colors.backdrop }]} />
 
           <SafeAreaView style={styles.safeHeader}>
             <View style={styles.headerRow}>
               <Pressable
-                style={styles.backBtn}
+                style={[
+                  styles.backBtn,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.outlineVariant,
+                    borderWidth: 1,
+                  },
+                ]}
                 onPress={() => router.back()}
                 hitSlop={10}
               >
-                <ArrowLeft size={18} color="#FFFFFF" />
+                <ArrowLeft size={18} color={theme.colors.onSurface} />
               </Pressable>
 
-              <View style={styles.brandRow}>
+              <View
+                style={[
+                  styles.brandRow,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.outlineVariant,
+                    borderWidth: 1,
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: 6,
+                    borderRadius: radius.pill,
+                  },
+                ]}
+              >
                 <Dumbbell size={18} color={theme.custom.primaryStrong} />
-                <Text style={styles.brandText}>
+                <Text style={[styles.brandText, { color: theme.colors.onSurface }]}>
                   fit<Text style={{ color: theme.custom.primaryStrong }}>mitra</Text>
                 </Text>
               </View>
@@ -284,7 +303,6 @@ const styles = StyleSheet.create({
   },
   topVignette: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     height: '60%',
   },
   bottomVignette: {
@@ -293,7 +311,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: '40%',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   safeHeader: {
     paddingTop: 36,
@@ -308,7 +325,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -320,7 +336,6 @@ const styles = StyleSheet.create({
   brandText: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#FFFFFF',
     letterSpacing: 1.5,
   },
   bottomCard: {

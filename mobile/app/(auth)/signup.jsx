@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
   ScrollView,
@@ -10,23 +9,30 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { authService, formatAuthError } from '../../services/authService';
-import { Dumbbell, Mail, Lock, User, Eye, EyeOff } from 'lucide-react-native';
+import { authService } from '../../services/authService';
 import { useAppTheme } from '../../theme/ThemeContext';
-import { AppButton, AppCard } from '../../components/ui';
+import {
+  AuthHero,
+  AuthInput,
+  GradientButton,
+  GoogleButton,
+  OrDivider,
+  PasswordRules,
+  authSizes,
+  authTypography,
+} from '../../components/auth';
+import { signupHero } from '../../components/auth/authImages';
+import { useGoogleSignIn } from '../../hooks/useGoogleSignIn';
 
 export default function Signup() {
   const router = useRouter();
-  const { theme, isDark } = useAppTheme();
-  const insets = useSafeAreaInsets();
+  const { theme } = useAppTheme();
+  const { signIn: googleSignIn, loading: googleLoading, error: googleError } = useGoogleSignIn();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,6 +42,12 @@ export default function Signup() {
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [confirmPasswordTouched, setConfirmPasswordTouched] = useState(false);
+
+  // Input refs for keyboard navigation
+  const nameInputRef = useRef(null);
+  const emailInputRef = useRef(null);
+  const passwordInputRef = useRef(null);
+  const confirmPasswordInputRef = useRef(null);
 
   const validateName = (val) => {
     if (!val || !val.trim()) return 'Full name is required.';
@@ -53,6 +65,8 @@ export default function Signup() {
   const validatePassword = (val) => {
     if (!val) return 'Password is required.';
     if (val.length < 8) return 'Password must be at least 8 characters.';
+    if (!/\d/.test(val)) return 'Password must contain at least one number.';
+    if (!/[^A-Za-z0-9]/.test(val)) return 'Password must contain at least one special character.';
     return '';
   };
 
@@ -89,14 +103,17 @@ export default function Signup() {
     setLoading(true);
     try {
       await authService.signupWithEmail(name.trim(), email.trim(), password);
-      // New user accounts must complete onboarding biometrics
+      // New user accounts proceed to onboarding wizard
       router.replace('/(auth)/onboarding');
     } catch (err) {
-      setError(formatAuthError(err));
+      setError(err?.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const primaryAccent = theme.custom?.primaryStrong || theme.colors.primary;
+  const activeError = error || googleError;
 
   return (
     <KeyboardAvoidingView
@@ -104,279 +121,163 @@ export default function Signup() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 },
-        ]}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <View
-            style={[
-              styles.logoBadge,
-              {
-                backgroundColor: theme.colors.primaryContainer,
-                borderColor: theme.colors.outlineVariant,
-              },
-            ]}
-          >
-            <Dumbbell size={28} color={theme.custom.primaryStrong || theme.colors.primary} />
-          </View>
-          <Text style={[styles.brandTitle, { color: theme.colors.onBackground }]}>
-            fit<Text style={{ color: theme.custom.primaryStrong || theme.colors.primary }}>mitra</Text>
-          </Text>
-          <Text style={[styles.brandSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-            Create your account to start personalized workouts and nutrition tracking
-          </Text>
-        </View>
+        {/* Top Hero Section with Background Image */}
+        <AuthHero
+          title="Start Your Fitness Journey"
+          subtitle="Create your account and take the first step towards a healthier you."
+          image={signupHero}
+        />
 
-        {/* Main Signup Card */}
-        <AppCard
-          variant="elevated"
-          style={[styles.signupCard, { backgroundColor: theme.colors.surface }]}
-          padded={false}
+        {/* Overlapping Rounded Surface Card */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
         >
-          <View style={styles.cardPadding}>
-            <Text style={[styles.formHeading, { color: theme.colors.onSurface }]}>
-              Create Account
-            </Text>
+          <Text style={[styles.heading, { color: theme.colors.onSurface }]}>
+            Create Account
+          </Text>
+          <Text style={[styles.subheading, { color: theme.colors.onSurfaceVariant }]}>
+            Join FitMitra and unlock a better you
+          </Text>
 
-            {/* Error Banner */}
-            {error ? (
+          {/* Form Fields */}
+          <View style={styles.formContainer}>
+            <AuthInput
+              ref={nameInputRef}
+              icon="user"
+              placeholder="Full name"
+              autoCapitalize="words"
+              returnKeyType="next"
+              onSubmitEditing={() => emailInputRef.current?.focus()}
+              blurOnSubmit={false}
+              value={name}
+              onChangeText={(val) => {
+                setName(val);
+                if (nameTouched) setError('');
+              }}
+              error={nameError}
+              editable={!loading && !googleLoading}
+            />
+
+            <AuthInput
+              ref={emailInputRef}
+              icon="mail"
+              placeholder="Email address"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordInputRef.current?.focus()}
+              blurOnSubmit={false}
+              value={email}
+              onChangeText={(val) => {
+                setEmail(val);
+                if (emailTouched) setError('');
+              }}
+              error={emailError}
+              editable={!loading && !googleLoading}
+            />
+
+            <AuthInput
+              ref={passwordInputRef}
+              icon="lock"
+              placeholder="Password"
+              secureTextEntry
+              returnKeyType="next"
+              onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
+              blurOnSubmit={false}
+              value={password}
+              onChangeText={(val) => {
+                setPassword(val);
+                if (passwordTouched) setError('');
+              }}
+              error={passwordError}
+              editable={!loading && !googleLoading}
+            />
+
+            {/* Real-time Password Rules Checklist (Only shows unsatisfied rules) */}
+            <PasswordRules password={password} />
+
+            <AuthInput
+              ref={confirmPasswordInputRef}
+              icon="lock"
+              placeholder="Confirm password"
+              secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleSignup}
+              value={confirmPassword}
+              onChangeText={(val) => {
+                setConfirmPassword(val);
+                if (confirmPasswordTouched) setError('');
+              }}
+              error={confirmPasswordError}
+              editable={!loading && !googleLoading}
+            />
+
+            {/* Error Message Area */}
+            {activeError ? (
               <View
                 style={[
-                  styles.errorBanner,
+                  styles.errorBox,
                   {
                     backgroundColor: theme.colors.errorContainer,
                     borderColor: theme.colors.error,
                   },
                 ]}
               >
-                <Text style={[styles.errorBannerText, { color: theme.colors.onErrorContainer }]}>
-                  {error}
+                <Text style={[styles.errorText, { color: theme.colors.onErrorContainer }]}>
+                  {activeError}
                 </Text>
               </View>
             ) : null}
 
-            {/* Full Name Field */}
-            <View style={styles.fieldGroup}>
-              <Text style={[styles.fieldLabel, { color: theme.colors.onSurface }]}>
-                Full Name
-              </Text>
-              <View
-                style={[
-                  styles.inputContainer,
-                  {
-                    backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                    borderColor: nameError ? theme.colors.error : theme.colors.outlineVariant,
-                  },
-                ]}
-              >
-                <User
-                  size={18}
-                  color={nameError ? theme.colors.error : theme.colors.onSurfaceVariant}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.onSurface }]}
-                  placeholder="e.g. Rahul Sharma"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                  value={name}
-                  onChangeText={(val) => {
-                    setName(val);
-                    if (nameTouched) setError('');
-                  }}
-                  onBlur={() => setNameTouched(true)}
-                  editable={!loading}
-                  accessibilityLabel="Full name input"
-                />
-              </View>
-              {nameError ? (
-                <Text style={[styles.fieldError, { color: theme.colors.error }]}>
-                  {nameError}
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Email Address Field */}
-            <View style={[styles.fieldGroup, { marginTop: 14 }]}>
-              <Text style={[styles.fieldLabel, { color: theme.colors.onSurface }]}>
-                Email address
-              </Text>
-              <View
-                style={[
-                  styles.inputContainer,
-                  {
-                    backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                    borderColor: emailError ? theme.colors.error : theme.colors.outlineVariant,
-                  },
-                ]}
-              >
-                <Mail
-                  size={18}
-                  color={emailError ? theme.colors.error : theme.colors.onSurfaceVariant}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.onSurface }]}
-                  placeholder="name@example.com"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={email}
-                  onChangeText={(val) => {
-                    setEmail(val);
-                    if (emailTouched) setError('');
-                  }}
-                  onBlur={() => setEmailTouched(true)}
-                  editable={!loading}
-                  accessibilityLabel="Email address input"
-                />
-              </View>
-              {emailError ? (
-                <Text style={[styles.fieldError, { color: theme.colors.error }]}>
-                  {emailError}
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Password Field */}
-            <View style={[styles.fieldGroup, { marginTop: 14 }]}>
-              <Text style={[styles.fieldLabel, { color: theme.colors.onSurface }]}>
-                Password (min. 8 characters)
-              </Text>
-              <View
-                style={[
-                  styles.inputContainer,
-                  {
-                    backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                    borderColor: passwordError ? theme.colors.error : theme.colors.outlineVariant,
-                  },
-                ]}
-              >
-                <Lock
-                  size={18}
-                  color={passwordError ? theme.colors.error : theme.colors.onSurfaceVariant}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.onSurface }]}
-                  placeholder="••••••••"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={(val) => {
-                    setPassword(val);
-                    if (passwordTouched) setError('');
-                  }}
-                  onBlur={() => setPasswordTouched(true)}
-                  editable={!loading}
-                  accessibilityLabel="Password input"
-                />
-                <Pressable
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeBtn}
-                  hitSlop={8}
-                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? (
-                    <EyeOff size={18} color={theme.custom.primaryStrong || theme.colors.primary} />
-                  ) : (
-                    <Eye size={18} color={theme.colors.onSurfaceVariant} />
-                  )}
-                </Pressable>
-              </View>
-              {passwordError ? (
-                <Text style={[styles.fieldError, { color: theme.colors.error }]}>
-                  {passwordError}
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Confirm Password Field */}
-            <View style={[styles.fieldGroup, { marginTop: 14 }]}>
-              <Text style={[styles.fieldLabel, { color: theme.colors.onSurface }]}>
-                Confirm Password
-              </Text>
-              <View
-                style={[
-                  styles.inputContainer,
-                  {
-                    backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                    borderColor: confirmPasswordError ? theme.colors.error : theme.colors.outlineVariant,
-                  },
-                ]}
-              >
-                <Lock
-                  size={18}
-                  color={confirmPasswordError ? theme.colors.error : theme.colors.onSurfaceVariant}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.onSurface }]}
-                  placeholder="••••••••"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                  secureTextEntry={!showConfirmPassword}
-                  value={confirmPassword}
-                  onChangeText={(val) => {
-                    setConfirmPassword(val);
-                    if (confirmPasswordTouched) setError('');
-                  }}
-                  onBlur={() => setConfirmPasswordTouched(true)}
-                  editable={!loading}
-                  accessibilityLabel="Confirm password input"
-                />
-                <Pressable
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  style={styles.eyeBtn}
-                  hitSlop={8}
-                  accessibilityLabel={showConfirmPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff size={18} color={theme.custom.primaryStrong || theme.colors.primary} />
-                  ) : (
-                    <Eye size={18} color={theme.colors.onSurfaceVariant} />
-                  )}
-                </Pressable>
-              </View>
-              {confirmPasswordError ? (
-                <Text style={[styles.fieldError, { color: theme.colors.error }]}>
-                  {confirmPasswordError}
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Submit Button */}
-            <View style={{ marginTop: 22 }}>
-              <AppButton
-                label="Create Account"
+            {/* Primary Action Button */}
+            <View style={styles.buttonSpacing}>
+              <GradientButton
+                title="Create Account"
                 onPress={handleSignup}
-                mode="contained"
                 loading={loading}
-                disabled={loading}
+                disabled={googleLoading}
               />
             </View>
-          </View>
-        </AppCard>
 
-        {/* Footer Navigation to Login */}
-        <View style={styles.footerRow}>
-          <Text style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}>
-            Already have an account?{' '}
-          </Text>
-          <Pressable onPress={() => router.push('/login')} hitSlop={8}>
-            <Text
-              style={[
-                styles.loginLink,
-                { color: theme.custom.primaryStrong || theme.colors.primary },
-              ]}
-            >
-              Log in
+            {/* Separator */}
+            <OrDivider />
+
+            {/* Google Sign-In */}
+            <GoogleButton
+              onPress={googleSignIn}
+              loading={googleLoading}
+              disabled={loading}
+            />
+          </View>
+
+          {/* Footer Login Link */}
+          <View style={styles.footerRow}>
+            <Text style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}>
+              Already have an account?{' '}
             </Text>
-          </Pressable>
+            <Pressable
+              onPress={() => router.push('/login')}
+              hitSlop={10}
+              accessibilityRole="link"
+              accessibilityLabel="Login"
+            >
+              <Text style={[styles.loginLink, { color: primaryAccent }]}>
+                Login
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -389,102 +290,57 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
+    paddingBottom: 32,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
+  card: {
+    flexGrow: 1,
+    marginTop: -24,
+    borderTopLeftRadius: authSizes.cardRadius,
+    borderTopRightRadius: authSizes.cardRadius,
+    borderTopWidth: 1,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 24,
   },
-  logoBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  brandTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-  brandSubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 6,
-    paddingHorizontal: 16,
-    lineHeight: 20,
-  },
-  signupCard: {
-    width: '100%',
-    maxWidth: 440,
-    alignSelf: 'center',
-  },
-  cardPadding: {
-    padding: 24,
-  },
-  formHeading: {
-    fontSize: 20,
+  heading: {
+    fontSize: authTypography.headingSize,
     fontWeight: '800',
-    marginBottom: 16,
+    letterSpacing: -0.3,
+    marginBottom: 6,
   },
-  errorBanner: {
-    padding: 12,
+  subheading: {
+    fontSize: authTypography.bodySize,
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  formContainer: {
+    width: '100%',
+  },
+  errorBox: {
     borderRadius: 12,
     borderWidth: 1,
+    padding: 12,
     marginBottom: 16,
   },
-  errorBannerText: {
-    fontSize: 13,
+  errorText: {
+    fontSize: authTypography.smallSize,
     fontWeight: '600',
-    textAlign: 'center',
     lineHeight: 18,
   },
-  fieldGroup: {
-    gap: 6,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-  },
-  fieldIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    height: '100%',
-  },
-  eyeBtn: {
-    padding: 6,
-  },
-  fieldError: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-    marginLeft: 2,
+  buttonSpacing: {
+    marginTop: 8,
   },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 22,
+    marginTop: 28,
   },
   footerText: {
-    fontSize: 14,
+    fontSize: authTypography.bodySize,
   },
   loginLink: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: authTypography.bodySize,
+    fontWeight: '700',
   },
 });

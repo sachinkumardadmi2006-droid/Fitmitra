@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Package, Truck, Zap, ChevronRight, CreditCard } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
+import { useTranslation } from '../../utils/i18n';
 import AppCard from '../ui/AppCard';
 
-export function OrderCard({ order, onTrack, onCompletePayment, showTracking = true }) {
+export function OrderCard({
+  order,
+  onTrack,
+  onCompletePayment,
+  showTracking = true,
+  isOrderingAvailable = true,
+}) {
   const { theme } = useAppTheme();
-  const { colors, custom } = theme;
+  const { colors } = theme;
+  const { t } = useTranslation();
+
+  const [now] = useState(() => Date.now());
 
   const isPoints = order.paymentMethod === 'POINTS';
   const awb = order.shippingDetails?.awbCode;
 
-  const orderAgeMs = order.createdAt ? Date.now() - new Date(order.createdAt).getTime() : 0;
+  const orderAgeMs = order.createdAt ? now - new Date(order.createdAt).getTime() : 0;
   const isYoungerThan60Min = orderAgeMs < 60 * 60 * 1000;
   const isPendingPayment = order.status === 'PENDING_PAYMENT';
   const canCompletePayment = isPendingPayment && isYoungerThan60Min;
@@ -117,7 +127,11 @@ export function OrderCard({ order, onTrack, onCompletePayment, showTracking = tr
         ]}
       >
         {order.items?.map((item, idx) => (
-          <Text key={idx} style={[styles.itemText, { color: colors.onSurface }]} numberOfLines={1}>
+          <Text
+            key={item?._id || (typeof item?.productId === 'object' ? item.productId?._id : item?.productId) || idx}
+            style={[styles.itemText, { color: colors.onSurface }]}
+            numberOfLines={1}
+          >
             {item.quantity}x {item.productName || item.product?.name || 'Product'}
           </Text>
         ))}
@@ -143,18 +157,27 @@ export function OrderCard({ order, onTrack, onCompletePayment, showTracking = tr
 
         <View style={styles.actionsWrap}>
           {canCompletePayment ? (
-            <Pressable
-              style={[
-                styles.payBtn,
-                { backgroundColor: colors.primary },
-              ]}
-              onPress={() => onCompletePayment?.(order)}
-            >
-              <CreditCard size={14} color={colors.onPrimary} />
-              <Text style={[styles.payBtnText, { color: colors.onPrimary }]}>
-                Complete Payment
-              </Text>
-            </Pressable>
+            <View style={{ alignItems: 'flex-end', gap: 4 }}>
+              <Pressable
+                disabled={!isOrderingAvailable}
+                style={[
+                  styles.payBtn,
+                  { backgroundColor: colors.primary },
+                  !isOrderingAvailable && { opacity: 0.5 },
+                ]}
+                onPress={() => isOrderingAvailable && onCompletePayment?.(order)}
+              >
+                <CreditCard size={14} color={colors.onPrimary} />
+                <Text style={[styles.payBtnText, { color: colors.onPrimary }]}>
+                  Complete Payment
+                </Text>
+              </Pressable>
+              {!isOrderingAvailable && (
+                <Text style={[styles.orderingDisabledHelper, { color: colors.onSurfaceVariant }]}>
+                  {t('store.paymentResumesSoon')}
+                </Text>
+              )}
+            </View>
           ) : null}
 
           {showTracking && awb ? (
@@ -278,5 +301,10 @@ const styles = StyleSheet.create({
   trackBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  orderingDisabledHelper: {
+    fontSize: 11,
+    marginTop: 2,
+    textAlign: 'right',
   },
 });
