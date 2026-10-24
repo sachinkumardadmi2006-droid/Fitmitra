@@ -332,7 +332,7 @@ export const authService = {
       if (emit) {
         emitDbUpdate();
       }
-    } catch (_) {}
+    } catch (_) { }
   },
 
   /**
@@ -368,7 +368,7 @@ export const authService = {
         await AsyncStorage.setItem(USER_KEY, next);
       }
       emitDbUpdate();
-    } catch (_) {}
+    } catch (_) { }
   },
 
   /**
@@ -376,8 +376,8 @@ export const authService = {
    */
   async logout() {
     try {
-      await api.post('/auth/logout').catch(() => {});
-    } catch (_) {}
+      await api.post('/auth/logout').catch(() => { });
+    } catch (_) { }
     await clearAuthData();
     emitDbUpdate();
   },

@@ -1,97 +1,90 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  Pressable,
-  TextInput,
   ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Target, UserCheck, Flame, ArrowLeft } from 'lucide-react-native';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { profileService, authService } from '../../services';
 import { emitDbUpdate } from '../../utils/events';
-import { useAppTheme } from '../../theme/ThemeContext';
-import { AppButton, AppCard } from '../../components/ui';
+import { AppButton } from '../../components/ui';
+
+import {
+  OnboardingProgressHeader,
+  StepPersonalDetails,
+  StepWorkoutPreferences,
+  StepGoalSelection,
+  StepFitnessLevel,
+  StepDietBudget,
+  StepSubscriptionGate,
+  StepReviewPlan,
+} from '../../components/onboarding';
 
 export default function Onboarding() {
   const router = useRouter();
   const { theme, isDark } = useAppTheme();
+  const { colors, custom } = theme;
   const insets = useSafeAreaInsets();
+  const { user, profile } = useAuth();
 
   const [step, setStep] = useState(1);
-  const totalSteps = 3;
+  const totalSteps = 7;
 
-  // Selected values (preserved across steps)
-  const [goal, setGoal] = useState('Muscle Gain');
-  const [experience, setExperience] = useState('Intermediate');
+  // Step 1: Personal Details
+  const [name, setName] = useState('');
+  const [gender, setGender] = useState('Male');
   const [age, setAge] = useState('24');
   const [height, setHeight] = useState('175');
   const [weight, setWeight] = useState('72');
-  const [gender, setGender] = useState('Male');
-  const [activity, setActivity] = useState('Moderately Active');
 
+  // Step 2: Workout Preferences
+  const [workoutLocation, setWorkoutLocation] = useState('GYM');
+  const [preferredWorkoutDays, setPreferredWorkoutDays] = useState(5);
+  const [preferredWorkoutTime, setPreferredWorkoutTime] = useState('MORNING');
+
+  // Step 3: Dynamic Goals / Program
+  const [selectedProgram, setSelectedProgram] = useState(null);
+
+  // Step 4: Fitness Level
+  const [experienceLevel, setExperienceLevel] = useState('INTERMEDIATE');
+
+  // Step 5: Diet & Budget
+  const [dietType, setDietType] = useState('VEG');
+  const [dailyBudgetInr, setDailyBudgetInr] = useState(200);
+
+  // Step 6: Subscription Gate
+  const [isSubscriptionVerified, setIsSubscriptionVerified] = useState(false);
+
+  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const goals = [
-    {
-      key: 'Muscle Gain',
-      enumVal: 'MUSCLE_GAIN',
-      icon: Flame,
-      title: 'Muscle Gain',
-      desc: 'Build lean muscle mass, optimize recovery, and gain strength.',
-    },
-    {
-      key: 'Fat Loss',
-      enumVal: 'WEIGHT_LOSS',
-      icon: Target,
-      title: 'Fat Loss',
-      desc: 'Shred body fat, lean out, and improve cardiovascular health.',
-    },
-    {
-      key: 'General Fitness',
-      enumVal: 'GENERAL_FITNESS',
-      icon: UserCheck,
-      title: 'General Fitness',
-      desc: 'Build consistent athletic habits, mobility, and overall stamina.',
-    },
-  ];
+  // Pre-fill user details if available from profile or user state
+  useEffect(() => {
+    const existingName = user?.name || user?.displayName || profile?.displayName || '';
+    if (existingName && !name) {
+      setName(existingName);
+    }
+    if (profile?.gender) setGender(profile.gender);
+    if (profile?.heightCm) setHeight(String(profile.heightCm));
+    if (profile?.weightKg) setWeight(String(profile.weightKg));
+  }, [user, profile]);
 
-  const experiences = [
-    {
-      key: 'Beginner',
-      enumVal: 'BEGINNER',
-      num: '1',
-      title: 'Beginner',
-      desc: '0 to 6 months of structured resistance training.',
-    },
-    {
-      key: 'Intermediate',
-      enumVal: 'INTERMEDIATE',
-      num: '2',
-      title: 'Intermediate',
-      desc: '6 months to 2 years of regular training.',
-    },
-    {
-      key: 'Advanced',
-      enumVal: 'ADVANCED',
-      num: '3',
-      title: 'Advanced',
-      desc: '2+ years of consistent high-intensity training.',
-    },
-  ];
-
-  const genders = ['Male', 'Female', 'Other'];
-  const activities = ['Sedentary', 'Moderately Active', 'Very Active'];
-
-  const validateStep3 = () => {
+  // Validation functions per step
+  const validateStep1 = () => {
+    if (!name?.trim()) {
+      return 'Please enter your full name.';
+    }
     const a = parseInt(age, 10);
     if (!a || isNaN(a) || a < 14 || a > 100) {
-      return 'Please enter a valid age between 14 and 100.';
+      return 'Please enter a valid age between 14 and 100 years.';
     }
     const h = parseInt(height, 10);
     if (!h || isNaN(h) || h < 50 || h > 250) {
@@ -104,26 +97,110 @@ export default function Onboarding() {
     return '';
   };
 
-  const nextStep = () => {
+  const validateStep2 = () => {
+    if (!workoutLocation) return 'Please choose your preferred workout location.';
+    if (!preferredWorkoutDays) return 'Please select how many days you can train per week.';
+    if (!preferredWorkoutTime) return 'Please pick your preferred time of day.';
+    return '';
+  };
+
+  const validateStep3 = () => {
+    if (!selectedProgram) {
+      return 'Please select a fitness program that aligns with your goal.';
+    }
+    return '';
+  };
+
+  const validateStep4 = () => {
+    if (!experienceLevel) return 'Please select your lifting experience level.';
+    return '';
+  };
+
+  const validateStep5 = () => {
+    if (!dietType) return 'Please select your dietary preference.';
+    if (!dailyBudgetInr) return 'Please select your daily grocery / food budget.';
+    return '';
+  };
+
+  const validateStep6 = () => {
+    if (!isSubscriptionVerified) {
+      return 'An active FitMitra membership is required to proceed. Please subscribe to unlock your plan.';
+    }
+    return '';
+  };
+
+  const handleNext = () => {
     setError('');
+
+    if (step === 1) {
+      const err = validateStep1();
+      if (err) {
+        setError(err);
+        return;
+      }
+    } else if (step === 2) {
+      const err = validateStep2();
+      if (err) {
+        setError(err);
+        return;
+      }
+    } else if (step === 3) {
+      const err = validateStep3();
+      if (err) {
+        setError(err);
+        return;
+      }
+    } else if (step === 4) {
+      const err = validateStep4();
+      if (err) {
+        setError(err);
+        return;
+      }
+    } else if (step === 5) {
+      const err = validateStep5();
+      if (err) {
+        setError(err);
+        return;
+      }
+    } else if (step === 6) {
+      const err = validateStep6();
+      if (err) {
+        setError(err);
+        return;
+      }
+    }
+
     if (step < totalSteps) {
       setStep(step + 1);
-    } else {
-      handleComplete();
     }
   };
 
-  const prevStep = () => {
+  const handlePrev = () => {
     setError('');
     if (step > 1) {
       setStep(step - 1);
     }
   };
 
-  const handleComplete = async () => {
-    const validationError = validateStep3();
-    if (validationError) {
-      setError(validationError);
+  const handleJumpToStep = (targetStep) => {
+    setError('');
+    if (targetStep >= 1 && targetStep <= totalSteps) {
+      setStep(targetStep);
+    }
+  };
+
+  // Final plan submission (Step 7)
+  const handleFinalSubmit = async () => {
+    const err1 = validateStep1();
+    if (err1) {
+      setStep(1);
+      setError(err1);
+      return;
+    }
+    const err6 = validateStep6();
+    if (err6) {
+      setStep(6);
+      setError(err6);
       return;
     }
 
@@ -131,72 +208,81 @@ export default function Onboarding() {
     const h = parseInt(height, 10) || 170;
     const a = parseInt(age, 10) || 24;
 
-    // Daily calorie & macro target estimation
-    const baseCal =
-      gender === 'Male'
-        ? 10 * w + 6.25 * h - 5 * a + 5
-        : 10 * w + 6.25 * h - 5 * a - 161;
+    // Daily calorie & macro calculation
+    let bmr = 10 * w + 6.25 * h - 5 * a;
+    if (gender === 'Male') bmr += 5;
+    else if (gender === 'Female') bmr -= 161;
+    else bmr -= 80;
+
     const multiplier =
-      activity === 'Moderately Active' ? 1.4 : activity === 'Very Active' ? 1.6 : 1.2;
-    let targetCal = Math.round(baseCal * multiplier);
-    if (goal === 'Fat Loss') targetCal -= 450;
-    else if (goal === 'Muscle Gain') targetCal += 350;
+      preferredWorkoutDays >= 6
+        ? 1.65
+        : preferredWorkoutDays >= 5
+          ? 1.55
+          : preferredWorkoutDays >= 4
+            ? 1.45
+            : 1.35;
+
+    let targetCal = Math.round(bmr * multiplier);
+    const goalUpper = String(selectedProgram?.goal || '').toUpperCase();
+    if (goalUpper.includes('FAT') || goalUpper.includes('WEIGHT') || goalUpper.includes('LOSS')) {
+      targetCal -= 450;
+    } else if (goalUpper.includes('MUSCLE') || goalUpper.includes('STRENGTH') || goalUpper.includes('GAIN')) {
+      targetCal += 350;
+    }
 
     const targetProtein = Math.round(w * 2.0);
     const targetFats = Math.round((targetCal * 0.25) / 9);
-    const targetCarbs = Math.round((targetCal - targetProtein * 4 - targetFats * 9) / 4);
+    const targetCarbs = Math.max(50, Math.round((targetCal - targetProtein * 4 - targetFats * 9) / 4));
 
-    const matchedGoal = goals.find((g) => g.key === goal);
-    const goalEnum = matchedGoal ? matchedGoal.enumVal : 'GENERAL_FITNESS';
+    const calculatedTargetWeight =
+      goalUpper.includes('FAT') || goalUpper.includes('WEIGHT') || goalUpper.includes('LOSS')
+        ? Math.round(w * 0.9)
+        : goalUpper.includes('MUSCLE') || goalUpper.includes('GAIN')
+          ? Math.round(w * 1.08)
+          : Math.round(w);
+    const safeTargetWeight = Math.min(300, Math.max(20, calculatedTargetWeight));
 
-    const matchedExp = experiences.find((e) => e.key === experience);
-    const expEnum = matchedExp ? matchedExp.enumVal : 'INTERMEDIATE';
+    const dob = a ? new Date(new Date().getFullYear() - a, 0, 1).toISOString() : null;
 
     setError('');
     setLoading(true);
 
     try {
-      // Prompt 4B verified payload: send all required fields to backend
-      const dob = a ? new Date(new Date().getFullYear() - a, 0, 1).toISOString() : null;
-      const calculatedTargetWeight =
-        goal === 'Fat Loss'
-          ? Math.round(w * 0.9)
-          : goal === 'Muscle Gain'
-            ? Math.round(w * 1.08)
-            : Math.round(w);
-      const safeTargetWeight = Math.min(300, Math.max(20, calculatedTargetWeight));
-
+      // 1. Update Profile on backend
       await profileService.updateProfile({
         heightCm: h,
         weightKg: w,
-        goal: goalEnum,
-        experienceLevel: expEnum,
+        goal: selectedProgram?.goal || 'GENERAL_FITNESS',
+        experienceLevel: experienceLevel || 'INTERMEDIATE',
         gender,
-        activityLevel: activity,
         dateOfBirth: dob,
         targetWeightKg: safeTargetWeight,
       });
 
-      // Update local user and establish onboarded state
+      // 2. Save complete state to local user cache
       const currentUser = (await authService.getLocalUser()) || {};
       const updatedUser = {
         ...currentUser,
+        name: name.trim(),
+        displayName: name.trim(),
         isOnboarded: true,
-        fitnessGoal: goal,
-        experienceLevel: experience,
+        fitnessGoal: selectedProgram?.goal || 'GENERAL_FITNESS',
+        programId: selectedProgram?._id || selectedProgram?.id || null,
+        programName: selectedProgram?.name || selectedProgram?.title || null,
+        workoutLocation,
+        preferredWorkoutDays,
+        preferredWorkoutTime,
+        experienceLevel,
+        dietType,
+        dailyBudgetInr,
         age: a,
         height: h,
         weight: w,
         currentWeight: w,
         startingWeight: w,
-        goalWeight:
-          goal === 'Fat Loss'
-            ? Math.round(w * 0.9)
-            : goal === 'Muscle Gain'
-              ? Math.round(w * 1.08)
-              : w,
+        goalWeight: safeTargetWeight,
         gender,
-        activityLevel: activity,
         targetCal,
         targetProtein,
         targetCarbs,
@@ -204,460 +290,233 @@ export default function Onboarding() {
       };
 
       await authService.saveLocalUser(updatedUser);
-      await authService.setOnboardedStatus(true);
+      await authService.setOnboardedStatus(true, true);
       emitDbUpdate();
 
-      // Auth gate in _layout detects isOnboarded = true and navigates to tabs
+      // 3. Route to main application tabs
       router.replace('/(tabs)');
     } catch (e) {
-      console.warn('Onboarding profile sync error:', e?.message || e);
-      setError(e?.message || 'Failed to save onboarding details. Please try again.');
+      console.warn('[Onboarding] Error submitting profile plan:', e?.message || e);
+      setError(e?.message || 'Failed to save your plan. Please check your connection and retry.');
     } finally {
       setLoading(false);
     }
   };
 
+  const getStepMetadata = () => {
+    switch (step) {
+      case 1:
+        return {
+          category: 'Profile',
+          title: 'Personal Details',
+          subtitle: 'Accurate biometrics ensure our algorithms calculate the ideal calorie and training baseline for your body.',
+        };
+      case 2:
+        return {
+          category: 'Routine',
+          title: 'Workout Preferences',
+          subtitle: 'Choose where and how often you will be training so we can adapt movement patterns to your equipment.',
+        };
+      case 3:
+        return {
+          category: 'Goal',
+          title: 'Choose Your Program',
+          subtitle: 'Select the training program tailored to your primary fitness ambition.',
+        };
+      case 4:
+        return {
+          category: 'Experience',
+          title: 'Fitness Level',
+          subtitle: 'Select your lifting background so we can modulate exercise difficulty, set volume, and recovery cycles.',
+        };
+      case 5:
+        return {
+          category: 'Nutrition',
+          title: 'Diet & Budget',
+          subtitle: 'We calibrate daily meal suggestions and grocery splits matching your nutrition preferences and budget.',
+        };
+      case 6:
+        return {
+          category: 'Membership',
+          title: 'FitMitra Pro Access',
+          subtitle: 'Unlock tailored workout programs, smart AI coaching, and macro targets with an active membership.',
+        };
+      case 7:
+        return {
+          category: 'Review',
+          title: 'Review & Create Plan',
+          subtitle: 'Review your personalized configuration and daily targets before generating your customized plan.',
+        };
+      default:
+        return { category: '', title: '', subtitle: '' };
+    }
+  };
+
+  const stepMeta = getStepMetadata();
+
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 },
+          {
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 28,
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Step Indicator Header */}
-        <View style={styles.header}>
-          <View style={styles.stepRow}>
-            <Text style={[styles.stepCount, { color: theme.custom.primaryStrong || theme.colors.primary }]}>
-              STEP {step} OF {totalSteps}
-            </Text>
-            {step > 1 && (
-              <Pressable
-                onPress={prevStep}
-                hitSlop={8}
-                style={[
-                  styles.headerBackBtn,
-                  { backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.surfaceVariant },
-                ]}
-              >
-                <ArrowLeft size={16} color={theme.colors.onSurface} />
-              </Pressable>
-            )}
-          </View>
+        {/* Animated Progress Header */}
+        <OnboardingProgressHeader
+          step={step}
+          totalSteps={totalSteps}
+          category={stepMeta.category}
+          title={stepMeta.title}
+          subtitle={stepMeta.subtitle}
+          onBack={step > 1 ? handlePrev : null}
+        />
 
-          {/* Progress Bar */}
-          <View
-            style={[
-              styles.progressBarTrack,
-              { backgroundColor: theme.colors.outlineVariant },
-            ]}
-          >
-            <View
-              style={[
-                styles.progressBarFill,
-                {
-                  width: `${(step / totalSteps) * 100}%`,
-                  backgroundColor: theme.custom.primaryStrong || theme.colors.primary,
-                },
-              ]}
-            />
-          </View>
-        </View>
-
-        {/* Error Banner */}
+        {/* Global Error Banner */}
         {error ? (
           <View
             style={[
               styles.errorBanner,
               {
-                backgroundColor: theme.colors.errorContainer,
-                borderColor: theme.colors.error,
+                backgroundColor: colors.errorContainer,
+                borderColor: colors.error,
               },
             ]}
           >
-            <Text style={[styles.errorBannerText, { color: theme.colors.onErrorContainer }]}>
+            <Text
+              style={[
+                styles.errorBannerText,
+                { color: colors.onErrorContainer },
+              ]}
+            >
               {error}
             </Text>
           </View>
         ) : null}
 
-        {/* STEP 1: Fitness Goal */}
+        {/* Step 1: Personal Details */}
         {step === 1 && (
-          <View>
-            <Text style={[styles.sectionTitle, { color: theme.colors.onBackground }]}>
-              Select Your Primary Goal
-            </Text>
-            <Text style={[styles.sectionDesc, { color: theme.colors.onSurfaceVariant }]}>
-              We calibrate your daily workouts, calorie requirements, and macronutrients based on your objective.
-            </Text>
-
-            <View style={{ gap: 12 }}>
-              {goals.map((g) => {
-                const isSelected = goal === g.key;
-                const IconComponent = g.icon;
-                return (
-                  <Pressable
-                    key={g.key}
-                    onPress={() => setGoal(g.key)}
-                    style={[
-                      styles.optionCard,
-                      {
-                        backgroundColor: isSelected
-                          ? theme.colors.primaryContainer
-                          : theme.colors.surface,
-                        borderColor: isSelected
-                          ? theme.colors.primary
-                          : theme.colors.outlineVariant,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.iconWrap,
-                        {
-                          backgroundColor: isSelected
-                            ? (theme.custom.primaryStrong || theme.colors.primary)
-                            : (isDark ? theme.colors.elevation.level2 : theme.colors.surfaceVariant),
-                        },
-                      ]}
-                    >
-                      <IconComponent
-                        size={22}
-                        color={isSelected ? theme.colors.onPrimary : theme.colors.onSurface}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.optionTitle,
-                          {
-                            color: isSelected
-                              ? theme.colors.onPrimaryContainer
-                              : theme.colors.onSurface,
-                          },
-                        ]}
-                      >
-                        {g.title}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.optionDesc,
-                          {
-                            color: isSelected
-                              ? theme.colors.onPrimaryContainer
-                              : theme.colors.onSurfaceVariant,
-                          },
-                        ]}
-                      >
-                        {g.desc}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+          <StepPersonalDetails
+            name={name}
+            setName={setName}
+            gender={gender}
+            setGender={setGender}
+            age={age}
+            setAge={setAge}
+            height={height}
+            setHeight={setHeight}
+            weight={weight}
+            setWeight={setWeight}
+          />
         )}
 
-        {/* STEP 2: Experience Level */}
+        {/* Step 2: Workout Preferences */}
         {step === 2 && (
-          <View>
-            <Text style={[styles.sectionTitle, { color: theme.colors.onBackground }]}>
-              Select Experience Level
-            </Text>
-            <Text style={[styles.sectionDesc, { color: theme.colors.onSurfaceVariant }]}>
-              We tailor exercise complexity, volume, and recovery cycles according to your lifting background.
-            </Text>
-
-            <View style={{ gap: 12 }}>
-              {experiences.map((e) => {
-                const isSelected = experience === e.key;
-                return (
-                  <Pressable
-                    key={e.key}
-                    onPress={() => setExperience(e.key)}
-                    style={[
-                      styles.optionCard,
-                      {
-                        backgroundColor: isSelected
-                          ? theme.colors.primaryContainer
-                          : theme.colors.surface,
-                        borderColor: isSelected
-                          ? theme.colors.primary
-                          : theme.colors.outlineVariant,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.numBadge,
-                        {
-                          backgroundColor: isSelected
-                            ? (theme.custom.primaryStrong || theme.colors.primary)
-                            : (isDark ? theme.colors.elevation.level2 : theme.colors.surfaceVariant),
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.numText,
-                          {
-                            color: isSelected ? theme.colors.onPrimary : theme.colors.onSurface,
-                          },
-                        ]}
-                      >
-                        {e.num}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.optionTitle,
-                          {
-                            color: isSelected
-                              ? theme.colors.onPrimaryContainer
-                              : theme.colors.onSurface,
-                          },
-                        ]}
-                      >
-                        {e.title}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.optionDesc,
-                          {
-                            color: isSelected
-                              ? theme.colors.onPrimaryContainer
-                              : theme.colors.onSurfaceVariant,
-                          },
-                        ]}
-                      >
-                        {e.desc}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+          <StepWorkoutPreferences
+            workoutLocation={workoutLocation}
+            setWorkoutLocation={setWorkoutLocation}
+            preferredWorkoutDays={preferredWorkoutDays}
+            setPreferredWorkoutDays={setPreferredWorkoutDays}
+            preferredWorkoutTime={preferredWorkoutTime}
+            setPreferredWorkoutTime={setPreferredWorkoutTime}
+          />
         )}
 
-        {/* STEP 3: Details & Biometrics */}
+        {/* Step 3: Dynamic Goals Selection */}
         {step === 3 && (
-          <View>
-            <Text style={[styles.sectionTitle, { color: theme.colors.onBackground }]}>
-              Enter Your Biometrics
-            </Text>
-            <Text style={[styles.sectionDesc, { color: theme.colors.onSurfaceVariant }]}>
-              Accurate details ensure our nutrition and workout algorithms provide optimal targets.
-            </Text>
-
-            <AppCard
-              variant="elevated"
-              style={[styles.formCard, { backgroundColor: theme.colors.surface }]}
-              padded={false}
-            >
-              <View style={styles.formCardPadding}>
-                {/* Age & Height */}
-                <View style={styles.formRow}>
-                  <View style={styles.formHalf}>
-                    <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>
-                      Age (years)
-                    </Text>
-                    <View
-                      style={[
-                        styles.inputContainer,
-                        {
-                          backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                          borderColor: theme.colors.outlineVariant,
-                        },
-                      ]}
-                    >
-                      <TextInput
-                        style={[styles.textInput, { color: theme.colors.onSurface }]}
-                        keyboardType="number-pad"
-                        placeholder="24"
-                        placeholderTextColor={theme.colors.onSurfaceVariant}
-                        value={age}
-                        onChangeText={setAge}
-                        maxLength={3}
-                        accessibilityLabel="Age input"
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.formHalf}>
-                    <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>
-                      Height (cm)
-                    </Text>
-                    <View
-                      style={[
-                        styles.inputContainer,
-                        {
-                          backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                          borderColor: theme.colors.outlineVariant,
-                        },
-                      ]}
-                    >
-                      <TextInput
-                        style={[styles.textInput, { color: theme.colors.onSurface }]}
-                        keyboardType="number-pad"
-                        placeholder="175"
-                        placeholderTextColor={theme.colors.onSurfaceVariant}
-                        value={height}
-                        onChangeText={setHeight}
-                        maxLength={3}
-                        accessibilityLabel="Height input"
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                {/* Weight */}
-                <View style={[styles.formRow, { marginTop: 14 }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>
-                      Weight (kg)
-                    </Text>
-                    <View
-                      style={[
-                        styles.inputContainer,
-                        {
-                          backgroundColor: isDark ? theme.colors.elevation.level1 : theme.colors.background,
-                          borderColor: theme.colors.outlineVariant,
-                        },
-                      ]}
-                    >
-                      <TextInput
-                        style={[styles.textInput, { color: theme.colors.onSurface }]}
-                        keyboardType="decimal-pad"
-                        placeholder="72"
-                        placeholderTextColor={theme.colors.onSurfaceVariant}
-                        value={weight}
-                        onChangeText={setWeight}
-                        maxLength={5}
-                        accessibilityLabel="Weight input"
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                {/* Gender / Sex */}
-                <View style={{ marginTop: 16 }}>
-                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface, marginBottom: 8 }]}>
-                    Biological Sex / Gender
-                  </Text>
-                  <View style={styles.chipRow}>
-                    {genders.map((g) => {
-                      const isActive = gender === g;
-                      return (
-                        <Pressable
-                          key={g}
-                          onPress={() => setGender(g)}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: isActive
-                                ? (theme.custom.primaryStrong || theme.colors.primary)
-                                : (isDark ? theme.colors.elevation.level1 : theme.colors.surfaceVariant),
-                              borderColor: isActive
-                                ? (theme.custom.primaryStrong || theme.colors.primary)
-                                : theme.colors.outlineVariant,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.chipText,
-                              {
-                                color: isActive
-                                  ? theme.colors.onPrimary
-                                  : theme.colors.onSurface,
-                              },
-                            ]}
-                          >
-                            {g}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                {/* Activity Level */}
-                <View style={{ marginTop: 18 }}>
-                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface, marginBottom: 8 }]}>
-                    Activity Level
-                  </Text>
-                  <View style={styles.chipRow}>
-                    {activities.map((a) => {
-                      const isActive = activity === a;
-                      return (
-                        <Pressable
-                          key={a}
-                          onPress={() => setActivity(a)}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: isActive
-                                ? (theme.custom.primaryStrong || theme.colors.primary)
-                                : (isDark ? theme.colors.elevation.level1 : theme.colors.surfaceVariant),
-                              borderColor: isActive
-                                ? (theme.custom.primaryStrong || theme.colors.primary)
-                                : theme.colors.outlineVariant,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.chipText,
-                              {
-                                color: isActive
-                                  ? theme.colors.onPrimary
-                                  : theme.colors.onSurface,
-                              },
-                            ]}
-                          >
-                            {a}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-            </AppCard>
-          </View>
+          <StepGoalSelection
+            selectedProgram={selectedProgram}
+            setSelectedProgram={setSelectedProgram}
+          />
         )}
 
-        {/* Step Navigation Controls */}
-        <View style={styles.footerControls}>
-          {step > 1 ? (
-            <View style={{ flex: 1, marginRight: 10 }}>
+        {/* Step 4: Fitness Level */}
+        {step === 4 && (
+          <StepFitnessLevel
+            experienceLevel={experienceLevel}
+            setExperienceLevel={setExperienceLevel}
+          />
+        )}
+
+        {/* Step 5: Diet & Budget */}
+        {step === 5 && (
+          <StepDietBudget
+            dietType={dietType}
+            setDietType={setDietType}
+            dailyBudgetInr={dailyBudgetInr}
+            setDailyBudgetInr={setDailyBudgetInr}
+          />
+        )}
+
+        {/* Step 6: Subscription Verification Gate */}
+        {step === 6 && (
+          <StepSubscriptionGate
+            isVerified={isSubscriptionVerified}
+            setIsVerified={setIsSubscriptionVerified}
+          />
+        )}
+
+        {/* Step 7: Review & Finalize Plan */}
+        {step === 7 && (
+          <StepReviewPlan
+            name={name}
+            gender={gender}
+            age={age}
+            height={height}
+            weight={weight}
+            workoutLocation={workoutLocation}
+            preferredWorkoutDays={preferredWorkoutDays}
+            preferredWorkoutTime={preferredWorkoutTime}
+            selectedProgram={selectedProgram}
+            experienceLevel={experienceLevel}
+            dietType={dietType}
+            dailyBudgetInr={dailyBudgetInr}
+            isSubscriptionVerified={isSubscriptionVerified}
+            onJumpToStep={handleJumpToStep}
+            onSubmitPlan={handleFinalSubmit}
+            isSubmitting={loading}
+          />
+        )}
+
+        {/* Footer Navigation Controls (Steps 1 to 6) */}
+        {step < totalSteps && (
+          <View style={styles.footerControls}>
+            {step > 1 ? (
+              <View style={styles.backBtnWrap}>
+                <AppButton
+                  label="Back"
+                  onPress={handlePrev}
+                  mode="outlined"
+                  disabled={loading}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.continueBtnWrap}>
               <AppButton
-                label="Back"
-                onPress={prevStep}
-                mode="outlined"
-                disabled={loading}
+                label={
+                  step === 6
+                    ? isSubscriptionVerified
+                      ? 'Continue to Review'
+                      : 'Subscription Required'
+                    : 'Continue'
+                }
+                onPress={handleNext}
+                mode="contained"
+                disabled={loading || (step === 6 && !isSubscriptionVerified)}
+                loading={loading}
               />
             </View>
-          ) : null}
-
-          <View style={{ flex: step > 1 ? 2 : 1 }}>
-            <AppButton
-              label={step === totalSteps ? 'Finish Profile' : 'Continue'}
-              onPress={nextStep}
-              mode="contained"
-              loading={loading}
-              disabled={loading}
-            />
           </View>
-        </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -671,47 +530,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 20,
   },
-  header: {
-    marginBottom: 20,
-  },
-  stepRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  stepCount: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  headerBackBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressBarTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 6,
-    letterSpacing: -0.3,
-  },
-  sectionDesc: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 20,
-  },
   errorBanner: {
     padding: 12,
     borderRadius: 12,
@@ -724,91 +542,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  optionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1.5,
-  },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  numBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  numText: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  optionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  optionDesc: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  formCard: {
-    width: '100%',
-    borderRadius: 16,
-    marginBottom: 10,
-  },
-  formCardPadding: {
-    padding: 18,
-  },
-  formRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  formHalf: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  inputContainer: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-  },
-  textInput: {
-    fontSize: 15,
-    height: '100%',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
   footerControls: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     marginTop: 24,
-    marginBottom: 16,
+  },
+  backBtnWrap: {
+    flex: 1,
+  },
+  continueBtnWrap: {
+    flex: 2,
   },
 });

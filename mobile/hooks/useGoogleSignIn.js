@@ -1,23 +1,50 @@
 import { useState, useCallback } from 'react';
-import { Platform } from 'react-native';
-import {
-  GoogleSignin,
-  statusCodes,
-  isErrorWithCode,
-  isSuccessResponse,
-} from '@react-native-google-signin/google-signin';
+import { Platform, Alert } from 'react-native';
 import { authService } from '../services/authService';
+
+let GoogleSignin = null;
+let statusCodes = {};
+let isErrorWithCode = () => false;
+let isSuccessResponse = () => false;
+let isNativeModuleAvailable = false;
+
+// Safely probe for native RNGoogleSignin module to prevent crashing Expo Go
+try {
+  const { TurboModuleRegistry, NativeModules } = require('react-native');
+  const hasTurbo =
+    typeof TurboModuleRegistry?.get === 'function' &&
+    Boolean(TurboModuleRegistry.get('RNGoogleSignin'));
+  const hasLegacy = Boolean(NativeModules?.RNGoogleSignin);
+
+  if (hasTurbo || hasLegacy) {
+    const mod = require('@react-native-google-signin/google-signin');
+    GoogleSignin = mod.GoogleSignin;
+    statusCodes = mod.statusCodes || {};
+    isErrorWithCode = mod.isErrorWithCode || (() => false);
+    isSuccessResponse = mod.isSuccessResponse || (() => false);
+    isNativeModuleAvailable = true;
+  }
+} catch {
+  // Expo Go or web environment where RNGoogleSignin is absent
+  isNativeModuleAvailable = false;
+}
 
 const rawWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
 const webClientId = rawWebClientId.trim();
 
-// Configure Google Sign-In at module level with the Web Client ID only
-if (webClientId) {
-  GoogleSignin.configure({ webClientId });
+// Configure Google Sign-In at module level only if native binary is present
+if (isNativeModuleAvailable && GoogleSignin && webClientId) {
+  try {
+    GoogleSignin.configure({ webClientId });
+  } catch (err) {
+    console.warn('[GoogleSignin] Configuration warning:', err?.message || err);
+  }
 }
 
 export const isConfigured = Boolean(
-  webClientId && !webClientId.includes('your-web-client-id')
+  isNativeModuleAvailable &&
+  webClientId &&
+  !webClientId.includes('your-web-client-id')
 );
 
 /**
@@ -30,6 +57,14 @@ export function useGoogleSignIn() {
 
   const signIn = useCallback(async () => {
     setError('');
+
+    if (!isNativeModuleAvailable || !GoogleSignin) {
+      const notice =
+        'Google Sign-In requires a custom development build (eas build / npx expo run:android) and is not supported inside Expo Go. Please sign in with email and password.';
+      setError(notice);
+      Alert.alert('Expo Go Notice', notice);
+      return;
+    }
 
     if (!isConfigured) {
       setError('Google sign-in is not configured yet.');

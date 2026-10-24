@@ -39,7 +39,7 @@ export const clearAuthData = async () => {
     await clearAuthTokens();
     await AsyncStorage.multiRemove([USER_KEY, ONBOARDED_KEY]);
     await clearUserCache();
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // ─── Token Refresh Coordination ──────────────────────────────────────────────
