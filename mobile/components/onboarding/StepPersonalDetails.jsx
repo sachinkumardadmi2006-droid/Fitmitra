@@ -10,7 +10,12 @@ import { User, Calendar, Ruler, Scale, Activity } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from '../ui/AppCard';
 
-const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
+const GENDERS = [
+  { label: 'Male', value: 'MALE' },
+  { label: 'Female', value: 'FEMALE' },
+  { label: 'Other', value: 'OTHER' },
+  { label: 'Prefer not to say', value: 'PREFER_NOT_TO_SAY' },
+];
 
 export default function StepPersonalDetails({
   name,
@@ -109,11 +114,12 @@ export default function StepPersonalDetails({
             </View>
             <View style={styles.chipGrid}>
               {GENDERS.map((g) => {
-                const isSelected = gender === g;
+                const isSelected =
+                  gender === g.value || String(gender).toUpperCase() === g.value;
                 return (
                   <Pressable
-                    key={g}
-                    onPress={() => setGender(g)}
+                    key={g.value}
+                    onPress={() => setGender(g.value)}
                     style={[
                       styles.genderChip,
                       {
@@ -139,7 +145,7 @@ export default function StepPersonalDetails({
                         },
                       ]}
                     >
-                      {g}
+                      {g.label}
                     </Text>
                   </Pressable>
                 );

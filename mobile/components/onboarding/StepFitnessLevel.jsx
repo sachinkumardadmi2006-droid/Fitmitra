@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { CheckCircle2, Award, Zap, Shield, Flame } from 'lucide-react-native';
+import { CheckCircle2, Zap, Shield, Flame } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 
 const LEVELS = [

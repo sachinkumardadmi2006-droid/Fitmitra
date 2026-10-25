@@ -12,13 +12,10 @@ import {
   Calendar,
 } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
-import AppCard from '../ui/AppCard';
 
 const DAYS_OPTIONS = [
-  { label: '3 Days / wk', value: 3, desc: 'Ideal for busy schedules' },
-  { label: '4 Days / wk', value: 4, desc: 'Balanced upper / lower split' },
-  { label: '5 Days / wk', value: 5, desc: 'Recommended optimal volume' },
-  { label: '6 Days / wk', value: 6, desc: 'High frequency push / pull / legs' },
+  { label: '5 Days / wk', value: 5, desc: 'Recommended optimal volume & balanced split' },
+  { label: '6 Days / wk', value: 6, desc: 'High frequency push / pull / legs split' },
 ];
 
 const TIME_OPTIONS = [

@@ -15,11 +15,15 @@ export const queryKeys = {
   // Home Dashboard
   dashboard: ['dashboard'],
 
-  // Workouts
+  // Workouts & Programs
   todayWorkout: ['workouts', 'today'],
   currentProgram: ['programs', 'current'],
   programs: (goal = 'ALL') => ['programs', 'list', String(goal)],
   program: (id) => ['programs', 'detail', String(id)],
+  programWorkoutPlans: (programId) => ['programs', 'workoutplans', String(programId)],
+  workoutPlans: (programId = 'ALL') => ['workout-plans', 'list', String(programId)],
+  workoutPlan: (id) => ['workout-plans', 'detail', String(id)],
+  currentWorkoutPlan: ['workout-plans', 'current'],
   workoutHistory: (limit = 10) => ['workouts', 'history', Number(limit)],
   workoutStats: ['workouts', 'stats'],
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -14,7 +14,7 @@ export default function OnboardingProgressHeader({
   const { theme, isDark } = useAppTheme();
   const { colors, custom } = theme;
 
-  const progressAnim = useRef(new Animated.Value(step / totalSteps)).current;
+  const [progressAnim] = useState(() => new Animated.Value(step / totalSteps));
 
   useEffect(() => {
     Animated.timing(progressAnim, {

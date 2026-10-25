@@ -10,9 +10,6 @@ import {
   Edit3,
   Flame,
   CheckCircle2,
-  Calendar,
-  Clock,
-  Sparkles,
 } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from '../ui/AppCard';
@@ -29,6 +26,7 @@ export default function StepReviewPlan({
   preferredWorkoutDays,
   preferredWorkoutTime,
   selectedProgram,
+  selectedWorkoutPlan,
   experienceLevel,
   dietType,
   dailyBudgetInr,
@@ -347,8 +345,7 @@ export default function StepReviewPlan({
               {selectedProgram?.name || selectedProgram?.title || 'Selected Program'}
             </Text>
             <Text style={[styles.summarySubText, { color: colors.onSurfaceVariant }]}>
-              {selectedProgram?.durationWeeks ? `${selectedProgram.durationWeeks} Weeks • ` : ''}
-              Goal: {selectedProgram?.goal || 'General Fitness'}
+              Plan: {selectedWorkoutPlan?.name || selectedWorkoutPlan?.title || 'Standard Plan'} • {selectedWorkoutPlan?.daysPerWeek || preferredWorkoutDays} Days/Wk
             </Text>
           </View>
         </AppCard>

@@ -31,6 +31,73 @@ export const workoutService = {
   },
 
   /**
+   * Fetch program details by ID (alias)
+   */
+  async getProgramById(id) {
+    return this.getProgram(id);
+  },
+
+  /**
+   * Select a program / goal
+   */
+  async selectProgram(id) {
+    return api.post(`/programs/${id}/select`);
+  },
+
+  /**
+   * Fetch workout plans under a specific program
+   * @param {string} programId
+   * @param {object} [params]
+   */
+  async getWorkoutPlansByProgram(programId, params = {}) {
+    return api.get(`/programs/${programId}/workoutplans`, params);
+  },
+
+  /**
+   * Fetch structured workout plans list with optional filtering
+   * @param {object} [params] { programId, difficulty, level, location, daysPerWeek, isPremium, search, page, limit }
+   */
+  async getWorkoutPlans(params = {}) {
+    return api.get('/workout-plans', params);
+  },
+
+  /**
+   * Fetch single workout plan details by ID
+   */
+  async getWorkoutPlan(id) {
+    return api.get(`/workout-plans/${id}`);
+  },
+
+  /**
+   * Fetch single workout plan details by ID (alias)
+   */
+  async getWorkoutPlanById(id) {
+    return this.getWorkoutPlan(id);
+  },
+
+  /**
+   * Select and activate a workout plan
+   */
+  async selectWorkoutPlan(id) {
+    return api.post(`/workout-plans/${id}/select`);
+  },
+
+  /**
+   * Fetch currently active workout plan for user
+   */
+  async getCurrentWorkoutPlan() {
+    return api.get('/workout-plans/me/current');
+  },
+
+  /**
+   * Switch active workout plan to a new plan
+   * @param {string} newWorkoutPlanId
+   */
+  async switchWorkoutPlan(newWorkoutPlanId) {
+    return api.post('/workout-plans/me/switch', { newWorkoutPlanId });
+  },
+
+  /**
    * Fetch current active user program enrollment
    * @returns {Promise<{ program: { id: string, title: string, goal: string, level: string, durationWeeks: number } | null, startDateKey: string, weekNumber: number, dayNumber: number }>}
    */

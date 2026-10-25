@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,9 +13,6 @@ import {
   CheckCircle2,
   Sparkles,
   Lock,
-  Zap,
-  ArrowRight,
-  RefreshCw,
   AlertCircle,
 } from 'lucide-react-native';
 import { subscriptionService } from '../../services/subscriptionService';
@@ -26,13 +22,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from '../ui/AppCard';
 import AppButton from '../ui/AppButton';
-import Skeleton, { SkeletonCard } from '../ui/Skeleton';
+import { SkeletonCard } from '../ui/Skeleton';
 import EmptyState from '../ui/EmptyState';
 import ErrorState from '../ui/ErrorState';
 
 export default function StepSubscriptionGate({
   isVerified,
   setIsVerified,
+  selectedWorkoutPlan,
 }) {
   const { theme, isDark } = useAppTheme();
   const { colors, custom } = theme;
@@ -47,7 +44,6 @@ export default function StepSubscriptionGate({
   const {
     data: currentSub,
     isLoading: isLoadingSub,
-    isRefetching: isRefetchingSub,
     refetch: refetchSub,
   } = useQuery({
     queryKey: queryKeys.subscriptionCurrent,
@@ -82,29 +78,23 @@ export default function StepSubscriptionGate({
     staleTime: 60 * 1000,
   });
 
-  const plans = plansData || [];
+  const plans = useMemo(() => plansData || [], [plansData]);
+  const activeSelectedPlanId =
+    selectedPlanId || (plans.length > 0 ? plans[0]._id || plans[0].id : null);
   const isActive = Boolean(
     currentSub &&
     (currentSub.status === 'ACTIVE' || currentSub.status === 'TRIALING')
   );
+  const isFreePlan = Boolean(selectedWorkoutPlan && !selectedWorkoutPlan.isPremium);
 
-  // Sync verified state upward whenever subscription query resolves
+  // Sync verified state upward whenever subscription query resolves or free plan selected
   useEffect(() => {
-    if (isActive) {
+    if (isActive || isFreePlan) {
       setIsVerified(true);
-      setCheckoutError('');
     } else {
       setIsVerified(false);
     }
-  }, [isActive, setIsVerified]);
-
-  // Pre-select first plan when plans arrive
-  useEffect(() => {
-    if (!selectedPlanId && plans.length > 0) {
-      const firstId = plans[0]._id || plans[0].id;
-      setSelectedPlanId(firstId);
-    }
-  }, [plans, selectedPlanId]);
+  }, [isActive, isFreePlan, setIsVerified]);
 
   const pollSubscriptionActive = async () => {
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -123,13 +113,13 @@ export default function StepSubscriptionGate({
   };
 
   const handleSubscribe = async () => {
-    if (!selectedPlanId) {
+    if (!activeSelectedPlanId) {
       Alert.alert('Select a Plan', 'Please select a subscription tier to continue.');
       return;
     }
 
     const selectedPlan = plans.find(
-      (p) => (p._id || p.id) === selectedPlanId
+      (p) => (p._id || p.id) === activeSelectedPlanId
     );
     if (!selectedPlan) return;
 
@@ -139,7 +129,7 @@ export default function StepSubscriptionGate({
     try {
       // 1. Create subscription on server
       const createRes = await subscriptionService.createSubscription({
-        planId: selectedPlanId,
+        planId: activeSelectedPlanId,
       });
       const createData = createRes?.data || createRes;
 
@@ -159,7 +149,7 @@ export default function StepSubscriptionGate({
       // Case B: Payment required via Razorpay
       if (createData?.type === 'PAYMENT_REQUIRED' || !createData?.type) {
         const orderRes = await subscriptionService.createPaymentOrder({
-          subscriptionPlanId: selectedPlanId,
+          subscriptionPlanId: activeSelectedPlanId,
         });
         const orderData = orderRes?.data || orderRes;
 
@@ -178,7 +168,7 @@ export default function StepSubscriptionGate({
             phone: user?.phone || '',
           },
           verifyPayload: {
-            subscriptionPlanId: selectedPlanId,
+            subscriptionPlanId: activeSelectedPlanId,
           },
         });
 
@@ -449,7 +439,7 @@ export default function StepSubscriptionGate({
           <View style={styles.plansList}>
             {plans.map((p) => {
               const pId = p._id || p.id;
-              const isSelected = selectedPlanId === pId;
+              const isSelected = activeSelectedPlanId === pId;
               const priceDisplay = p.priceInPaise
                 ? `₹${Math.round(p.priceInPaise / 100)}`
                 : p.priceFormatted || '₹499';
@@ -535,16 +525,50 @@ export default function StepSubscriptionGate({
         )}
       </View>
 
-      {/* Subscribe Button */}
+      {/* Free Plan Notice */}
+      {isFreePlan && !isActive && (
+        <View
+          style={[
+            styles.freePlanNotice,
+            {
+              backgroundColor: isDark ? 'rgba(74, 222, 128, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+              borderColor: isDark ? '#4ADE80' : '#22C55E',
+            },
+          ]}
+        >
+          <Sparkles size={16} color={isDark ? '#4ADE80' : '#15803D'} />
+          <Text
+            style={[
+              styles.freePlanNoticeText,
+              { color: isDark ? '#4ADE80' : '#15803D' },
+            ]}
+          >
+            You selected a Free Workout Plan ({selectedWorkoutPlan?.name || selectedWorkoutPlan?.title}). Upgrade to Pro now for AI coaching & custom recipes, or continue with your Free Plan.
+          </Text>
+        </View>
+      )}
+
+      {/* Action Buttons */}
       {plans.length > 0 && (
         <View style={styles.actionWrap}>
           <AppButton
-            label={submitting ? 'Connecting Secure Gateway...' : 'Subscribe & Continue'}
+            label={submitting ? 'Connecting Secure Gateway...' : 'Upgrade to Pro'}
             onPress={handleSubscribe}
             loading={submitting}
             disabled={submitting || !selectedPlanId}
-            icon="shield-check"
+            icon="crown"
           />
+
+          {isFreePlan && !isActive && (
+            <View style={{ marginTop: 10 }}>
+              <AppButton
+                label="Continue with Free Plan"
+                mode="outlined"
+                onPress={() => setIsVerified(true)}
+                disabled={submitting}
+              />
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -554,6 +578,22 @@ export default function StepSubscriptionGate({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
+  },
+  freePlanNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 16,
+    marginHorizontal: 4,
+  },
+  freePlanNoticeText: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    flex: 1,
+    fontWeight: '600',
   },
   loadingContainer: {
     width: '100%',

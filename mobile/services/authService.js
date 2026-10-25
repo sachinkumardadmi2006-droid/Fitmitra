@@ -70,7 +70,13 @@ export const authService = {
       }
 
       // Check onboarding state from server profile or user biometrics
-      const hasBiometrics = Boolean(user?.profile?.heightCm && user?.profile?.weightKg);
+      const profile = user?.profile;
+      const hasBiometrics = Boolean(
+        profile?.heightCm &&
+        (profile?.weight !== undefined || profile?.weightKg !== undefined) &&
+        (profile?.selectedGoal || profile?.goal) &&
+        profile?.selectedWorkoutPlan
+      );
       if (hasBiometrics) {
         await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
       } else {
@@ -181,6 +187,53 @@ export const authService = {
   },
 
   /**
+   * Request email verification OTP (POST /auth/send-verification-email)
+   */
+  async sendVerificationEmail() {
+    try {
+      return await api.post('/auth/send-verification-email');
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Verify email with 6-digit OTP code (POST /auth/verify-email)
+   * @param {string} otp 6-digit code
+   */
+  async verifyEmail(otp) {
+    try {
+      const result = await api.post('/auth/verify-email', {
+        otp: String(otp).trim(),
+      });
+      // Update local cached user object with emailVerified = true
+      const local = await this.getLocalUser();
+      if (local) {
+        const updated = { ...local, emailVerified: true };
+        await this.saveLocalUser(updated);
+      }
+      emitDbUpdate();
+      return result;
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
+   * Permanently delete user account (DELETE /users/me)
+   * @param {string} [password] Required if user has password provider
+   */
+  async deleteAccount(password) {
+    try {
+      const res = await api.delete('/users/me', password ? { password } : {});
+      await this.logout().catch(() => {});
+      return res;
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  },
+
+  /**
    * Log in via Google ID token with backend /auth/google
    * @param {string} idToken
    */
@@ -209,7 +262,13 @@ export const authService = {
       }
 
       // Check onboarding state from server profile or user biometrics
-      const hasBiometrics = Boolean(user?.profile?.heightCm && user?.profile?.weightKg);
+      const gProfile = user?.profile;
+      const hasBiometrics = Boolean(
+        gProfile?.heightCm &&
+        (gProfile?.weight !== undefined || gProfile?.weightKg !== undefined) &&
+        (gProfile?.selectedGoal || gProfile?.goal) &&
+        gProfile?.selectedWorkoutPlan
+      );
       if (hasBiometrics) {
         await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
       } else {
@@ -251,7 +310,13 @@ export const authService = {
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(result.user));
     }
 
-    const hasBiometrics = Boolean(result?.profile?.heightCm && result?.profile?.weightKg);
+    const sProfile = result?.profile;
+    const hasBiometrics = Boolean(
+      sProfile?.heightCm &&
+      (sProfile?.weight !== undefined || sProfile?.weightKg !== undefined) &&
+      (sProfile?.selectedGoal || sProfile?.goal) &&
+      sProfile?.selectedWorkoutPlan
+    );
     if (hasBiometrics) {
       await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
     } else {

@@ -13,7 +13,6 @@ import {
   Dumbbell,
   Flame,
   Zap,
-  Play,
   RotateCcw,
   CheckCircle2,
   Utensils,
@@ -21,7 +20,6 @@ import {
   Droplets,
   Sparkles,
   TrendingUp,
-  ArrowRight,
   Bot,
   Calendar,
   Clock,
@@ -42,7 +40,8 @@ import AppCard from '../../components/ui/AppCard';
 import AppButton from '../../components/ui/AppButton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
-import Skeleton from '../../components/ui/Skeleton';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { EmailVerificationBanner } from '../../components/auth';
 
 const CACHE_KEY_DASHBOARD = 'fitmitra_cache_dashboard';
 const CACHE_KEY_TODAY_WORKOUT = 'fitmitra_cache_today_workout';
@@ -114,9 +113,6 @@ export default function HomeDashboard() {
     waterQuery.isRefetching;
 
   const isOffline = dashboardQuery.isError && todayQuery.isError;
-  const errorMessage = isOffline
-    ? 'Unable to connect to server. Pull down to retry.'
-    : null;
 
   const onRefresh = useCallback(async () => {
     await Promise.all([
@@ -286,6 +282,9 @@ export default function HomeDashboard() {
           </View>
         </View>
 
+        {/* Email Verification Banner (Non-blocking Option B) */}
+        <EmailVerificationBanner style={{ marginHorizontal: 0, marginBottom: 16 }} />
+
         {/* Loading Skeleton */}
         {loading && !dashboardData && !todayWorkout ? (
           <View style={styles.skeletonContainer}>
@@ -332,7 +331,7 @@ export default function HomeDashboard() {
                     <View style={[styles.statusTag, { backgroundColor: colors.secondaryContainer }]}>
                       <Dumbbell size={13} color={colors.onSecondaryContainer} />
                       <Text style={[styles.statusTagText, { color: colors.onSecondaryContainer }]}>
-                        TODAY'S WORKOUT
+                        {"TODAY'S WORKOUT"}
                       </Text>
                     </View>
                   )}

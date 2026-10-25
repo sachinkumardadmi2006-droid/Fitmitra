@@ -9,7 +9,15 @@ export const profileService = {
   },
 
   /**
-   * Update profile fields (weightKg, heightCm, goal, experienceLevel, preferredLanguage)
+   * Submit complete onboarding setup (POST /users/me/onboarding)
+   * @param {object} payload
+   */
+  async completeOnboarding(payload) {
+    return api.post('/users/me/onboarding', payload);
+  },
+
+  /**
+   * Update profile fields (weight, heightCm, selectedGoal, selectedWorkoutPlan, experienceLevel, preferredLanguage)
    */
   async updateProfile(updates) {
     return api.patch('/profiles/me', updates);

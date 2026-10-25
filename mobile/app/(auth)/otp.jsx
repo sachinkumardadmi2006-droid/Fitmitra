@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,13 @@ import {
   ActivityIndicator,
   ImageBackground,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ArrowLeft, Dumbbell } from 'lucide-react-native';
 import { authService } from '../../services/authService';
+import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { spacing, radius } from '../../theme/tokens';
 
@@ -25,12 +26,13 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function OtpVerification() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
+  const { user, refreshProfile } = useAuth();
 
-  const rawEmail = (params.email || 'alexsmith.mobbin@gmail.com').toString();
+  const rawEmail = (params.email || user?.email || 'user@example.com').toString();
 
   const maskEmail = (emailStr) => {
-    if (!emailStr || !emailStr.includes('@')) return '*****in@gmail.com';
+    if (!emailStr || !emailStr.includes('@')) return '*****@fitmitra.com';
     const [local, domain] = emailStr.split('@');
     if (local.length <= 3) return `*****@${domain}`;
     return `${local.substring(0, 2)}*****${local.substring(local.length - 2)}@${domain}`;
@@ -38,8 +40,10 @@ export default function OtpVerification() {
 
   const maskedEmail = maskEmail(rawEmail);
 
-  const [otp, setOtp] = useState(['2', '3', '5', '1', '7', '3']);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [error, setError] = useState('');
 
   const inputRefs = [
@@ -50,6 +54,18 @@ export default function OtpVerification() {
     useRef(null),
     useRef(null),
   ];
+
+  useEffect(() => {
+    let timer;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => {
+        setResendCooldown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [resendCooldown]);
 
   const handleOtpChange = (text, index) => {
     const newOtp = [...otp];
@@ -78,19 +94,45 @@ export default function OtpVerification() {
     setError('');
     setLoading(true);
     try {
-      if (!__DEV__) {
-        throw new Error('Phone verification is not yet available in production.');
-      }
-      const result = await authService.devLogin();
-      if (result?.isOnboarded) {
-        router.replace('/(tabs)');
-      } else {
-        router.replace('/(auth)/onboarding');
-      }
+      await authService.verifyEmail(code);
+      await refreshProfile?.();
+      Alert.alert(
+        'Email Verified! 🎉',
+        'Your email address has been successfully verified.',
+        [
+          {
+            text: 'Continue',
+            onPress: () => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)');
+              }
+            },
+          },
+        ]
+      );
     } catch (err) {
-      setError(err.message || 'Invalid code. Please try again.');
+      setError(err?.message || 'Invalid or expired verification code. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || resending) return;
+    setResending(true);
+    setError('');
+    try {
+      await authService.sendVerificationEmail();
+      setResendCooldown(60);
+      setOtp(['', '', '', '', '', '']);
+      inputRefs[0].current?.focus();
+      Alert.alert('Code Sent', `A fresh 6-digit verification code has been sent to ${rawEmail}.`);
+    } catch (err) {
+      setError(err?.message || 'Failed to resend verification email. Please try again later.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -270,7 +312,8 @@ export default function OtpVerification() {
           {/* Interactive Resend Code link */}
           <Pressable
             style={styles.resendBtn}
-            onPress={() => setOtp(['', '', '', '', '', ''])}
+            onPress={handleResend}
+            disabled={resending || resendCooldown > 0}
           >
             <Text
               style={[
@@ -278,14 +321,18 @@ export default function OtpVerification() {
                 { color: theme.colors.onSurfaceVariant },
               ]}
             >
-              Didn't receive code?{' '}
+              {"Didn't receive code? "}
               <Text
                 style={{
-                  color: theme.custom.primaryStrong,
+                  color: resendCooldown > 0 ? theme.colors.outline : theme.custom.primaryStrong,
                   fontWeight: '800',
                 }}
               >
-                Resend Code
+                {resending
+                  ? 'Sending...'
+                  : resendCooldown > 0
+                  ? `Resend in ${resendCooldown}s`
+                  : 'Resend Code'}
               </Text>
             </Text>
           </Pressable>

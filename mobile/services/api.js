@@ -218,8 +218,13 @@ export const api = {
   },
   post: (path, body = {}, options = {}) => request(path, { ...options, method: 'POST', body }),
   patch: (path, body = {}, options = {}) => request(path, { ...options, method: 'PATCH', body }),
-  put: (path, body = {}, options = {}) => request(path, { ...options, method: 'PUT', body }),
-  delete: (path, options = {}) => request(path, { ...options, method: 'DELETE' }),
+  delete: (path, body = {}, options = {}) => {
+    if (body && (body.headers || body.method || body.body)) {
+      return request(path, { method: 'DELETE', ...body });
+    }
+    const hasBody = body && typeof body === 'object' && Object.keys(body).length > 0;
+    return request(path, { ...options, method: 'DELETE', ...(hasBody ? { body } : {}) });
+  },
 };
 
 // ─── Auth Sync ───────────────────────────────────────────────────────────────

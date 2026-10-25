@@ -6,4 +6,5 @@ export { default as OrDivider } from './OrDivider';
 export { default as OtpInput } from './OtpInput';
 export { default as PasswordRules } from './PasswordRules';
 export { default as AuthHero } from './AuthHero';
+export { default as EmailVerificationBanner } from './EmailVerificationBanner';
 export { authSizes, authTypography } from './authTheme';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,6 @@ import {
   Info,
   X,
   User,
-  ExternalLink,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../constants/queryKeys';
@@ -33,12 +32,13 @@ import AppHeader from '../components/ui/AppHeader';
 import AppCard from '../components/ui/AppCard';
 import AppButton from '../components/ui/AppButton';
 import ThemeSelector from '../components/ui/ThemeSelector';
+import { EmailVerificationBanner } from '../components/auth';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
-  const { colors, custom } = theme;
+  const { colors } = theme;
   const { logout, user } = useAuth();
 
   const {
@@ -68,8 +68,6 @@ export default function SettingsScreen() {
       Alert.alert('Update Failed', 'Could not save notification preferences to server. Please try again.');
     },
   });
-
-  const updatingSettings = updateSettingsMutation.isPending;
 
   // Local device preference indicators
   const [cameraPermission, setCameraPermission] = useState(true);
@@ -119,6 +117,8 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <EmailVerificationBanner style={{ marginHorizontal: 0, marginBottom: 16 }} />
+
         {/* Section 1: Account & Profile Link */}
         <Text style={[styles.sectionHeading, { color: colors.onSurfaceVariant }]}>
           ACCOUNT

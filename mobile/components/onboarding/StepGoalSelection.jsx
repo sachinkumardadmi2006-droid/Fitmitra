@@ -13,7 +13,7 @@ import {
 import { workoutService } from '../../services/workoutService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAppTheme } from '../../theme/ThemeContext';
-import Skeleton, { SkeletonCard } from '../ui/Skeleton';
+import { SkeletonCard } from '../ui/Skeleton';
 import EmptyState from '../ui/EmptyState';
 import ErrorState from '../ui/ErrorState';
 

@@ -7,17 +7,12 @@ const DIET_TYPES = [
   {
     key: 'VEG',
     label: 'Vegetarian',
-    desc: 'Lentils, paneer, tofu, legumes, dairy & greens',
-  },
-  {
-    key: 'EGG',
-    label: 'Eggetarian',
-    desc: 'Vegetarian diet enriched with eggs & dairy',
+    desc: 'Lentils, paneer, tofu, legumes, dairy & whole grains',
   },
   {
     key: 'NON_VEG',
     label: 'Non-Vegetarian',
-    desc: 'Chicken, fish, eggs, dairy & diverse plant foods',
+    desc: 'Chicken, fish, eggs, dairy & diverse whole foods (includes Eggetarian)',
   },
 ];
 

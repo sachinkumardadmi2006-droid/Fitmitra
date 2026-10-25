@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { profileService, authService } from '../../services';
+import { clearUserCache } from '../../services/queryClient';
 import { emitDbUpdate } from '../../utils/events';
 import { AppButton } from '../../components/ui';
 
@@ -21,6 +21,7 @@ import {
   StepPersonalDetails,
   StepWorkoutPreferences,
   StepGoalSelection,
+  StepWorkoutPlanSelection,
   StepFitnessLevel,
   StepDietBudget,
   StepSubscriptionGate,
@@ -29,53 +30,53 @@ import {
 
 export default function Onboarding() {
   const router = useRouter();
-  const { theme, isDark } = useAppTheme();
-  const { colors, custom } = theme;
+  const { theme } = useAppTheme();
+  const { colors } = theme;
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
 
   const [step, setStep] = useState(1);
-  const totalSteps = 7;
+  const totalSteps = 8;
 
   // Step 1: Personal Details
-  const [name, setName] = useState('');
-  const [gender, setGender] = useState('Male');
+  const [name, setName] = useState(
+    () => user?.name || user?.displayName || profile?.displayName || ''
+  );
+  const [gender, setGender] = useState(
+    () => (profile?.gender ? String(profile.gender).toUpperCase() : 'MALE')
+  );
   const [age, setAge] = useState('24');
-  const [height, setHeight] = useState('175');
-  const [weight, setWeight] = useState('72');
+  const [height, setHeight] = useState(
+    () => (profile?.heightCm ? String(profile.heightCm) : '175')
+  );
+  const [weight, setWeight] = useState(
+    () => (profile?.weight || profile?.weightKg ? String(profile.weight || profile.weightKg) : '72')
+  );
 
   // Step 2: Workout Preferences
   const [workoutLocation, setWorkoutLocation] = useState('GYM');
   const [preferredWorkoutDays, setPreferredWorkoutDays] = useState(5);
   const [preferredWorkoutTime, setPreferredWorkoutTime] = useState('MORNING');
 
-  // Step 3: Dynamic Goals / Program
+  // Step 3a: Dynamic Goals / Program
   const [selectedProgram, setSelectedProgram] = useState(null);
 
-  // Step 4: Fitness Level
+  // Step 3b: Workout Plan
+  const [selectedWorkoutPlan, setSelectedWorkoutPlan] = useState(null);
+
+  // Step 5: Fitness Level
   const [experienceLevel, setExperienceLevel] = useState('INTERMEDIATE');
 
-  // Step 5: Diet & Budget
+  // Step 6: Diet & Budget
   const [dietType, setDietType] = useState('VEG');
   const [dailyBudgetInr, setDailyBudgetInr] = useState(200);
 
-  // Step 6: Subscription Gate
+  // Step 7: Subscription Gate
   const [isSubscriptionVerified, setIsSubscriptionVerified] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // Pre-fill user details if available from profile or user state
-  useEffect(() => {
-    const existingName = user?.name || user?.displayName || profile?.displayName || '';
-    if (existingName && !name) {
-      setName(existingName);
-    }
-    if (profile?.gender) setGender(profile.gender);
-    if (profile?.heightCm) setHeight(String(profile.heightCm));
-    if (profile?.weightKg) setWeight(String(profile.weightKg));
-  }, [user, profile]);
 
   // Validation functions per step
   const validateStep1 = () => {
@@ -112,19 +113,26 @@ export default function Onboarding() {
   };
 
   const validateStep4 = () => {
-    if (!experienceLevel) return 'Please select your lifting experience level.';
+    if (!selectedWorkoutPlan) {
+      return 'Please select a workout plan under your chosen program.';
+    }
     return '';
   };
 
   const validateStep5 = () => {
+    if (!experienceLevel) return 'Please select your lifting experience level.';
+    return '';
+  };
+
+  const validateStep6 = () => {
     if (!dietType) return 'Please select your dietary preference.';
     if (!dailyBudgetInr) return 'Please select your daily grocery / food budget.';
     return '';
   };
 
-  const validateStep6 = () => {
-    if (!isSubscriptionVerified) {
-      return 'An active FitMitra membership is required to proceed. Please subscribe to unlock your plan.';
+  const validateStep7 = () => {
+    if (selectedWorkoutPlan?.isPremium && !isSubscriptionVerified) {
+      return 'An active FitMitra membership is required for this Pro workout plan. Please subscribe to proceed.';
     }
     return '';
   };
@@ -168,6 +176,12 @@ export default function Onboarding() {
         setError(err);
         return;
       }
+    } else if (step === 7) {
+      const err = validateStep7();
+      if (err) {
+        setError(err);
+        return;
+      }
     }
 
     if (step < totalSteps) {
@@ -189,7 +203,7 @@ export default function Onboarding() {
     }
   };
 
-  // Final plan submission (Step 7)
+  // Final plan submission (Step 8)
   const handleFinalSubmit = async () => {
     const err1 = validateStep1();
     if (err1) {
@@ -197,10 +211,22 @@ export default function Onboarding() {
       setError(err1);
       return;
     }
-    const err6 = validateStep6();
-    if (err6) {
-      setStep(6);
-      setError(err6);
+    const err3 = validateStep3();
+    if (err3) {
+      setStep(3);
+      setError(err3);
+      return;
+    }
+    const err4 = validateStep4();
+    if (err4) {
+      setStep(4);
+      setError(err4);
+      return;
+    }
+    const err7 = validateStep7();
+    if (err7) {
+      setStep(7);
+      setError(err7);
       return;
     }
 
@@ -210,8 +236,8 @@ export default function Onboarding() {
 
     // Daily calorie & macro calculation
     let bmr = 10 * w + 6.25 * h - 5 * a;
-    if (gender === 'Male') bmr += 5;
-    else if (gender === 'Female') bmr -= 161;
+    if (gender === 'MALE' || gender === 'Male') bmr += 5;
+    else if (gender === 'FEMALE' || gender === 'Female') bmr -= 161;
     else bmr -= 80;
 
     const multiplier =
@@ -243,22 +269,32 @@ export default function Onboarding() {
           : Math.round(w);
     const safeTargetWeight = Math.min(300, Math.max(20, calculatedTargetWeight));
 
-    const dob = a ? new Date(new Date().getFullYear() - a, 0, 1).toISOString() : null;
-
     setError('');
     setLoading(true);
 
     try {
-      // 1. Update Profile on backend
-      await profileService.updateProfile({
+      // 1. Submit complete onboarding to backend
+      const onboardingPayload = {
+        gender: String(gender).toUpperCase(),
+        age: a,
         heightCm: h,
-        weightKg: w,
-        goal: selectedProgram?.goal || 'GENERAL_FITNESS',
+        weight: w,
+        selectedGoal: String(selectedProgram?._id || selectedProgram?.id),
+        selectedWorkoutPlan: String(selectedWorkoutPlan?._id || selectedWorkoutPlan?.id),
         experienceLevel: experienceLevel || 'INTERMEDIATE',
-        gender,
-        dateOfBirth: dob,
-        targetWeightKg: safeTargetWeight,
-      });
+        preferredWorkoutLocation: workoutLocation || 'GYM',
+        preferredWorkoutDays: Number(preferredWorkoutDays) === 6 ? 6 : 5,
+        preferredWorkoutTime: preferredWorkoutTime || 'MORNING',
+        dietType: dietType === 'NON_VEG' ? 'NON_VEG' : 'VEG',
+        dailyDietBudget: Number(dailyBudgetInr) || 0,
+        notificationSettings: {
+          workoutReminders: true,
+          pointsAlerts: true,
+          offersAndNews: true,
+        },
+      };
+
+      await profileService.completeOnboarding(onboardingPayload);
 
       // 2. Save complete state to local user cache
       const currentUser = (await authService.getLocalUser()) || {};
@@ -270,25 +306,28 @@ export default function Onboarding() {
         fitnessGoal: selectedProgram?.goal || 'GENERAL_FITNESS',
         programId: selectedProgram?._id || selectedProgram?.id || null,
         programName: selectedProgram?.name || selectedProgram?.title || null,
+        workoutPlanId: selectedWorkoutPlan?._id || selectedWorkoutPlan?.id || null,
+        workoutPlanName: selectedWorkoutPlan?.name || selectedWorkoutPlan?.title || null,
         workoutLocation,
-        preferredWorkoutDays,
+        preferredWorkoutDays: Number(preferredWorkoutDays) === 6 ? 6 : 5,
         preferredWorkoutTime,
         experienceLevel,
-        dietType,
-        dailyBudgetInr,
+        dietType: dietType === 'NON_VEG' ? 'NON_VEG' : 'VEG',
+        dailyBudgetInr: Number(dailyBudgetInr) || 0,
         age: a,
         height: h,
         weight: w,
         currentWeight: w,
         startingWeight: w,
         goalWeight: safeTargetWeight,
-        gender,
+        gender: String(gender).toUpperCase(),
         targetCal,
         targetProtein,
         targetCarbs,
         targetFats,
       };
 
+      await clearUserCache();
       await authService.saveLocalUser(updatedUser);
       await authService.setOnboardedStatus(true, true);
       emitDbUpdate();
@@ -321,27 +360,33 @@ export default function Onboarding() {
         return {
           category: 'Goal',
           title: 'Choose Your Program',
-          subtitle: 'Select the training program tailored to your primary fitness ambition.',
+          subtitle: 'Select the primary training program that aligns with your fitness ambition.',
         };
       case 4:
+        return {
+          category: 'Plan',
+          title: 'Select Workout Plan',
+          subtitle: 'Pick the workout split and schedule under your selected fitness program.',
+        };
+      case 5:
         return {
           category: 'Experience',
           title: 'Fitness Level',
           subtitle: 'Select your lifting background so we can modulate exercise difficulty, set volume, and recovery cycles.',
         };
-      case 5:
+      case 6:
         return {
           category: 'Nutrition',
           title: 'Diet & Budget',
           subtitle: 'We calibrate daily meal suggestions and grocery splits matching your nutrition preferences and budget.',
         };
-      case 6:
+      case 7:
         return {
           category: 'Membership',
           title: 'FitMitra Pro Access',
           subtitle: 'Unlock tailored workout programs, smart AI coaching, and macro targets with an active membership.',
         };
-      case 7:
+      case 8:
         return {
           category: 'Review',
           title: 'Review & Create Plan',
@@ -430,24 +475,38 @@ export default function Onboarding() {
           />
         )}
 
-        {/* Step 3: Dynamic Goals Selection */}
+        {/* Step 3: Dynamic Goals / Program Selection */}
         {step === 3 && (
           <StepGoalSelection
             selectedProgram={selectedProgram}
-            setSelectedProgram={setSelectedProgram}
+            setSelectedProgram={(prog) => {
+              setSelectedProgram(prog);
+              setSelectedWorkoutPlan(null);
+            }}
           />
         )}
 
-        {/* Step 4: Fitness Level */}
+        {/* Step 4: Workout Plan Selection under Selected Program */}
         {step === 4 && (
+          <StepWorkoutPlanSelection
+            selectedProgram={selectedProgram}
+            selectedWorkoutPlan={selectedWorkoutPlan}
+            setSelectedWorkoutPlan={setSelectedWorkoutPlan}
+            preferredWorkoutDays={preferredWorkoutDays}
+            preferredWorkoutLocation={workoutLocation}
+          />
+        )}
+
+        {/* Step 5: Fitness Level */}
+        {step === 5 && (
           <StepFitnessLevel
             experienceLevel={experienceLevel}
             setExperienceLevel={setExperienceLevel}
           />
         )}
 
-        {/* Step 5: Diet & Budget */}
-        {step === 5 && (
+        {/* Step 6: Diet & Budget */}
+        {step === 6 && (
           <StepDietBudget
             dietType={dietType}
             setDietType={setDietType}
@@ -456,16 +515,17 @@ export default function Onboarding() {
           />
         )}
 
-        {/* Step 6: Subscription Verification Gate */}
-        {step === 6 && (
+        {/* Step 7: Subscription Verification Gate */}
+        {step === 7 && (
           <StepSubscriptionGate
             isVerified={isSubscriptionVerified}
             setIsVerified={setIsSubscriptionVerified}
+            selectedWorkoutPlan={selectedWorkoutPlan}
           />
         )}
 
-        {/* Step 7: Review & Finalize Plan */}
-        {step === 7 && (
+        {/* Step 8: Review & Finalize Plan */}
+        {step === 8 && (
           <StepReviewPlan
             name={name}
             gender={gender}
@@ -476,6 +536,7 @@ export default function Onboarding() {
             preferredWorkoutDays={preferredWorkoutDays}
             preferredWorkoutTime={preferredWorkoutTime}
             selectedProgram={selectedProgram}
+            selectedWorkoutPlan={selectedWorkoutPlan}
             experienceLevel={experienceLevel}
             dietType={dietType}
             dailyBudgetInr={dailyBudgetInr}
@@ -486,7 +547,7 @@ export default function Onboarding() {
           />
         )}
 
-        {/* Footer Navigation Controls (Steps 1 to 6) */}
+        {/* Footer Navigation Controls (Steps 1 to 7) */}
         {step < totalSteps && (
           <View style={styles.footerControls}>
             {step > 1 ? (
@@ -503,15 +564,15 @@ export default function Onboarding() {
             <View style={styles.continueBtnWrap}>
               <AppButton
                 label={
-                  step === 6
-                    ? isSubscriptionVerified
-                      ? 'Continue to Review'
-                      : 'Subscription Required'
+                  step === 7
+                    ? selectedWorkoutPlan?.isPremium && !isSubscriptionVerified
+                      ? 'Subscription Required'
+                      : 'Continue to Review'
                     : 'Continue'
                 }
                 onPress={handleNext}
                 mode="contained"
-                disabled={loading || (step === 6 && !isSubscriptionVerified)}
+                disabled={loading || (step === 7 && selectedWorkoutPlan?.isPremium && !isSubscriptionVerified)}
                 loading={loading}
               />
             </View>
