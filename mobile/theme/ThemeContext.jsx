@@ -36,10 +36,18 @@ export function AppThemeProvider({ language, children }) {
   }, []);
 
   useEffect(() => {
-    if (typeof Appearance.setColorScheme === 'function') {
-      Appearance.setColorScheme(preference === 'system' ? null : preference);
+    try {
+      if (typeof Appearance.setColorScheme === 'function') {
+        if (preference === 'light' || preference === 'dark') {
+          Appearance.setColorScheme(preference);
+        } else if (deviceScheme) {
+          Appearance.setColorScheme(deviceScheme);
+        }
+      }
+    } catch {
+      // Safe no-op on platforms where native appearance module throws
     }
-  }, [preference]);
+  }, [preference, deviceScheme]);
 
   const setPreference = useCallback((next) => {
     if (next !== 'light' && next !== 'dark' && next !== 'system') return;

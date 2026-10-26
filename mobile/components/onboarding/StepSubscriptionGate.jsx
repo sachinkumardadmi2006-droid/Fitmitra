@@ -29,6 +29,7 @@ import ErrorState from '../ui/ErrorState';
 export default function StepSubscriptionGate({
   isVerified,
   setIsVerified,
+  selectedProgram,
   selectedWorkoutPlan,
 }) {
   const { theme, isDark } = useAppTheme();
@@ -85,7 +86,12 @@ export default function StepSubscriptionGate({
     currentSub &&
     (currentSub.status === 'ACTIVE' || currentSub.status === 'TRIALING')
   );
-  const isFreePlan = Boolean(selectedWorkoutPlan && !selectedWorkoutPlan.isPremium);
+
+  const isPaidSelection = Boolean(
+    selectedWorkoutPlan?.isPremium ||
+    selectedProgram?.isPremium
+  );
+  const isFreePlan = !isPaidSelection;
 
   // Sync verified state upward whenever subscription query resolves or free plan selected
   useEffect(() => {
@@ -104,7 +110,7 @@ export default function StepSubscriptionGate({
         if (s && (s.status === 'ACTIVE' || s.status === 'TRIALING')) {
           return true;
         }
-      } catch (_) {}
+      } catch (_) { }
       if (attempt < 3) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
@@ -294,6 +300,104 @@ export default function StepSubscriptionGate({
                 ]}
               >
                 Ready to review and generate your tailored workout plan.
+              </Text>
+            </View>
+          </View>
+        </AppCard>
+      </View>
+    );
+  }
+
+  // Free Plan View (No Subscription Required)
+  if (isFreePlan) {
+    const planName =
+      selectedWorkoutPlan?.name ||
+      selectedWorkoutPlan?.title ||
+      selectedProgram?.name ||
+      'Free Workout Plan';
+
+    return (
+      <View style={styles.container}>
+        <AppCard
+          variant="elevated"
+          style={[
+            styles.activeCard,
+            {
+              backgroundColor: isDark ? 'rgba(34, 197, 94, 0.12)' : 'rgba(34, 197, 94, 0.08)',
+              borderColor: isDark ? '#4ADE80' : '#22C55E',
+            },
+          ]}
+          padded={false}
+        >
+          <View style={styles.activeCardPadding}>
+            <View style={styles.activeHeader}>
+              <View
+                style={[
+                  styles.activeIconWrap,
+                  { backgroundColor: isDark ? '#22C55E' : '#16A34A' },
+                ]}
+              >
+                <CheckCircle2 size={24} color="#FFFFFF" />
+              </View>
+              <View
+                style={[
+                  styles.verifiedBadge,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: isDark ? '#4ADE80' : '#22C55E',
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <Sparkles
+                  size={14}
+                  color={isDark ? '#4ADE80' : '#15803D'}
+                />
+                <Text
+                  style={[
+                    styles.verifiedBadgeText,
+                    { color: isDark ? '#4ADE80' : '#15803D' },
+                  ]}
+                >
+                  FREE PLAN SELECTED
+                </Text>
+              </View>
+            </View>
+
+            <Text
+              style={[
+                styles.activeTitle,
+                { color: colors.onSurface },
+              ]}
+            >
+              No Subscription Required
+            </Text>
+            <Text
+              style={[
+                styles.activeDesc,
+                { color: colors.onSurfaceVariant },
+              ]}
+            >
+              You have selected {planName}, which is completely free. After completing onboarding, you will directly enter your dashboard!
+            </Text>
+
+            <View
+              style={[
+                styles.activeFeatureRow,
+                { borderTopColor: colors.outlineVariant },
+              ]}
+            >
+              <CheckCircle2
+                size={16}
+                color={isDark ? '#4ADE80' : '#16A34A'}
+              />
+              <Text
+                style={[
+                  styles.activeFeatureText,
+                  { color: colors.onSurface },
+                ]}
+              >
+                {'Tap "Continue to Review" below to review and create your plan.'}
               </Text>
             </View>
           </View>

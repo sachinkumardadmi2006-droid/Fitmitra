@@ -22,10 +22,12 @@ import {
 } from '../../components/auth';
 import { loginHero } from '../../components/auth/authImages';
 import { useGoogleSignIn } from '../../hooks/useGoogleSignIn';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Login() {
   const router = useRouter();
   const { theme } = useAppTheme();
+  const { syncSession, retrySession } = useAuth();
   const { signIn: googleSignIn, loading: googleLoading, error: googleError } = useGoogleSignIn();
 
   const [email, setEmail] = useState('');
@@ -75,6 +77,12 @@ export default function Login() {
 
     try {
       const result = await authService.loginWithEmail(email.trim(), password);
+      if (syncSession) {
+        await syncSession(result.user, result.profile, result.isOnboarded);
+      } else {
+        await retrySession?.();
+      }
+
       // Route guard in _layout handles destination based on isOnboarded
       if (result?.isOnboarded) {
         router.replace('/(tabs)');

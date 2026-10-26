@@ -32,11 +32,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { spacing, radius } from '../../theme/tokens';
 import { authService, profileService } from '../../services';
+import { api } from '../../services/api';
 import { subscriptionService } from '../../services/subscriptionService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { initDb } from '../../utils/db';
 import { t } from '../../utils/i18n';
+import { emitDbUpdate } from '../../utils/events';
 
 const GOALS = ['Muscle Gain', 'Fat Loss', 'Strength', 'General Fitness'];
 const EXPERIENCES = ['Beginner', 'Intermediate', 'Advanced'];
@@ -65,6 +67,8 @@ export default function ProfileTab() {
   const [experience, setExperience] = useState('Intermediate');
   const [activity, setActivity] = useState('Moderately Active');
   const [language, setLanguage] = useState('en');
+  const [workoutPlan, setWorkoutPlan] = useState('');
+  const [preferredDays, setPreferredDays] = useState(5);
 
   // Live subscription query
   const subQuery = useQuery({
@@ -89,40 +93,57 @@ export default function ProfileTab() {
       const u = await authService.getLocalUser();
       setUser(u || {});
 
+      if (u) {
+        setName(u.displayName || u.name || '');
+        if (u.age) setAge(String(u.age));
+        setHeight((prev) => (!prev && u.height ? String(u.height) : prev));
+        setWeight((prev) => (!prev && (u.weight || u.currentWeight) ? String(u.weight || u.currentWeight) : prev));
+        if (u.fitnessGoal) setGoal(u.fitnessGoal);
+        if (u.experienceLevel) setExperience(u.experienceLevel);
+        if (u.workoutPlanName) setWorkoutPlan(u.workoutPlanName);
+        if (u.preferredWorkoutDays) setPreferredDays(u.preferredWorkoutDays);
+        setActivity(u.activityLevel || 'Moderately Active');
+        setLanguage(u.language || 'en');
+      }
+
       try {
         const p = await profileService.getProfile();
         if (p) {
           if (p.heightCm) setHeight(String(p.heightCm));
-          if (p.weightKg) setWeight(String(p.weightKg));
-          if (p.goal) {
-            setGoal(
-              p.goal === 'MUSCLE_GAIN'
-                ? 'Muscle Gain'
-                : p.goal === 'WEIGHT_LOSS'
-                ? 'Fat Loss'
-                : 'General Fitness'
-            );
+          if (p.weight || p.weightKg) setWeight(String(p.weight || p.weightKg));
+          if (p.age) setAge(String(p.age));
+          if (p.preferredWorkoutDays) setPreferredDays(p.preferredWorkoutDays);
+
+          if (p.selectedGoal || p.goal) {
+            const goalObj = p.selectedGoal;
+            const chosenGoal =
+              (typeof goalObj === 'object' && (goalObj?.title || goalObj?.name)) ||
+              u?.programName ||
+              p.goal ||
+              u?.fitnessGoal;
+            if (chosenGoal) {
+              setGoal(chosenGoal);
+            }
           }
+
+          if (p.selectedWorkoutPlan) {
+            const planObj = p.selectedWorkoutPlan;
+            const planName = typeof planObj === 'object' ? (planObj?.name || planObj?.title) : String(planObj);
+            if (planName) setWorkoutPlan(planName);
+          }
+
           if (p.experienceLevel) {
+            const expStr = String(p.experienceLevel).toUpperCase();
             setExperience(
-              p.experienceLevel === 'BEGINNER'
+              expStr === 'BEGINNER'
                 ? 'Beginner'
-                : p.experienceLevel === 'ADVANCED'
-                ? 'Advanced'
-                : 'Intermediate'
+                : expStr === 'ADVANCED'
+                  ? 'Advanced'
+                  : 'Intermediate'
             );
           }
         }
-      } catch (_) {}
-
-      if (u) {
-        setName(u.name || '');
-        setAge(u.age ? String(u.age) : '');
-        setHeight((prev) => (!prev && u.height ? String(u.height) : prev));
-        setWeight((prev) => (!prev && (u.weight || u.currentWeight) ? String(u.weight || u.currentWeight) : prev));
-        setActivity(u.activityLevel || 'Moderately Active');
-        setLanguage(u.language || 'en');
-      }
+      } catch (_) { }
     } catch (e) {
       console.warn('Error loading profile:', e);
     } finally {
@@ -158,36 +179,38 @@ export default function ProfileTab() {
       const hNum = parseInt(height, 10);
       const wNum = parseFloat(weight);
 
-      const goalEnum =
-        goal === 'Fat Loss'
-          ? 'WEIGHT_LOSS'
-          : goal === 'Muscle Gain'
-          ? 'MUSCLE_GAIN'
-          : 'GENERAL_FITNESS';
-
       const expEnum =
         experience === 'Beginner'
           ? 'BEGINNER'
           : experience === 'Advanced'
-          ? 'ADVANCED'
-          : 'INTERMEDIATE';
+            ? 'ADVANCED'
+            : 'INTERMEDIATE';
 
       // Update server profile
       try {
         await profileService.updateProfile({
           heightCm: hNum || undefined,
+          weight: wNum || undefined,
           weightKg: wNum || undefined,
-          goal: goalEnum,
+          age: parseInt(age, 10) || undefined,
           experienceLevel: expEnum,
         });
       } catch (err) {
         console.warn('Server profile update error:', err.message);
       }
 
+      // Sync user displayName to server
+      try {
+        await api.post('/auth/sync', {
+          displayName: name.trim(),
+        });
+      } catch (_) { }
+
       // Update local storage
       const updated = {
         ...user,
         name: name.trim(),
+        displayName: name.trim(),
         age: parseInt(age, 10) || user?.age,
         height: hNum || user?.height,
         weight: wNum || user?.weight,
@@ -201,6 +224,7 @@ export default function ProfileTab() {
       await authService.saveLocalUser(updated);
       setUser(updated);
       refreshProfile();
+      emitDbUpdate();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
@@ -308,7 +332,7 @@ export default function ProfileTab() {
               { color: theme.colors.onTertiaryContainer },
             ]}
           >
-            {user.name ? user.name[0].toUpperCase() : 'U'}
+            {(user?.displayName || user?.name || name || 'A')[0].toUpperCase()}
           </Text>
         </View>
         <View style={{ flex: 1 }}>
@@ -319,7 +343,7 @@ export default function ProfileTab() {
                 { color: theme.colors.onSurface },
               ]}
             >
-              {user.name || 'Athlete'}
+              {user?.displayName || user?.name || name || 'Athlete'}
             </Text>
             {isPremiumUser ? (
               <View
@@ -356,13 +380,25 @@ export default function ProfileTab() {
               </View>
             )}
           </View>
+          {workoutPlan ? (
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: theme.custom?.primaryStrong || theme.colors.primary,
+                marginTop: 2,
+              }}
+            >
+              🏋️ {workoutPlan} {preferredDays ? `(${preferredDays} days/wk)` : ''}
+            </Text>
+          ) : null}
           <Text
             style={[
               styles.heroEmail,
               { color: theme.colors.onSurfaceVariant },
             ]}
           >
-            {user.email || user.phone || 'fitmitra@app'}
+            {user?.email || user?.phone || 'fitmitra@app'}
           </Text>
         </View>
       </View>
@@ -673,10 +709,10 @@ export default function ProfileTab() {
             { color: theme.colors.onSurfaceVariant },
           ]}
         >
-          Primary Goal
+          Selected Goal / Program
         </Text>
         <View style={styles.chipsWrap}>
-          {GOALS.map((g) => (
+          {(goal && !GOALS.includes(goal) ? [goal, ...GOALS] : GOALS).map((g) => (
             <Pressable
               key={g}
               style={[

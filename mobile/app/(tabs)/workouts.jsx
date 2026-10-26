@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   ScrollView,
   RefreshControl,
 } from 'react-native';
@@ -11,16 +10,11 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Dumbbell,
-  Play,
   RotateCcw,
   CheckCircle2,
   Clock,
-  Flame,
-  Calendar,
   Lock,
   ChevronRight,
-  TrendingUp,
-  Filter,
   Sparkles,
   Award,
   Zap,
@@ -28,13 +22,14 @@ import {
 import { Chip } from 'react-native-paper';
 import { workoutService, normalizeTodayWorkout } from '../../services/workoutService';
 import { queryKeys } from '../../constants/queryKeys';
+import { useAuth } from '../../context/AuthContext';
 import { TopBar } from '../../components/common/TopBar';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from '../../components/ui/AppCard';
 import AppButton from '../../components/ui/AppButton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
-import Skeleton from '../../components/ui/Skeleton';
+import { Skeleton } from '../../components/ui/Skeleton';
 
 const GOAL_FILTERS = [
   { key: 'ALL', label: 'All' },
@@ -47,6 +42,7 @@ export default function WorkoutsScreen() {
   const router = useRouter();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
+  const { isAuthenticated } = useAuth();
 
   const [selectedFilter, setSelectedFilter] = useState('ALL');
 
@@ -57,6 +53,7 @@ export default function WorkoutsScreen() {
       const res = await workoutService.getTodayWorkout();
       return res ? normalizeTodayWorkout(res) : null;
     },
+    enabled: Boolean(isAuthenticated),
     staleTime: 60 * 1000,
   });
 
@@ -68,6 +65,7 @@ export default function WorkoutsScreen() {
       const progData = res?.data || res;
       return progData?.program ? progData : null;
     },
+    enabled: Boolean(isAuthenticated),
     staleTime: 60 * 1000,
   });
 
@@ -88,6 +86,7 @@ export default function WorkoutsScreen() {
         ? res
         : [];
     },
+    enabled: Boolean(isAuthenticated),
     staleTime: 60 * 1000,
   });
 
@@ -104,6 +103,7 @@ export default function WorkoutsScreen() {
         ? res
         : [];
     },
+    enabled: Boolean(isAuthenticated),
     staleTime: 60 * 1000,
   });
 
@@ -121,11 +121,6 @@ export default function WorkoutsScreen() {
     currentProgramQuery.isRefetching ||
     programsQuery.isRefetching ||
     historyQuery.isRefetching;
-
-  const errorMessage =
-    todayQuery.isError && programsQuery.isError
-      ? 'Failed to load workouts. Pull down to retry.'
-      : null;
 
   const onRefresh = useCallback(async () => {
     await Promise.all([
@@ -197,7 +192,7 @@ export default function WorkoutsScreen() {
                   <View style={[styles.statusTag, { backgroundColor: colors.primaryContainer }]}>
                     <CheckCircle2 size={13} color={colors.onPrimaryContainer} />
                     <Text style={[styles.statusTagText, { color: colors.onPrimaryContainer }]}>
-                      TODAY'S WORKOUT COMPLETED
+                      {"TODAY'S WORKOUT COMPLETED"}
                     </Text>
                   </View>
                 ) : isRestDay ? (
@@ -218,7 +213,7 @@ export default function WorkoutsScreen() {
                   <View style={[styles.statusTag, { backgroundColor: colors.secondaryContainer }]}>
                     <Dumbbell size={13} color={colors.onSecondaryContainer} />
                     <Text style={[styles.statusTagText, { color: colors.onSecondaryContainer }]}>
-                      TODAY'S ROUTINE
+                      {"TODAY'S ROUTINE"}
                     </Text>
                   </View>
                 )}

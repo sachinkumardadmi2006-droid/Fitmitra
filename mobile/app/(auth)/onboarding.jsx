@@ -33,7 +33,7 @@ export default function Onboarding() {
   const { theme } = useAppTheme();
   const { colors } = theme;
   const insets = useSafeAreaInsets();
-  const { user, profile } = useAuth();
+  const { user, profile, syncSession, refreshProfile } = useAuth();
 
   const [step, setStep] = useState(1);
   const totalSteps = 8;
@@ -131,9 +131,6 @@ export default function Onboarding() {
   };
 
   const validateStep7 = () => {
-    if (selectedWorkoutPlan?.isPremium && !isSubscriptionVerified) {
-      return 'An active FitMitra membership is required for this Pro workout plan. Please subscribe to proceed.';
-    }
     return '';
   };
 
@@ -275,6 +272,7 @@ export default function Onboarding() {
     try {
       // 1. Submit complete onboarding to backend
       const onboardingPayload = {
+        name: name.trim(),
         gender: String(gender).toUpperCase(),
         age: a,
         heightCm: h,
@@ -294,7 +292,7 @@ export default function Onboarding() {
         },
       };
 
-      await profileService.completeOnboarding(onboardingPayload);
+      const result = await profileService.completeOnboarding(onboardingPayload);
 
       // 2. Save complete state to local user cache
       const currentUser = (await authService.getLocalUser()) || {};
@@ -332,8 +330,25 @@ export default function Onboarding() {
       await authService.setOnboardedStatus(true, true);
       emitDbUpdate();
 
-      // 3. Route to main application tabs
-      router.replace('/(tabs)');
+      if (syncSession) {
+        await syncSession(updatedUser, result?.profile, true);
+      } else {
+        await refreshProfile?.();
+      }
+
+      // 3. Route: directly to Home if Free / active, else to Subscription screen (/premium)
+      const isPaidSelection = Boolean(
+        selectedWorkoutPlan?.isPremium ||
+        selectedProgram?.isPremium
+      );
+
+      const isSubscribed = Boolean(isSubscriptionVerified || currentUser?.isPremium);
+
+      if (isPaidSelection && !isSubscribed) {
+        router.replace('/premium');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (e) {
       console.warn('[Onboarding] Error submitting profile plan:', e?.message || e);
       setError(e?.message || 'Failed to save your plan. Please check your connection and retry.');
@@ -383,8 +398,8 @@ export default function Onboarding() {
       case 7:
         return {
           category: 'Membership',
-          title: 'FitMitra Pro Access',
-          subtitle: 'Unlock tailored workout programs, smart AI coaching, and macro targets with an active membership.',
+          title: 'Membership & Access',
+          subtitle: 'Review your access level or unlock tailored Pro workout programs, AI coaching, and macro targets.',
         };
       case 8:
         return {
@@ -520,6 +535,7 @@ export default function Onboarding() {
           <StepSubscriptionGate
             isVerified={isSubscriptionVerified}
             setIsVerified={setIsSubscriptionVerified}
+            selectedProgram={selectedProgram}
             selectedWorkoutPlan={selectedWorkoutPlan}
           />
         )}
@@ -563,16 +579,10 @@ export default function Onboarding() {
 
             <View style={styles.continueBtnWrap}>
               <AppButton
-                label={
-                  step === 7
-                    ? selectedWorkoutPlan?.isPremium && !isSubscriptionVerified
-                      ? 'Subscription Required'
-                      : 'Continue to Review'
-                    : 'Continue'
-                }
+                label={step === 7 ? 'Continue to Review' : 'Continue'}
                 onPress={handleNext}
                 mode="contained"
-                disabled={loading || (step === 7 && selectedWorkoutPlan?.isPremium && !isSubscriptionVerified)}
+                disabled={loading}
                 loading={loading}
               />
             </View>

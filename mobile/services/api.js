@@ -144,25 +144,28 @@ const request = async (path, options = {}) => {
     const response = await fetch(fullUrl, fetchOptions);
     clearTimeout(timeoutId);
 
-    // Automatic token refresh on 401 (retry eligible requests at most once)
-    if (response.status === 401 && !options._retry && !isAuthEndpoint) {
-      try {
-        const newToken = await refreshAuthSession();
-        if (newToken) {
-          return await request(path, {
-            ...options,
-            _retry: true,
-            headers: {
-              ...(options.headers || {}),
-              Authorization: `Bearer ${newToken}`,
-            },
-          });
+    // Automatic token refresh on 401 (only if a token existed and is not an auth endpoint)
+    if (response.status === 401 && !options._retry && !isAuthEndpoint && token) {
+      const refreshToken = await getRefreshToken();
+      if (refreshToken) {
+        try {
+          const newToken = await refreshAuthSession();
+          if (newToken) {
+            return await request(path, {
+              ...options,
+              _retry: true,
+              headers: {
+                ...(options.headers || {}),
+                Authorization: `Bearer ${newToken}`,
+              },
+            });
+          }
+        } catch (refreshErr) {
+          console.warn('[FitMitra API] Session refresh failed, logging out:', refreshErr.message);
+          const expiredErr = new Error('Session expired. Please log in again.');
+          expiredErr.status = 401;
+          throw expiredErr;
         }
-      } catch (refreshErr) {
-        console.warn('[FitMitra API] Session refresh failed, logging out:', refreshErr.message);
-        const expiredErr = new Error('Session expired. Please log in again.');
-        expiredErr.status = 401;
-        throw expiredErr;
       }
     }
 

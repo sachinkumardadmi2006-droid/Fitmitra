@@ -38,7 +38,7 @@ export default function MoreHub() {
   const { storeEnabled, shippingEnabled } = useAppConfig();
 
   const user = {
-    displayName: authUser?.displayName || 'FitMitra Athlete',
+    displayName: authUser?.displayName || authUser?.name || 'FitMitra Athlete',
     email: authUser?.email || 'athlete@fitmitra.com',
   };
 

@@ -9,6 +9,7 @@ import {
   Calendar,
   Layers,
   Sparkles,
+  Crown,
 } from 'lucide-react-native';
 import { workoutService } from '../../services/workoutService';
 import { queryKeys } from '../../constants/queryKeys';
@@ -107,6 +108,8 @@ export default function StepGoalSelection({
           const isSelected = selectedProgram?.id === progId || selectedProgram?._id === progId;
           const GoalIcon = getGoalIcon(prog.goal);
 
+          const isPaid = Boolean(prog.isPremium);
+
           return (
             <Pressable
               key={progId}
@@ -158,18 +161,48 @@ export default function StepGoalSelection({
                 </View>
               </View>
 
-              <Text
-                style={[
-                  styles.programTitle,
-                  {
-                    color: isSelected
-                      ? colors.onPrimaryContainer
-                      : colors.onSurface,
-                  },
-                ]}
-              >
-                {prog.name || prog.title}
-              </Text>
+              <View style={styles.titleRow}>
+                <Text
+                  style={[
+                    styles.programTitle,
+                    {
+                      color: isSelected
+                        ? colors.onPrimaryContainer
+                        : colors.onSurface,
+                    },
+                  ]}
+                >
+                  {prog.name || prog.title}
+                </Text>
+
+                {isPaid ? (
+                  <View style={[styles.badge, styles.proBadge]}>
+                    <Crown size={12} color="#FFF" />
+                    <Text style={styles.proBadgeText}>PAID</Text>
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(74, 222, 128, 0.15)'
+                          : 'rgba(34, 197, 94, 0.15)',
+                        borderColor: isDark ? '#4ADE80' : '#22C55E',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.freeBadgeText,
+                        { color: isDark ? '#4ADE80' : '#15803D' },
+                      ]}
+                    >
+                      Free
+                    </Text>
+                  </View>
+                )}
+              </View>
 
               {prog.description ? (
                 <Text
@@ -326,11 +359,40 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1.5,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 4,
+  },
   programTitle: {
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.3,
-    marginBottom: 4,
+    flex: 1,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  proBadge: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#9333EA',
+  },
+  proBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  freeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   programDesc: {
     fontSize: 13,

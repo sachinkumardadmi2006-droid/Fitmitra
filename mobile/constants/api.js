@@ -1,15 +1,24 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-const DEV_MACHINE_LAN_IP = '10.171.199.53';
+const DEV_MACHINE_LAN_IP = '152.57.52.125';
 
 const getBaseUrl = () => {
   if (Platform.OS === 'web') {
     return 'http://localhost:5000/api/v1';
   }
 
+  // 1. If explicit EXPO_PUBLIC_API_URL is configured in .env with a valid non-localhost URL, prioritize it
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    const envUrl = process.env.EXPO_PUBLIC_API_URL.trim();
+    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      console.log('[FitMitra API] Using EXPO_PUBLIC_API_URL:', envUrl);
+      return envUrl;
+    }
+  }
+
   if (__DEV__) {
-    // 1. In Expo Go on physical device, debuggerHost/hostUri contains the dev machine IP
+    // 2. In Expo Go on physical device (LAN mode), debuggerHost/hostUri contains the dev machine IP
     const hostUri =
       Constants.expoConfig?.hostUri ||
       Constants.manifest2?.extra?.expoGo?.debuggerHost ||
@@ -22,26 +31,23 @@ const getBaseUrl = () => {
       const parts = sanitized.split(':');
       const ip = parts[0];
 
-      if (ip && ip !== 'localhost' && ip !== '127.0.0.1' && ip !== 'http' && ip !== 'https') {
+      // Only use hostUri if it is a real numeric IPv4 address (LAN mode).
+      // When running in tunnel mode (expo start --tunnel), hostUri is "*.exp.direct" or "*.ngrok"
+      // which DOES NOT forward port 5000 and causes all network requests to hang!
+      const isNumericIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
+      if (isNumericIPv4 && ip !== '127.0.0.1') {
         const resolved = `http://${ip}:5000/api/v1`;
         console.log('[FitMitra API] Resolved from Expo hostUri:', resolved);
         return resolved;
       }
     }
-  }
 
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    console.log('[FitMitra API] Using EXPO_PUBLIC_API_URL:', process.env.EXPO_PUBLIC_API_URL);
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
-
-  if (__DEV__) {
-    // 2. Android emulator fallback
-    if (Platform.OS === 'android') {
+    // 3. Android emulator fallback
+    if (Platform.OS === 'android' && !Constants.isDevice) {
       return 'http://10.0.2.2:5000/api/v1';
     }
 
-    // 3. Physical Device on Wi-Fi fallback (use actual PC LAN IP)
+    // 4. Physical Device on Wi-Fi fallback (use actual PC LAN IP)
     return `http://${DEV_MACHINE_LAN_IP}:5000/api/v1`;
   }
 

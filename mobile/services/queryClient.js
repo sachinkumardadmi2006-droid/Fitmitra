@@ -18,7 +18,13 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
-      retry: 1,
+      retry: (failureCount, error) => {
+        // Never retry unauthorized or forbidden requests to prevent infinite loops
+        if (error?.status === 401 || error?.status === 403) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });

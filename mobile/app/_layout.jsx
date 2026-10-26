@@ -93,8 +93,9 @@ function RootNavigator() {
         router.replace('/(auth)/onboarding');
       }
     } else {
-      // Authenticated and onboarded -> if at entry/auth/onboarding, direct to main tabs
-      if (isAtRoot || inAuthGroup || inOnboarding) {
+      // Authenticated and onboarded -> if at entry/auth/onboarding, direct to main tabs (allow otp verification)
+      const isOtpScreen = segments[1] === 'otp' || segments[0] === 'otp';
+      if ((isAtRoot || inAuthGroup || inOnboarding) && !isOtpScreen) {
         router.replace('/(tabs)');
       }
     }

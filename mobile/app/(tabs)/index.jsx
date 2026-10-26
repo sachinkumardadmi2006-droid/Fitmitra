@@ -55,6 +55,7 @@ export default function HomeDashboard() {
 
   const userName =
     user?.displayName?.split(' ')[0] ||
+    user?.name?.split(' ')[0] ||
     user?.email?.split('@')[0] ||
     'Athlete';
 

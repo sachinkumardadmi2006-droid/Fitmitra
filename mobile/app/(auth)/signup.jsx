@@ -23,10 +23,12 @@ import {
 } from '../../components/auth';
 import { signupHero } from '../../components/auth/authImages';
 import { useGoogleSignIn } from '../../hooks/useGoogleSignIn';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Signup() {
   const router = useRouter();
   const { theme } = useAppTheme();
+  const { syncSession, retrySession } = useAuth();
   const { signIn: googleSignIn, loading: googleLoading, error: googleError } = useGoogleSignIn();
 
   const [name, setName] = useState('');
@@ -102,7 +104,12 @@ export default function Signup() {
     setError('');
     setLoading(true);
     try {
-      await authService.signupWithEmail(name.trim(), email.trim(), password);
+      const result = await authService.signupWithEmail(name.trim(), email.trim(), password);
+      if (syncSession) {
+        await syncSession(result.user, result.profile, false);
+      } else {
+        await retrySession?.();
+      }
       // New user accounts proceed to onboarding wizard
       router.replace('/(auth)/onboarding');
     } catch (err) {

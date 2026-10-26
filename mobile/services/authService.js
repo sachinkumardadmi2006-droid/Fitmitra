@@ -70,14 +70,22 @@ export const authService = {
       }
 
       // Check onboarding state from server profile or user biometrics
-      const profile = user?.profile;
+      let profile = result?.profile || user?.profile;
+      if (!profile) {
+        try {
+          profile = await api.get('/profiles/me');
+        } catch (_) {}
+      }
+
       const hasBiometrics = Boolean(
         profile?.heightCm &&
         (profile?.weight !== undefined || profile?.weightKg !== undefined) &&
         (profile?.selectedGoal || profile?.goal) &&
         profile?.selectedWorkoutPlan
       );
-      if (hasBiometrics) {
+      const isOnboarded = Boolean(user?.isOnboarded || hasBiometrics);
+
+      if (isOnboarded) {
         await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
       } else {
         await AsyncStorage.removeItem(ONBOARDED_KEY);
@@ -86,7 +94,8 @@ export const authService = {
       emitDbUpdate();
       return {
         user,
-        isOnboarded: hasBiometrics,
+        profile,
+        isOnboarded,
       };
     } catch (err) {
       throw new Error(formatAuthError(err));
@@ -131,6 +140,7 @@ export const authService = {
       emitDbUpdate();
       return {
         user,
+        profile: result?.profile,
         isOnboarded: false,
       };
     } catch (err) {
@@ -262,14 +272,22 @@ export const authService = {
       }
 
       // Check onboarding state from server profile or user biometrics
-      const gProfile = user?.profile;
+      let gProfile = result?.profile || user?.profile;
+      if (!gProfile) {
+        try {
+          gProfile = await api.get('/profiles/me');
+        } catch (_) {}
+      }
+
       const hasBiometrics = Boolean(
         gProfile?.heightCm &&
         (gProfile?.weight !== undefined || gProfile?.weightKg !== undefined) &&
         (gProfile?.selectedGoal || gProfile?.goal) &&
         gProfile?.selectedWorkoutPlan
       );
-      if (hasBiometrics) {
+      const isOnboarded = Boolean(user?.isOnboarded || hasBiometrics);
+
+      if (isOnboarded) {
         await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
       } else {
         await AsyncStorage.removeItem(ONBOARDED_KEY);
@@ -278,7 +296,8 @@ export const authService = {
       emitDbUpdate();
       return {
         user,
-        isOnboarded: hasBiometrics,
+        profile: gProfile,
+        isOnboarded,
       };
     } catch (err) {
       throw new Error(formatAuthError(err));

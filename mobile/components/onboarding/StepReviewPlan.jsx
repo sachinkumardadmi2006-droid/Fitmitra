@@ -10,6 +10,8 @@ import {
   Edit3,
   Flame,
   CheckCircle2,
+  Sparkles,
+  Lock,
 } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from '../ui/AppCard';
@@ -452,41 +454,124 @@ export default function StepReviewPlan({
           ]}
           padded={false}
         >
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleGroup}>
-              <ShieldCheck size={16} color={custom.primaryStrong || colors.primary} />
-              <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
-                FitMitra Membership
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.activeBadge,
-                { backgroundColor: colors.primaryContainer },
-              ]}
-            >
-              <CheckCircle2
-                size={12}
-                color={custom.primaryStrong || colors.primary}
-              />
-              <Text
-                style={[
-                  styles.activeBadgeText,
-                  { color: custom.primaryStrong || colors.primary },
-                ]}
-              >
-                Active
-              </Text>
-            </View>
-          </View>
-          <View style={styles.sectionBody}>
-            <Text style={[styles.summaryMainText, { color: colors.onSurface }]}>
-              Verified Pro Membership
-            </Text>
-            <Text style={[styles.summarySubText, { color: colors.onSurfaceVariant }]}>
-              All workouts, AI coach queries, and meal plans are unlocked
-            </Text>
-          </View>
+          {(() => {
+            const isPaidSelection = Boolean(
+              selectedWorkoutPlan?.isPremium ||
+              selectedProgram?.isPremium
+            );
+
+            return (
+              <>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionTitleGroup}>
+                    <ShieldCheck size={16} color={custom.primaryStrong || colors.primary} />
+                    <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
+                      FitMitra Membership
+                    </Text>
+                  </View>
+                  {!isPaidSelection ? (
+                    <View
+                      style={[
+                        styles.activeBadge,
+                        {
+                          backgroundColor: isDark
+                            ? 'rgba(74, 222, 128, 0.15)'
+                            : 'rgba(34, 197, 94, 0.15)',
+                        },
+                      ]}
+                    >
+                      <Sparkles
+                        size={12}
+                        color={isDark ? '#4ADE80' : '#15803D'}
+                      />
+                      <Text
+                        style={[
+                          styles.activeBadgeText,
+                          { color: isDark ? '#4ADE80' : '#15803D' },
+                        ]}
+                      >
+                        Free Plan
+                      </Text>
+                    </View>
+                  ) : isSubscriptionVerified ? (
+                    <View
+                      style={[
+                        styles.activeBadge,
+                        { backgroundColor: colors.primaryContainer },
+                      ]}
+                    >
+                      <CheckCircle2
+                        size={12}
+                        color={custom.primaryStrong || colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.activeBadgeText,
+                          { color: custom.primaryStrong || colors.primary },
+                        ]}
+                      >
+                        Paid Plan Active
+                      </Text>
+                    </View>
+                  ) : (
+                    <View
+                      style={[
+                        styles.activeBadge,
+                        {
+                          backgroundColor: isDark
+                            ? 'rgba(234, 179, 8, 0.15)'
+                            : 'rgba(234, 179, 8, 0.15)',
+                        },
+                      ]}
+                    >
+                      <Lock
+                        size={12}
+                        color={isDark ? '#FACC15' : '#B45309'}
+                      />
+                      <Text
+                        style={[
+                          styles.activeBadgeText,
+                          { color: isDark ? '#FACC15' : '#B45309' },
+                        ]}
+                      >
+                        Paid Plan Required
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.sectionBody}>
+                  {!isPaidSelection ? (
+                    <>
+                      <Text style={[styles.summaryMainText, { color: colors.onSurface }]}>
+                        Free Tier Access
+                      </Text>
+                      <Text style={[styles.summarySubText, { color: colors.onSurfaceVariant }]}>
+                        Standard workout plan and nutrition calibration. You will directly enter your dashboard upon finishing.
+                      </Text>
+                    </>
+                  ) : isSubscriptionVerified ? (
+                    <>
+                      <Text style={[styles.summaryMainText, { color: colors.onSurface }]}>
+                        Verified Pro Membership
+                      </Text>
+                      <Text style={[styles.summarySubText, { color: colors.onSurfaceVariant }]}>
+                        All workouts, AI coach queries, and meal plans are unlocked.
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={[styles.summaryMainText, { color: colors.onSurface }]}>
+                        FitMitra Paid Plan Access Required
+                      </Text>
+                      <Text style={[styles.summarySubText, { color: colors.onSurfaceVariant }]}>
+                        You have selected a premium program/plan. You will be taken to the subscription page upon finishing.
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </>
+            );
+          })()}
         </AppCard>
       </View>
 

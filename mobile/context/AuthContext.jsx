@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { authService, profileService } from '../services';
 import { clearUserCache } from '../services/queryClient';
+import { onDbUpdate } from '../utils/events';
 
 const AuthContext = createContext({
   user: null,
@@ -13,6 +14,7 @@ const AuthContext = createContext({
   emailVerified: false,
   requiresEmailVerification: false,
   refreshProfile: async () => {},
+  syncSession: () => {},
   logout: async () => {},
   retrySession: async () => {},
 });
@@ -38,7 +40,7 @@ export function AuthProvider({ children }) {
 
       setUser(localUser);
       const onboarded = await authService.getOnboardedStatus();
-      setIsOnboarded(onboarded);
+      setIsOnboarded(Boolean(onboarded || localUser?.isOnboarded));
 
       // Fetch live server profile once on mount/login
       try {
@@ -49,7 +51,9 @@ export function AuthProvider({ children }) {
             p?.heightCm && (p?.weight !== undefined || p?.weightKg !== undefined)
           );
           const hasPlan = Boolean((p?.selectedGoal || p?.goal) && p?.selectedWorkoutPlan);
-          const serverOnboarded = Boolean(hasBiometrics && hasPlan);
+          const serverOnboarded = Boolean(
+            (hasBiometrics && hasPlan) || localUser?.isOnboarded || onboarded
+          );
           setIsOnboarded(serverOnboarded);
           await authService.setOnboardedStatus(serverOnboarded, false);
 
@@ -96,6 +100,49 @@ export function AuthProvider({ children }) {
     };
   }, [loadSession]);
 
+  // Subscribe to DB updates across services to keep in-memory AuthContext synced
+  useEffect(() => {
+    const unsubscribe = onDbUpdate(async () => {
+      try {
+        const localUser = await authService.getLocalUser();
+        const onboarded = await authService.getOnboardedStatus();
+        if (localUser) {
+          setUser(localUser);
+          if (localUser.isOnboarded || onboarded) {
+            setIsOnboarded(true);
+          }
+        }
+      } catch (_) {}
+    });
+    return unsubscribe;
+  }, []);
+
+  const syncSession = useCallback(async (updatedUser, updatedProfile = null, forcedOnboarded = null) => {
+    if (updatedUser) {
+      setUser(updatedUser);
+    }
+    if (updatedProfile) {
+      setProfile(updatedProfile);
+    }
+    if (forcedOnboarded !== null && forcedOnboarded !== undefined) {
+      const ob = Boolean(forcedOnboarded);
+      setIsOnboarded(ob);
+      await authService.setOnboardedStatus(ob, false);
+    } else if (updatedProfile) {
+      const hasBio = Boolean(
+        updatedProfile?.heightCm &&
+        (updatedProfile?.weight !== undefined || updatedProfile?.weightKg !== undefined)
+      );
+      const hasP = Boolean(
+        (updatedProfile?.selectedGoal || updatedProfile?.goal) &&
+        updatedProfile?.selectedWorkoutPlan
+      );
+      const isOb = Boolean((hasBio && hasP) || updatedUser?.isOnboarded);
+      setIsOnboarded(isOb);
+      await authService.setOnboardedStatus(isOb, false);
+    }
+  }, []);
+
   const refreshProfile = useCallback(async () => {
     try {
       const p = await profileService.getProfile();
@@ -105,12 +152,12 @@ export function AuthProvider({ children }) {
           p?.heightCm && (p?.weight !== undefined || p?.weightKg !== undefined)
         );
         const hasPlan = Boolean((p?.selectedGoal || p?.goal) && p?.selectedWorkoutPlan);
-        const serverOnboarded = Boolean(hasBiometrics && hasPlan);
+        const local = await authService.getLocalUser();
+        const serverOnboarded = Boolean((hasBiometrics && hasPlan) || local?.isOnboarded || user?.isOnboarded);
         setIsOnboarded(serverOnboarded);
         await authService.setOnboardedStatus(serverOnboarded, false);
 
         // Sync local user cache if emailVerified changed
-        const local = await authService.getLocalUser();
         if (local && p?.emailVerified && !local.emailVerified) {
           const updatedUser = { ...local, emailVerified: true };
           await authService.saveLocalUser(updatedUser);
@@ -121,7 +168,7 @@ export function AuthProvider({ children }) {
     } catch (_) {
       return null;
     }
-  }, []);
+  }, [user]);
 
   const logout = useCallback(async () => {
     try {
@@ -156,6 +203,7 @@ export function AuthProvider({ children }) {
       emailVerified,
       requiresEmailVerification,
       refreshProfile,
+      syncSession,
       logout,
       retrySession: loadSession,
     }),
@@ -167,6 +215,7 @@ export function AuthProvider({ children }) {
       emailVerified,
       requiresEmailVerification,
       refreshProfile,
+      syncSession,
       logout,
       loadSession,
     ]
