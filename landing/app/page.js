@@ -5,6 +5,7 @@ import Menu from "@/components/Menu";
 import WhyNexvyro from "@/components/WhyNexvyro";
 import HowItWorks from "@/components/HowItWorks";
 import Supplements from "@/components/Supplements";
+import FitnessApp from "@/components/FitnessApp";
 import Team from "@/components/Team";
 import Location from "@/components/Location";
 import Footer from "@/components/Footer";
@@ -21,6 +22,7 @@ export default function Home() {
         <WhyNexvyro />
         <HowItWorks />
         <Supplements />
+        <FitnessApp />
         <Team />
         <Location />
       </main>

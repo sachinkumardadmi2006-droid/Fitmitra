@@ -15,22 +15,36 @@ const siteData = {
   },
 
   contact: {
-    phoneDisplay: "+91 00000 00000", // TODO
-    phoneRaw: "+910000000000", // TODO: with country code, no spaces
-    whatsappNumber: "910000000000", // TODO: digits only, country code first, no +
-    email: "hello@example.com", // TODO
+    phoneDisplay: "+91 98765 43210",
+    phoneRaw: "+919876543210",
+    whatsappNumber: "919876543210",
+    email: "support@fitmitra.in",
   },
 
   socials: {
-    instagram: "https://instagram.com/", // TODO
-    facebook: "https://facebook.com/", // TODO
-    youtube: "https://youtube.com/", // TODO
+    whatsapp: "https://wa.me/919876543210?text=Hi%20Nexvyro%20Fitness%2C%20I%20would%20like%20to%20pre-order",
+    instagram: "https://instagram.com/fitmitra_fitness",
+    youtube: "https://youtube.com/@fitmitra-fitness",
+    twitter: "https://x.com/fitmitra",
+    facebook: "https://facebook.com/fitmitra.fitness",
+  },
+
+  legal: {
+    companyName: "Fitmitra (Nexvyro Fitness)",
+    brandName: "Nexvyro Fitness",
+    lastUpdated: "October 2026",
+    address: "Opposite Gym, Mangalore, Karnataka 575001, India",
+    supportEmail: "support@fitmitra.in",
+    supportPhone: "+91 98765 43210",
+    refundWindow: "Immediate for stall pickup issues / 14 days for packaged supplements",
+    responseTimeline: "Within 24 business hours",
   },
 
   location: {
     gymName: "[Gym Name]", // TODO
     addressLine: "Opposite [Gym Name], [Area], Mangalore", // TODO
     mapsLink: "https://maps.app.goo.gl/5dnLPACG8KJUQa7A7",
+    mapPhoto: "/images/google-map.jpg",
     mapsEmbedUrl: "", // OPTIONAL: paste a Google Maps "Embed a map" src URL here to show a live map
     timings: [
       { label: "Morning", time: "6:00 AM - 10:00 AM" }, // TODO
@@ -117,12 +131,57 @@ const siteData = {
     formButton: "Notify me",
   },
 
+  app: {
+    badge: "Mobile Ecosystem",
+    name: "FitMitra Mobile App",
+    tagline: "Your Bilingual Workout Trainer & Fuel Companion",
+    description: "Designed specifically to complement your daily training and stall pickup routine. Track your workouts, earn ⚡ Reward Points, get instant AI guidance in Kannada and English, and manage your nutrition effortlessly.",
+    image: "/images/app-preview.jpg",
+    features: [
+      {
+        icon: "Dumbbell",
+        title: "Interactive Workout Player",
+        desc: "Step-by-step exercise logger with live set counters, animated guidance, and automatic rest timers.",
+      },
+      {
+        icon: "Bot",
+        title: "Bilingual AI Fitness Coach",
+        desc: "Get instant answers on form, macros, and split recommendations in both Kannada (ಕನ್ನಡ) and English.",
+      },
+      {
+        icon: "Zap",
+        title: "Earn ⚡ Reward Points",
+        desc: "Gain +5 reward points for every completed workout. Redeem points directly for stall discounts & free shakes.",
+      },
+      {
+        icon: "PieChart",
+        title: "Daily Nutrition & Macro Tracker",
+        desc: "Real-time energy balance tracking (Protein, Carbs, Fats) calibrated with our fresh gym stall menu.",
+      },
+      {
+        icon: "ShoppingBag",
+        title: "Supplements Store & Live Tracking",
+        desc: "Order certified Whey Protein, Creatine, and Shakers with dual checkout (Cash ₹ or Points ⚡) and Shiprocket tracking.",
+      },
+      {
+        icon: "TrendingUp",
+        title: "Weight & Progress Analytics",
+        desc: "Visual charts of your body transformation, personal records, and workout consistency streaks.",
+      },
+    ],
+    stats: [
+      { label: "AI Coach Support", value: "English + ಕನ್ನಡ" },
+      { label: "Workout Reward", value: "+5 ⚡ Points" },
+      { label: "Platform", value: "iOS & Android" },
+    ],
+  },
+
   team: {
     title: "Meet the team",
     subtitle: "Three students, one goal: better fuel for your training.",
     members: [
-      { name: "Team Member 1", role: "Co-founder", photo: "/images/placeholder.svg" }, // TODO
-      { name: "Team Member 2", role: "Co-founder", photo: "/images/placeholder.svg" }, // TODO
+      { name: "Sachin Kumar", role: "Founder", photo: "/images/placeholder.svg" }, // TODO
+      { name: "Shivanna", role: "Co-founder", photo: "/images/placeholder.svg" }, // TODO
       { name: "Team Member 3", role: "Co-founder", photo: "/images/placeholder.svg" }, // TODO
     ],
   },

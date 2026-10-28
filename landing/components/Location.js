@@ -1,7 +1,7 @@
-import { Phone, Mail, Clock, MapPin } from "lucide-react";
+import { Phone, Mail, Clock, MapPin, ExternalLink } from "lucide-react";
 import siteData from "@/data/siteData";
 import Reveal from "@/components/Reveal";
-import { SocialLinks } from "./SocialIcons";
+import { SocialLinks, GoogleMapsIcon } from "./SocialIcons";
 
 export default function Location() {
   const hasEmbed =
@@ -69,7 +69,8 @@ export default function Location() {
                   rel="noopener noreferrer"
                   className="btn btn-outline"
                 >
-                  Open in Google Maps
+                  <GoogleMapsIcon size={18} />
+                  <span>Open in Google Maps</span>
                 </a>
               </div>
 
@@ -87,25 +88,47 @@ export default function Location() {
                   style={{
                     width: "100%",
                     height: "100%",
-                    minHeight: "360px",
+                    minHeight: "400px",
                     border: 0,
                     borderRadius: "var(--radius-lg)",
                   }}
                 />
               ) : (
-                <div className="map-placeholder">
-                  <div className="map-pin-icon-wrap">
-                    <MapPin size={48} />
-                  </div>
-                  <h3>Find us opposite {siteData.location.gymName}</h3>
-                  <p>{siteData.location.addressLine}</p>
+                <div className="map-photo-container">
                   <a
                     href={siteData.location.mapsLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="btn btn-outline"
+                    className="map-photo-link"
+                    aria-label="Open location in Google Maps"
                   >
-                    Open in Google Maps
+                    <img
+                      src={siteData.location.mapPhoto || "/images/google-map.jpg"}
+                      alt={`Google Maps location opposite ${siteData.location.gymName}`}
+                      className="map-photo-img"
+                      loading="lazy"
+                    />
+
+                    <div className="map-badge">
+                      <GoogleMapsIcon size={18} />
+                      <span>Google Maps</span>
+                    </div>
+
+                    <div className="map-overlay-card">
+                      <div className="map-overlay-content">
+                        <div className="map-pin-pill">
+                          <MapPin size={15} />
+                          <span>Opposite {siteData.location.gymName}</span>
+                        </div>
+                        <h4 className="map-overlay-title">{siteData.brand.name} Stall</h4>
+                        <p className="map-overlay-address">{siteData.location.addressLine}</p>
+                      </div>
+                      <div className="btn btn-primary map-open-btn">
+                        <GoogleMapsIcon size={18} />
+                        <span>Open in Google Maps</span>
+                        <ExternalLink size={14} className="map-ext-icon" />
+                      </div>
+                    </div>
                   </a>
                 </div>
               )}

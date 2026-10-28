@@ -1,16 +1,16 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import siteData from "@/data/siteData";
 
 export default function Reveal({ children, delay = 0, className = "" }) {
   const [visible, setVisible] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
+    let timer;
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
-      return;
+      timer = setTimeout(() => setVisible(true), 0);
+      return () => clearTimeout(timer);
     }
 
     const observer = new IntersectionObserver(
@@ -29,6 +29,7 @@ export default function Reveal({ children, delay = 0, className = "" }) {
 
     return () => {
       observer.disconnect();
+      if (timer) clearTimeout(timer);
     };
   }, []);
 
