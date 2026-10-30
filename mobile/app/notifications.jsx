@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -218,7 +218,7 @@ export default function NotificationsScreen() {
 
               return (
                 <AppCard
-                  key={item._id || item.id || index}
+                  key={`notif-${item._id || item.id || 'item'}-${index}`}
                   variant={isUnread ? 'elevated' : 'outlined'}
                   onPress={() => handleNotificationPress(item)}
                   style={[

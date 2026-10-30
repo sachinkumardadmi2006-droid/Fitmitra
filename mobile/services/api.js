@@ -106,12 +106,17 @@ const request = async (path, options = {}) => {
 
   const token = await getStoredToken();
 
+  // If logging out but no token exists, immediately succeed locally
+  if (path === '/auth/logout' && !token) {
+    return { success: true, message: 'Logged out locally' };
+  }
+
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   };
 
-  if (token) {
+  if (!headers['Authorization'] && token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -161,7 +166,7 @@ const request = async (path, options = {}) => {
             });
           }
         } catch (refreshErr) {
-          console.warn('[FitMitra API] Session refresh failed, logging out:', refreshErr.message);
+          console.log('[FitMitra API] Session refresh failed, logging out:', refreshErr.message);
           const expiredErr = new Error('Session expired. Please log in again.');
           expiredErr.status = 401;
           throw expiredErr;
@@ -191,7 +196,11 @@ const request = async (path, options = {}) => {
     return data?.data !== undefined ? data.data : data;
   } catch (err) {
     clearTimeout(timeoutId);
-    console.warn(`[FitMitra API Error] ${fetchOptions.method} ${fullUrl}${err.status ? ` [${err.status}]` : ''} ->`, err.message);
+    if (err.status === 401) {
+      console.log(`[FitMitra API] ${fetchOptions.method} ${fullUrl} [401] ->`, err.message);
+    } else {
+      console.warn(`[FitMitra API Error] ${fetchOptions.method} ${fullUrl}${err.status ? ` [${err.status}]` : ''} ->`, err.message);
+    }
     if (err.name === 'AbortError') {
       const timeoutErr = new Error('Connection timed out. Server taking too long to respond.');
       timeoutErr.code = 'ERR_NETWORK';
@@ -290,6 +299,7 @@ export const fetchRecipes = (params = {}) => api.get('/nutrition/recipes', param
 export const fetchRecipe = (id) => api.get(`/nutrition/recipes/${id}`);
 export const fetchNutritionLogs = (date) =>
   api.get('/nutrition/logs', date ? { date } : {});
+export const fetchNutritionTargets = () => api.get('/nutrition/targets');
 export const addNutritionEntry = (logData) => api.post('/nutrition/logs', logData);
 export const deleteNutritionItem = (logId, itemId) =>
   api.delete(`/nutrition/logs/${logId}/items/${itemId}`);
@@ -298,28 +308,33 @@ export const deleteNutritionItem = (logId, itemId) =>
 
 export const fetchProducts = (params = {}) => api.get('/store/products', params);
 export const fetchProduct = (slug) => api.get(`/store/products/${slug}`);
-export const createCashOrder = (orderData) => api.post('/store/orders/cash', orderData);
-export const createPointsOrder = (orderData) => api.post('/store/orders/points', orderData);
+export const createCashOrder = (orderData, options = {}) =>
+  api.post('/store/orders', orderData, options);
+export const createPointsOrder = (orderData, options = {}) =>
+  api.post('/store/orders/redeem', orderData, options);
 export const fetchMyOrders = () => api.get('/store/orders');
 export const fetchOrder = (orderId) => api.get(`/store/orders/${orderId}`);
 export const trackShipment = (awb) => api.get(`/shipping/track/${awb}`);
 
 // ─── AI Coach ────────────────────────────────────────────────────────────────
 
-export const sendAiMessage = (messageData) => api.post('/ai/chat', messageData);
+export const sendAiMessage = (messageData) =>
+  api.post('/ai/chat', messageData, { timeout: 30000 });
 export const fetchAiConversations = () => api.get('/ai/conversations');
 
 // ─── Subscriptions & Payments ─────────────────────────────────────────────────
 
 export const fetchSubscriptionPlans = () => api.get('/subscriptions/plans');
 export const fetchMySubscription = () => api.get('/subscriptions/me');
-export const createSubscription = (planData) => api.post('/subscriptions/create', planData);
+export const createSubscription = (planData, options = {}) =>
+  api.post('/subscriptions/create', planData, options);
+export const createPaymentOrder = (orderData, options = {}) =>
+  api.post('/payments/create-order', orderData, options);
 export const verifyPayment = (paymentData) => api.post('/payments/verify', paymentData);
-export const fetchPaymentHistory = () => api.get('/payments/history');
+export const fetchPaymentHistory = (params = {}) => api.get('/payments/history', params);
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
-export const fetchNotifications = () => api.get('/notifications');
+export const fetchNotifications = (params = {}) => api.get('/notifications', params);
 export const markNotificationRead = (notifId) => api.patch(`/notifications/${notifId}/read`);
-export const registerPushToken = (deviceToken, platform) =>
-  api.post('/notifications/register-token', { deviceToken, platform });
+

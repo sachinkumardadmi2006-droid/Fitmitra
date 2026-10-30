@@ -13,10 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  TrendingUp,
-  Target,
   Scale,
-  Calendar,
   Flame,
   Clock,
   Dumbbell,
@@ -38,7 +35,7 @@ import AppCard from '../../components/ui/AppCard';
 import AppButton from '../../components/ui/AppButton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
-import Skeleton from '../../components/ui/Skeleton';
+import { Skeleton } from '../../components/ui/Skeleton';
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -194,8 +191,8 @@ export default function ProgressScreen() {
 
   // Real workout stats
   const totalWorkouts = workoutStats?.totalWorkouts ?? workoutStats?.completedSessions ?? workoutHistory.length;
-  const totalMinutes = workoutStats?.totalMinutes ?? Math.round((workoutStats?.totalDurationSeconds || 0) / 60);
-  const totalCalories = workoutStats?.totalCaloriesBurned ?? workoutStats?.caloriesEstimate ?? Math.round(totalMinutes * 7.5);
+  const totalMinutes = workoutStats?.totalDurationMinutes ?? workoutStats?.totalMinutes ?? Math.round((workoutStats?.totalDurationSeconds || 0) / 60);
+  const totalCalories = workoutStats?.totalCalories ?? workoutStats?.totalCaloriesBurned ?? workoutStats?.caloriesEstimate ?? Math.round(totalMinutes * 7.5);
   const currentStreak = profile?.currentStreak ?? workoutStats?.currentStreak ?? 0;
 
   return (
@@ -320,7 +317,7 @@ export default function ProgressScreen() {
               ) : (
                 <View style={styles.noWeightWrap}>
                   <Text style={[styles.noWeightText, { color: colors.onSurfaceVariant }]}>
-                    No weight entries recorded yet. Tap "Log Weight" to start tracking your body transformation.
+                    {'No weight entries recorded yet. Tap "Log Weight" to start tracking your body transformation.'}
                   </Text>
                 </View>
               )}
@@ -448,6 +445,7 @@ export default function ProgressScreen() {
                     key={String(session._id?._id || session._id || session.id || idx)}
                     variant="outlined"
                     style={styles.sessionCard}
+                    onPress={() => router.push(`/workout/${session._id || session.id}?kind=session`)}
                   >
                     <View style={styles.sessionRow}>
                       <View

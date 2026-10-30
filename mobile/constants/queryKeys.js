@@ -31,6 +31,8 @@ export const queryKeys = {
   nutritionTargets: ['nutrition', 'targets'],
   nutritionLogs: (date = 'today') => ['nutrition', 'logs', String(date)],
   nutritionWater: ['nutrition', 'water'],
+  dietPlan: ['nutrition', 'diet-plan'],
+  dietPlanHistory: ['nutrition', 'diet-plan', 'history'],
   recipes: (limit = 20) => ['nutrition', 'recipes', Number(limit)],
   recipe: (id) => ['nutrition', 'recipes', 'detail', String(id)],
 

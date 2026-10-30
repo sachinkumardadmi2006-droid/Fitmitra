@@ -8,7 +8,7 @@ import { useAppTheme } from '../../theme/ThemeContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const { isDark } = useTheme();
   const { theme } = useAppTheme();
 
   // Android Navigation bar inset fix: ensure bottom padding clears system buttons/gesture bar

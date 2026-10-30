@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,9 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Trophy,
   Sparkles,
@@ -27,7 +27,6 @@ import { TopBar } from '../../components/common/TopBar';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAppConfig } from '../../hooks/useAppConfig';
-import { dashboardService } from '../../services/dashboardService';
 import AppCard from '../../components/ui/AppCard';
 
 export default function MoreHub() {
@@ -48,17 +47,34 @@ export default function MoreHub() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of FitMitra?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/login');
+    const doLogout = async () => {
+      try {
+        await logout();
+        router.replace('/login');
+      } catch (err) {
+        console.warn('[More] Logout failed, forcing redirect:', err?.message || err);
+        router.replace('/login');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm('Are you sure you want to sign out of FitMitra?')
+          : true;
+      if (confirmed) {
+        doLogout();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure you want to sign out of FitMitra?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: doLogout,
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   return (

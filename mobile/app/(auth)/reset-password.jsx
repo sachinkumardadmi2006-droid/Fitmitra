@@ -109,8 +109,8 @@ export default function ResetPassword() {
         <AuthHero
           showBack
           onBack={() => router.back()}
-          title="Reset Your Password"
-          subtitle="Set a new password for your account."
+          title=""
+          subtitle=""
         />
 
         {/* Overlapping Surface Card */}

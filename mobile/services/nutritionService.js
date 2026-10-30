@@ -3,10 +3,23 @@ import { api } from './api';
 
 export const nutritionService = {
   /**
-   * Search food database
+   * Fetch user personalized daily nutrition and hydration targets
    */
-  async getFoods(params = {}) {
-    return api.get('/nutrition/foods', params);
+  async getTargets() {
+    const res = await api.get('/nutrition/targets');
+    const data = res?.data || res || {};
+    return {
+      ...data,
+      calories: Number(data.calories ?? 0),
+      protein: Number(data.proteinG ?? data.protein ?? 0),
+      carbs: Number(data.carbsG ?? data.carbs ?? 0),
+      fat: Number(data.fatsG ?? data.fat ?? 0),
+      proteinG: Number(data.proteinG ?? data.protein ?? 0),
+      carbsG: Number(data.carbsG ?? data.carbs ?? 0),
+      fatsG: Number(data.fatsG ?? data.fat ?? 0),
+      waterMl: Number(data.waterMl ?? 0),
+      hasActivePlan: Boolean(data.hasActivePlan),
+    };
   },
 
   /**
@@ -44,10 +57,52 @@ export const nutritionService = {
 
   /**
    * Log a meal item (Breakfast, Lunch, Dinner, Snack)
-   * @param {object} logData { mealType, name, calories, protein, carbs, fats, date, servingSize }
+   * Normalizes input into backend logMealSchema format with singular fat
+   * @param {object} logData { mealType, name, calories, protein, carbs, fat|fats, date, servingSize|unit, quantity, items }
    */
   async addNutritionLog(logData) {
-    return api.post('/nutrition/logs', logData);
+    const today = new Date().toISOString().split('T')[0];
+    const date = logData.date || today;
+    const mealType = (logData.mealType || 'SNACK').toUpperCase();
+
+    let items = [];
+    if (Array.isArray(logData.items) && logData.items.length > 0) {
+      items = logData.items.map((it) => ({
+        name: it.name || 'Food item',
+        calories: Number(it.calories || 0),
+        protein: Number(it.protein || 0),
+        carbs: Number(it.carbs || 0),
+        fat: Number(it.fat ?? it.fats ?? it.fatG ?? 0),
+        fiber: Number(it.fiber || 0),
+        quantity: typeof it.quantity === 'number' ? it.quantity : 1,
+        unit: it.unit || it.servingSize || 'serving',
+        source: it.source || 'CUSTOM',
+        estimatedBy: it.estimatedBy || 'USER',
+        ...(it.recipeId ? { recipeId: it.recipeId } : {}),
+      }));
+    } else {
+      items = [
+        {
+          name: logData.name || 'Food item',
+          calories: Number(logData.calories || 0),
+          protein: Number(logData.protein || 0),
+          carbs: Number(logData.carbs || 0),
+          fat: Number(logData.fat ?? logData.fats ?? logData.fatG ?? 0),
+          fiber: Number(logData.fiber || 0),
+          quantity: typeof logData.quantity === 'number' ? logData.quantity : 1,
+          unit: logData.unit || logData.servingSize || 'serving',
+          source: logData.source || 'CUSTOM',
+          estimatedBy: logData.estimatedBy || 'USER',
+          ...(logData.recipeId ? { recipeId: logData.recipeId } : {}),
+        },
+      ];
+    }
+
+    return api.post('/nutrition/logs', {
+      date,
+      mealType,
+      items,
+    });
   },
 
   /**
@@ -106,6 +161,31 @@ export const nutritionService = {
     } catch (_) {
       return amountMl;
     }
+  },
+
+  /**
+   * Fetch currently active AI Diet Plan
+   */
+  async getCurrentDietPlan() {
+    const res = await api.get('/nutrition/diet-plan');
+    return res?.data || res || null;
+  },
+
+  /**
+   * Generate a new AI Diet Plan
+   * @param {string} reason
+   */
+  async generateDietPlan(reason) {
+    const res = await api.post('/nutrition/diet-plan/generate', reason ? { reason } : {});
+    return res?.data || res;
+  },
+
+  /**
+   * Fetch historical AI diet plans
+   */
+  async getDietPlanHistory(page = 1, limit = 20) {
+    const res = await api.get('/nutrition/diet-plan/history', { page, limit });
+    return res?.data || res || [];
   },
 };
 

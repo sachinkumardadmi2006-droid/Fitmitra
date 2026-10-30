@@ -630,7 +630,7 @@ export default function CartScreen() {
 
             return (
               <View
-                key={typeof item.productId === 'object' ? String(item.productId?._id || index) : String(item.productId || index)}
+                key={`cart-item-${typeof item.productId === 'object' ? String(item.productId?._id || index) : String(item.productId || index)}-${index}`}
                 style={[
                   styles.itemCard,
                   {

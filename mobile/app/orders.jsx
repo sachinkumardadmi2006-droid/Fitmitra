@@ -260,7 +260,7 @@ export default function OrdersScreen() {
         ) : orders.length > 0 ? (
           orders.map((ord, idx) => (
             <OrderCard
-              key={typeof ord._id === 'object' ? String(ord._id?._id || idx) : String(ord._id || ord.id || idx)}
+              key={`order-${typeof ord._id === 'object' ? String(ord._id?._id || idx) : String(ord._id || ord.id || idx)}-${idx}`}
               order={ord}
               showTracking={shippingEnabled}
               isOrderingAvailable={isOrderingAvailable}

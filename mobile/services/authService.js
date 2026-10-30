@@ -457,11 +457,36 @@ export const authService = {
 
   /**
    * Sign out and clear all stored session tokens and profile
+   * Sends deviceToken to backend /auth/logout for server-side unregistration,
+   * then guarantees local keystore and cache eviction even if network fails.
    */
   async logout() {
     try {
-      await api.post('/auth/logout').catch(() => { });
-    } catch (_) { }
+      const deviceToken = await AsyncStorage.getItem('fitmitra_device_token').catch(() => null);
+      const user = await this.getLocalUser().catch(() => null);
+      const userId = user?._id || user?.id;
+
+      // 1. Notify backend logout with deviceToken (only if active session token exists)
+      const token = await getStoredToken();
+      if (token) {
+        await api
+          .post('/auth/logout', deviceToken ? { deviceToken } : {})
+          .catch((err) => {
+            console.warn('[authService] Server logout network error (continuing local wipe):', err?.message || err);
+          });
+      }
+
+      // 2. Remove user-scoped onboarding draft if present
+      if (userId) {
+        await AsyncStorage.removeItem(`fitmitra_onboarding_draft_${userId}`).catch(() => {});
+      }
+      await AsyncStorage.removeItem('fitmitra_onboarding_draft').catch(() => {});
+      await AsyncStorage.removeItem('fitmitra_device_token').catch(() => {});
+    } catch (err) {
+      console.warn('[authService] Pre-logout cleanup warning:', err?.message || err);
+    }
+
+    // 3. Guaranteed local session and cache eviction
     await clearAuthData();
     emitDbUpdate();
   },

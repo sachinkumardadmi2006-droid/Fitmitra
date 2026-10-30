@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useMemo } from 'react';
 import { useAppTheme } from '../theme/ThemeContext';
 import { mapThemeColors, LightTheme } from '../constants/theme';
 

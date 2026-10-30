@@ -2,11 +2,11 @@ import { api } from './api';
 
 export const aiService = {
   /**
-   * Send a chat prompt to the server's LangChain + Gemini RAG engine
+   * Send a chat prompt to the server's LangChain + Gemini RAG engine (30s timeout)
    * @param {object} payload { message: string, conversationId?: string, language?: 'en' | 'kn' }
    */
   async chat(payload) {
-    return api.post('/ai/chat', payload);
+    return api.post('/ai/chat', payload, { timeout: 30000 });
   },
 
   /**

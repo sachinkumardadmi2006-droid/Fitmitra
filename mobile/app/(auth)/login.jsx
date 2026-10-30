@@ -83,8 +83,10 @@ export default function Login() {
         await retrySession?.();
       }
 
-      // Route guard in _layout handles destination based on isOnboarded
-      if (result?.isOnboarded) {
+      // Route based on emailVerified and isOnboarded status
+      if (!result?.user?.emailVerified && !result?.user?.authProviders?.includes('GOOGLE') && result?.user?.authProvider !== 'GOOGLE') {
+        router.replace({ pathname: '/(auth)/otp', params: { email: email.trim().toLowerCase() } });
+      } else if (result?.isOnboarded) {
         router.replace('/(tabs)');
       } else {
         router.replace('/(auth)/onboarding');
@@ -120,8 +122,8 @@ export default function Login() {
       >
         {/* Top Hero Section with Background Image */}
         <AuthHero
-          title="Welcome Back"
-          subtitle="Login to continue your fitness journey"
+          title=""
+          subtitle=""
           image={loginHero}
         />
 

@@ -10,29 +10,33 @@ import {
   Platform,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles,
   Send,
   Bot,
   User,
   Trash2,
-  Bookmark,
-  Plus,
   X,
   ChevronDown,
   ChevronUp,
   Brain,
-  Zap,
 } from 'lucide-react-native';
-import { Chip, ProgressBar } from 'react-native-paper';
+import { Chip } from 'react-native-paper';
 import { aiService } from '../services/aiService';
+import { queryKeys } from '../constants/queryKeys';
 import { useAppTheme } from '../theme/ThemeContext';
 import AppHeader from '../components/ui/AppHeader';
-import AppCard from '../components/ui/AppCard';
 import AppButton from '../components/ui/AppButton';
-import EmptyState from '../components/ui/EmptyState';
+
+let nextMsgCounter = 0;
+function generateMessageId(role) {
+  nextMsgCounter += 1;
+  return `${role}_${Date.now()}_${nextMsgCounter}`;
+}
 
 const QUICK_PROMPTS = [
   'High-protein vegetarian diet plan',
@@ -49,6 +53,7 @@ const MEMORY_CATEGORIES = [
 
 export default function AiCoachScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
   const scrollViewRef = useRef(null);
@@ -56,7 +61,6 @@ export default function AiCoachScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
-  const [usage, setUsage] = useState(null);
 
   // Messages list
   const [messages, setMessages] = useState([
@@ -82,14 +86,16 @@ export default function AiCoachScreen() {
   const [memoryValue, setMemoryValue] = useState('');
   const [savingMemory, setSavingMemory] = useState(false);
 
-  // Fetch usage and quota
-  const loadUsage = useCallback(async () => {
-    try {
+  // React Query for usage & quota
+  const usageQuery = useQuery({
+    queryKey: queryKeys.aiUsage,
+    queryFn: async () => {
       const res = await aiService.getUsage();
-      const data = res?.data || res;
-      if (data) setUsage(data);
-    } catch (_) {}
-  }, []);
+      return res?.data || res || null;
+    },
+    staleTime: 60 * 1000,
+  });
+  const usage = usageQuery.data || null;
 
   // Fetch memories
   const loadMemories = useCallback(async () => {
@@ -106,10 +112,6 @@ export default function AiCoachScreen() {
   }, []);
 
   useEffect(() => {
-    loadUsage();
-  }, [loadUsage]);
-
-  useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
@@ -118,7 +120,7 @@ export default function AiCoachScreen() {
     if (!text || loading) return;
 
     const userMsg = {
-      id: String(Date.now()),
+      id: generateMessageId('user'),
       role: 'user',
       content: text,
     };
@@ -139,7 +141,7 @@ export default function AiCoachScreen() {
       }
 
       const botMsg = {
-        id: String(Date.now() + 1),
+        id: generateMessageId('assistant'),
         role: 'assistant',
         content: chatData?.response || chatData?.message || chatData?.reply || 'Analyzed your request. Keep training consistently!',
         reasoning: chatData?.reasoning || chatData?.metadata?.reasoning || null,
@@ -147,10 +149,10 @@ export default function AiCoachScreen() {
       };
 
       setMessages((prev) => [...prev, botMsg]);
-      loadUsage();
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiUsage });
     } catch (err) {
       const errMsg = {
-        id: String(Date.now() + 1),
+        id: generateMessageId('error'),
         role: 'assistant',
         content:
           err.message ||
@@ -580,7 +582,13 @@ export default function AiCoachScreen() {
 
             {/* Memories List */}
             <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
-              {memories.length > 0 ? (
+              {loadingMemories ? (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.primary}
+                  style={{ marginVertical: 20 }}
+                />
+              ) : memories.length > 0 ? (
                 memories.map((mem, memIdx) => (
                   <View
                     key={String(mem._id?._id || mem._id || mem.id || memIdx)}

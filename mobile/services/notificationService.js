@@ -26,9 +26,24 @@ export const notificationService = {
 
   /**
    * Register device push notification token (FCM / Expo)
-   * @param {object} payload { token, platform }
+   * @param {object} payload { pushToken, token, platform, appVersion }
    */
   async registerDevice(payload) {
-    return api.post('/devices/register', payload);
+    const pushToken = payload.pushToken || payload.token;
+    const platform = payload.platform ? String(payload.platform).toUpperCase() : 'ANDROID';
+    return api.post('/devices/register', {
+      pushToken,
+      platform,
+      appVersion: payload.appVersion,
+    });
+  },
+
+  /**
+   * Unregister device push notification token
+   * @param {string} token Push token
+   */
+  async unregisterDevice(token) {
+    if (!token) return;
+    return api.delete(`/devices/${encodeURIComponent(token)}`);
   },
 };

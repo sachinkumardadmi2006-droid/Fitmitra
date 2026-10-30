@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { authService, profileService } from '../services';
+import { authService } from '../services';
 import { clearUserCache } from '../services/queryClient';
 import { onDbUpdate } from '../utils/events';
 
@@ -42,31 +42,28 @@ export function AuthProvider({ children }) {
       const onboarded = await authService.getOnboardedStatus();
       setIsOnboarded(Boolean(onboarded || localUser?.isOnboarded));
 
-      // Fetch live server profile once on mount/login
+      // Fetch live server session via GET /api/v1/users/me (single source of truth for emailVerified & isOnboarded)
       try {
-        const p = await profileService.getProfile();
-        if (p) {
-          setProfile(p);
-          const hasBiometrics = Boolean(
-            p?.heightCm && (p?.weight !== undefined || p?.weightKg !== undefined)
-          );
-          const hasPlan = Boolean((p?.selectedGoal || p?.goal) && p?.selectedWorkoutPlan);
-          const serverOnboarded = Boolean(
-            (hasBiometrics && hasPlan) || localUser?.isOnboarded || onboarded
-          );
+        const meRes = await authService.getCurrentUser();
+        const serverUser = meRes?.user || meRes?.data?.user;
+        const serverProfile = meRes?.profile || meRes?.data?.profile;
+
+        if (serverUser) {
+          const mergedUser = { ...localUser, ...serverUser };
+          setUser(mergedUser);
+          await authService.saveLocalUser(mergedUser);
+
+          const serverOnboarded = Boolean(serverUser.isOnboarded);
           setIsOnboarded(serverOnboarded);
           await authService.setOnboardedStatus(serverOnboarded, false);
-
-          // Sync emailVerified if server updated it
-          if (p?.emailVerified && !localUser.emailVerified) {
-            const updatedUser = { ...localUser, emailVerified: true };
-            await authService.saveLocalUser(updatedUser);
-            setUser(updatedUser);
-          }
         }
-      } catch (profErr) {
+
+        if (serverProfile) {
+          setProfile(serverProfile);
+        }
+      } catch (meErr) {
         // If 401 / session expired, unrecoverable authentication failure -> clear session
-        if (profErr?.status === 401 || /session expired|unauthorized/i.test(String(profErr?.message || ''))) {
+        if (meErr?.status === 401 || /session expired|unauthorized/i.test(String(meErr?.message || ''))) {
           await authService.logout().catch(() => {});
           await clearUserCache();
           setUser(null);
@@ -74,7 +71,7 @@ export function AuthProvider({ children }) {
           setIsOnboarded(false);
         } else {
           // Network / offline error: retain cached localUser and onboarded status
-          console.warn('[AuthContext] Profile live fetch deferred (offline/network):', profErr?.message || profErr);
+          console.warn('[AuthContext] GET /users/me deferred (offline/network):', meErr?.message || meErr);
         }
       }
     } catch (e) {
@@ -145,30 +142,26 @@ export function AuthProvider({ children }) {
 
   const refreshProfile = useCallback(async () => {
     try {
-      const p = await profileService.getProfile();
-      if (p) {
-        setProfile(p);
-        const hasBiometrics = Boolean(
-          p?.heightCm && (p?.weight !== undefined || p?.weightKg !== undefined)
-        );
-        const hasPlan = Boolean((p?.selectedGoal || p?.goal) && p?.selectedWorkoutPlan);
-        const local = await authService.getLocalUser();
-        const serverOnboarded = Boolean((hasBiometrics && hasPlan) || local?.isOnboarded || user?.isOnboarded);
+      const meRes = await authService.getCurrentUser();
+      const serverUser = meRes?.user || meRes?.data?.user;
+      const serverProfile = meRes?.profile || meRes?.data?.profile;
+
+      if (serverUser) {
+        setUser((prev) => ({ ...prev, ...serverUser }));
+        await authService.saveLocalUser(serverUser);
+        const serverOnboarded = Boolean(serverUser.isOnboarded);
         setIsOnboarded(serverOnboarded);
         await authService.setOnboardedStatus(serverOnboarded, false);
-
-        // Sync local user cache if emailVerified changed
-        if (local && p?.emailVerified && !local.emailVerified) {
-          const updatedUser = { ...local, emailVerified: true };
-          await authService.saveLocalUser(updatedUser);
-          setUser(updatedUser);
-        }
       }
-      return p;
+
+      if (serverProfile) {
+        setProfile(serverProfile);
+      }
+      return serverProfile || meRes;
     } catch (_) {
       return null;
     }
-  }, [user]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {

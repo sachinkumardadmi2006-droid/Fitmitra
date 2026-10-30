@@ -110,8 +110,8 @@ export default function Signup() {
       } else {
         await retrySession?.();
       }
-      // New user accounts proceed to onboarding wizard
-      router.replace('/(auth)/onboarding');
+      // Newly registered users must verify their email with OTP before onboarding
+      router.replace({ pathname: '/(auth)/otp', params: { email: email.trim().toLowerCase() } });
     } catch (err) {
       setError(err?.message || 'Registration failed. Please try again.');
     } finally {
@@ -136,8 +136,8 @@ export default function Signup() {
       >
         {/* Top Hero Section with Background Image */}
         <AuthHero
-          title="Start Your Fitness Journey"
-          subtitle="Create your account and take the first step towards a healthier you."
+          title=""
+          subtitle=""
           image={signupHero}
         />
 

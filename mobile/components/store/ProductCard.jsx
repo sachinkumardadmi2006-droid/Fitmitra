@@ -7,7 +7,7 @@ import AppCard from '../ui/AppCard';
 
 export function ProductCard({ product, onPress }) {
   const { theme } = useAppTheme();
-  const { colors, custom } = theme;
+  const { colors } = theme;
 
   const priceRupees = Math.round((product.priceInPaise || 0) / 100);
   const regularRupees = Math.round((product.regularPriceInPaise || 0) / 100);

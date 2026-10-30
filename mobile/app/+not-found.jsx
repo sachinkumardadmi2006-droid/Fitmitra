@@ -27,7 +27,7 @@ export default function NotFoundScreen() {
             { color: theme.colors.onSurfaceVariant },
           ]}
         >
-          This screen doesn't exist.
+          {"This screen doesn't exist."}
         </Text>
 
         <Link href="/" asChild>

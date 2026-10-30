@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Mail, ArrowRight, X, ShieldCheck, RefreshCw, ExternalLink } from 'lucide-react-native';
+import { Mail, ArrowRight, X, ShieldCheck, ExternalLink } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { authService } from '../../services/authService';
@@ -34,14 +34,7 @@ export default function EmailVerificationBanner({ style }) {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [otpError, setOtpError] = useState('');
 
-  const inputRefs = [
-    useRef(null),
-    useRef(null),
-    useRef(null),
-    useRef(null),
-    useRef(null),
-    useRef(null),
-  ];
+  const inputRefs = useRef([]);
 
   // Cooldown countdown timer
   useEffect(() => {
@@ -58,7 +51,7 @@ export default function EmailVerificationBanner({ style }) {
   useEffect(() => {
     if (showOtpModal) {
       setTimeout(() => {
-        inputRefs[0]?.current?.focus();
+        inputRefs.current[0]?.focus();
       }, 300);
     }
   }, [showOtpModal]);
@@ -125,7 +118,7 @@ export default function EmailVerificationBanner({ style }) {
       if (sanitized.length === 6) {
         const chars = sanitized.split('');
         setOtp(chars);
-        inputRefs[5]?.current?.focus();
+        inputRefs.current[5]?.focus();
         return;
       }
     }
@@ -136,13 +129,13 @@ export default function EmailVerificationBanner({ style }) {
     setOtp(newOtp);
 
     if (singleDigit && idx < 5) {
-      inputRefs[idx + 1]?.current?.focus();
+      inputRefs.current[idx + 1]?.focus();
     }
   };
 
   const handleKeyPress = (e, idx) => {
     if (e.nativeEvent.key === 'Backspace' && !otp[idx] && idx > 0) {
-      inputRefs[idx - 1]?.current?.focus();
+      inputRefs.current[idx - 1]?.focus();
     }
   };
 
@@ -321,7 +314,9 @@ export default function EmailVerificationBanner({ style }) {
               {otp.map((digit, idx) => (
                 <TextInput
                   key={idx}
-                  ref={inputRefs[idx]}
+                  ref={(el) => {
+                    inputRefs.current[idx] = el;
+                  }}
                   style={[
                     styles.otpBox,
                     {

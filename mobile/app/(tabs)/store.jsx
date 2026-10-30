@@ -31,7 +31,7 @@ import { TrackingTimeline } from '../../components/store/TrackingTimeline';
 import { TopBar } from '../../components/common/TopBar';
 import { useAppTheme } from '../../theme/ThemeContext';
 import EmptyState from '../../components/ui/EmptyState';
-import Skeleton from '../../components/ui/Skeleton';
+import { Skeleton } from '../../components/ui/Skeleton';
 
 const CATEGORIES = [
   { key: 'ALL', label: 'All' },
@@ -151,7 +151,7 @@ export default function StoreTab() {
         estimatedDelivery: res?.tracking?.etd || '',
         activities: res?.tracking?.scans || [],
       });
-    } catch (err) {
+    } catch (_err) {
       Alert.alert('Tracking Error', 'Unable to fetch real-time Shiprocket updates right now.');
       setTrackingModalVisible(false);
     } finally {
@@ -380,7 +380,7 @@ export default function StoreTab() {
           ) : orders.length > 0 ? (
             orders.map((ord, index) => (
               <OrderCard
-                key={typeof ord._id === 'object' ? String(ord._id?._id || index) : String(ord._id || ord.id || index)}
+                key={`store-order-${typeof ord._id === 'object' ? String(ord._id?._id || index) : String(ord._id || ord.id || index)}-${index}`}
                 order={ord}
                 showTracking={shippingEnabled}
                 onTrack={handleTrackOrder}

@@ -6,12 +6,18 @@ import { useAppTheme } from '../../theme/ThemeContext';
 
 export function PointsCelebrationModal({
   visible,
-  pointsEarned = 5,
-  totalPoints = 0,
+  pointsEarned,
+  pointsAwarded,
+  pointsAdded,
+  totalPoints,
+  newBalance,
   onClose,
 }) {
   const router = useRouter();
   const { theme } = useAppTheme();
+
+  const earned = pointsAdded ?? pointsAwarded ?? pointsEarned ?? 5;
+  const balance = newBalance ?? totalPoints ?? 0;
 
   const handleGoToStore = () => {
     onClose?.();
@@ -55,13 +61,13 @@ export function PointsCelebrationModal({
           </View>
 
           <Text style={[styles.pointsText, { color: theme.colors.onSurface }]}>
-            +{pointsEarned} Points!
+            +{earned} Points!
           </Text>
           <Text style={[styles.subtext, { color: theme.colors.onSurfaceVariant }]}>
-            Congratulations! You earned +{pointsEarned} FitMitra Reward Points.
+            Congratulations! You earned +{earned} FitMitra Reward Points.
           </Text>
 
-          {totalPoints > 0 && (
+          {balance > 0 && (
             <View
               style={[
                 styles.balancePill,
@@ -74,7 +80,7 @@ export function PointsCelebrationModal({
                 Your Balance:
               </Text>
               <Text style={[styles.balanceValue, { color: theme.colors.onSurface }]}>
-                ⚡ {totalPoints} pts
+                ⚡ {balance} pts
               </Text>
             </View>
           )}

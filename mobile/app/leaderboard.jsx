@@ -6,19 +6,17 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Trophy, Medal, Zap, Flame, User } from 'lucide-react-native';
+import { Trophy, Medal, Zap, Flame } from 'lucide-react-native';
 import { leaderboardService } from '../services/leaderboardService';
 import { queryKeys } from '../constants/queryKeys';
 import { useAppTheme } from '../theme/ThemeContext';
 import AppHeader from '../components/ui/AppHeader';
 import AppCard from '../components/ui/AppCard';
 import EmptyState from '../components/ui/EmptyState';
-import Skeleton from '../components/ui/Skeleton';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export default function LeaderboardScreen() {
-  const router = useRouter();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
 
@@ -123,7 +121,7 @@ export default function LeaderboardScreen() {
 
             return (
               <AppCard
-                key={item.userId || item.rank || index}
+                key={`leaderboard-${item.userId || 'user'}-${item.rank || index}-${index}`}
                 variant={item.isMe ? 'elevated' : 'outlined'}
                 style={[
                   styles.rankCard,

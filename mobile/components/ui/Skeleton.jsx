@@ -1,16 +1,17 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Animated, View, Platform } from 'react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 import AppCard from './AppCard';
 
 export function Skeleton({ width = '100%', height = 16, radius, style }) {
   const { theme } = useAppTheme();
-  const opacity = useRef(new Animated.Value(0.55)).current;
+  const [opacity] = useState(() => new Animated.Value(0.55));
   useEffect(() => {
+    const isNative = Platform.OS !== 'web';
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.55, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: isNative }),
+        Animated.timing(opacity, { toValue: 0.55, duration: 800, useNativeDriver: isNative }),
       ])
     );
     loop.start();

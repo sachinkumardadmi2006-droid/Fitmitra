@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -77,6 +78,91 @@ export default function Onboarding() {
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const getDraftKey = useCallback(async () => {
+    const local = await authService.getLocalUser();
+    const uId = user?._id || user?.id || local?._id || local?.id || profile?.userId;
+    return uId ? `fitmitra_onboarding_draft_${uId}` : 'fitmitra_onboarding_draft';
+  }, [user, profile]);
+
+  // Hydrate user-scoped draft on mount
+  useEffect(() => {
+    let isMounted = true;
+    const hydrateDraft = async () => {
+      try {
+        const key = await getDraftKey();
+        const saved = await AsyncStorage.getItem(key);
+        if (saved && isMounted) {
+          const parsed = JSON.parse(saved);
+          if (parsed.step && Number(parsed.step) >= 1 && Number(parsed.step) <= totalSteps) {
+            setStep(Number(parsed.step));
+          }
+          if (parsed.name) setName(parsed.name);
+          if (parsed.gender) setGender(parsed.gender);
+          if (parsed.age) setAge(String(parsed.age));
+          if (parsed.height) setHeight(String(parsed.height));
+          if (parsed.weight) setWeight(String(parsed.weight));
+          if (parsed.workoutLocation) setWorkoutLocation(parsed.workoutLocation);
+          if (parsed.preferredWorkoutDays) setPreferredWorkoutDays(Number(parsed.preferredWorkoutDays));
+          if (parsed.preferredWorkoutTime) setPreferredWorkoutTime(parsed.preferredWorkoutTime);
+          if (parsed.selectedProgram) setSelectedProgram(parsed.selectedProgram);
+          if (parsed.selectedWorkoutPlan) setSelectedWorkoutPlan(parsed.selectedWorkoutPlan);
+          if (parsed.experienceLevel) setExperienceLevel(parsed.experienceLevel);
+          if (parsed.dietType) setDietType(parsed.dietType);
+          if (parsed.dailyBudgetInr) setDailyBudgetInr(Number(parsed.dailyBudgetInr));
+        }
+      } catch (err) {
+        console.warn('[Onboarding] Failed to hydrate draft:', err?.message || err);
+      }
+    };
+    hydrateDraft();
+    return () => {
+      isMounted = false;
+    };
+  }, [getDraftKey]);
+
+  const saveCurrentDraft = useCallback(
+    async (nextStep = null, extraFields = {}) => {
+      try {
+        const key = await getDraftKey();
+        const draft = {
+          step: nextStep !== null ? nextStep : step,
+          name,
+          gender,
+          age,
+          height,
+          weight,
+          workoutLocation,
+          preferredWorkoutDays,
+          preferredWorkoutTime,
+          selectedProgram,
+          selectedWorkoutPlan,
+          experienceLevel,
+          dietType,
+          dailyBudgetInr,
+          ...extraFields,
+        };
+        await AsyncStorage.setItem(key, JSON.stringify(draft));
+      } catch (_) { }
+    },
+    [
+      getDraftKey,
+      step,
+      name,
+      gender,
+      age,
+      height,
+      weight,
+      workoutLocation,
+      preferredWorkoutDays,
+      preferredWorkoutTime,
+      selectedProgram,
+      selectedWorkoutPlan,
+      experienceLevel,
+      dietType,
+      dailyBudgetInr,
+    ]
+  );
 
   // Validation functions per step
   const validateStep1 = () => {
@@ -182,14 +268,18 @@ export default function Onboarding() {
     }
 
     if (step < totalSteps) {
-      setStep(step + 1);
+      const nextStep = step + 1;
+      setStep(nextStep);
+      saveCurrentDraft(nextStep);
     }
   };
 
   const handlePrev = () => {
     setError('');
     if (step > 1) {
-      setStep(step - 1);
+      const prevStep = step - 1;
+      setStep(prevStep);
+      saveCurrentDraft(prevStep);
     }
   };
 
@@ -197,6 +287,7 @@ export default function Onboarding() {
     setError('');
     if (targetStep >= 1 && targetStep <= totalSteps) {
       setStep(targetStep);
+      saveCurrentDraft(targetStep);
     }
   };
 
@@ -231,46 +322,11 @@ export default function Onboarding() {
     const h = parseInt(height, 10) || 170;
     const a = parseInt(age, 10) || 24;
 
-    // Daily calorie & macro calculation
-    let bmr = 10 * w + 6.25 * h - 5 * a;
-    if (gender === 'MALE' || gender === 'Male') bmr += 5;
-    else if (gender === 'FEMALE' || gender === 'Female') bmr -= 161;
-    else bmr -= 80;
-
-    const multiplier =
-      preferredWorkoutDays >= 6
-        ? 1.65
-        : preferredWorkoutDays >= 5
-          ? 1.55
-          : preferredWorkoutDays >= 4
-            ? 1.45
-            : 1.35;
-
-    let targetCal = Math.round(bmr * multiplier);
-    const goalUpper = String(selectedProgram?.goal || '').toUpperCase();
-    if (goalUpper.includes('FAT') || goalUpper.includes('WEIGHT') || goalUpper.includes('LOSS')) {
-      targetCal -= 450;
-    } else if (goalUpper.includes('MUSCLE') || goalUpper.includes('STRENGTH') || goalUpper.includes('GAIN')) {
-      targetCal += 350;
-    }
-
-    const targetProtein = Math.round(w * 2.0);
-    const targetFats = Math.round((targetCal * 0.25) / 9);
-    const targetCarbs = Math.max(50, Math.round((targetCal - targetProtein * 4 - targetFats * 9) / 4));
-
-    const calculatedTargetWeight =
-      goalUpper.includes('FAT') || goalUpper.includes('WEIGHT') || goalUpper.includes('LOSS')
-        ? Math.round(w * 0.9)
-        : goalUpper.includes('MUSCLE') || goalUpper.includes('GAIN')
-          ? Math.round(w * 1.08)
-          : Math.round(w);
-    const safeTargetWeight = Math.min(300, Math.max(20, calculatedTargetWeight));
-
     setError('');
     setLoading(true);
 
     try {
-      // 1. Submit complete onboarding to backend
+      // 1. Submit complete onboarding atomically to backend
       const onboardingPayload = {
         name: name.trim(),
         gender: String(gender).toUpperCase(),
@@ -279,10 +335,10 @@ export default function Onboarding() {
         weight: w,
         selectedGoal: String(selectedProgram?._id || selectedProgram?.id),
         selectedWorkoutPlan: String(selectedWorkoutPlan?._id || selectedWorkoutPlan?.id),
-        experienceLevel: experienceLevel || 'INTERMEDIATE',
-        preferredWorkoutLocation: workoutLocation || 'GYM',
+        experienceLevel: experienceLevel,
+        preferredWorkoutLocation: workoutLocation,
         preferredWorkoutDays: Number(preferredWorkoutDays) === 6 ? 6 : 5,
-        preferredWorkoutTime: preferredWorkoutTime || 'MORNING',
+        preferredWorkoutTime: preferredWorkoutTime,
         dietType: dietType === 'NON_VEG' ? 'NON_VEG' : 'VEG',
         dailyDietBudget: Number(dailyBudgetInr) || 0,
         notificationSettings: {
@@ -294,7 +350,14 @@ export default function Onboarding() {
 
       const result = await profileService.completeOnboarding(onboardingPayload);
 
-      // 2. Save complete state to local user cache
+      // 2. Clear draft upon verified completion
+      try {
+        const key = await getDraftKey();
+        await AsyncStorage.removeItem(key);
+        await AsyncStorage.removeItem('fitmitra_onboarding_draft');
+      } catch (_) { }
+
+      // 3. Save updated user locally
       const currentUser = (await authService.getLocalUser()) || {};
       const updatedUser = {
         ...currentUser,
@@ -315,14 +378,7 @@ export default function Onboarding() {
         age: a,
         height: h,
         weight: w,
-        currentWeight: w,
-        startingWeight: w,
-        goalWeight: safeTargetWeight,
         gender: String(gender).toUpperCase(),
-        targetCal,
-        targetProtein,
-        targetCarbs,
-        targetFats,
       };
 
       await clearUserCache();
@@ -336,21 +392,14 @@ export default function Onboarding() {
         await refreshProfile?.();
       }
 
-      // 3. Route: directly to Home if Free / active, else to Subscription screen (/premium)
-      const isPaidSelection = Boolean(
-        selectedWorkoutPlan?.isPremium ||
-        selectedProgram?.isPremium
-      );
-
-      const isSubscribed = Boolean(isSubscriptionVerified || currentUser?.isPremium);
-
-      if (isPaidSelection && !isSubscribed) {
-        router.replace('/premium');
-      } else {
-        router.replace('/(tabs)');
-      }
+      router.replace('/(tabs)');
     } catch (e) {
       console.warn('[Onboarding] Error submitting profile plan:', e?.message || e);
+      if (e?.status === 403 || /forbidden|pro|subscription/i.test(String(e?.message || ''))) {
+        await saveCurrentDraft(7);
+        router.push({ pathname: '/premium', params: { returnTo: '/(auth)/onboarding' } });
+        return;
+      }
       setError(e?.message || 'Failed to save your plan. Please check your connection and retry.');
     } finally {
       setLoading(false);

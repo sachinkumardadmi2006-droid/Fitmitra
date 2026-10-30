@@ -11,14 +11,11 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  Clock,
-  Target,
   Play,
   CheckCircle2,
   Sparkles,
   Dumbbell,
   Calendar,
-  Layers,
 } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -27,7 +24,7 @@ import { workoutService } from '../../services';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { t } from '../../utils/i18n';
-import Skeleton, { SkeletonCard } from '../../components/ui/Skeleton';
+import { Skeleton, SkeletonCard } from '../../components/ui/Skeleton';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
 
@@ -69,7 +66,6 @@ export default function ProgramsTab() {
   // 3. Fetch Today's Scheduled Workout
   const {
     data: todayData,
-    isLoading: isTodayLoading,
     refetch: refetchToday,
   } = useQuery({
     queryKey: queryKeys.todayWorkout,
@@ -144,8 +140,10 @@ export default function ProgramsTab() {
   const currentDayNum = currentData?.dayNumber || 1;
   const programWeeks = programDetails?.weeks || [];
 
-  const isRestDayToday = Boolean(todayData?.programDay?.restDay);
-  const isCompletedToday = Boolean(todayData?.hasCompletedToday);
+  const isRestDayToday = Boolean(todayData?.programDay?.restDay || todayData?.isRest);
+  const sessionStatus = todayData?.sessionStatus || todayData?.activeSession?.status || 'not_started';
+  const isCompletedToday = Boolean(todayData?.hasCompletedToday || sessionStatus === 'completed' || sessionStatus === 'COMPLETED');
+  const isInProgressToday = sessionStatus === 'in_progress' || sessionStatus === 'STARTED';
   const todayWorkoutTitle =
     todayData?.programDay?.title ||
     todayData?.program?.name ||
@@ -330,7 +328,7 @@ export default function ProgramsTab() {
               { color: theme.colors.onSurface },
             ]}
           >
-            Today's Session
+            {"Today's Session"}
           </Text>
           {isRestDayToday ? (
             <View
@@ -391,7 +389,7 @@ export default function ProgramsTab() {
 
         {/* Action States */}
         {isCompletedToday ? (
-          <View
+          <Pressable
             style={[
               styles.completedBanner,
               {
@@ -399,6 +397,7 @@ export default function ProgramsTab() {
                 borderColor: theme.colors.primary,
               },
             ]}
+            onPress={() => router.push('/workout/today?kind=today')}
           >
             <CheckCircle2 size={18} color={theme.colors.onPrimaryContainer} />
             <Text
@@ -407,9 +406,9 @@ export default function ProgramsTab() {
                 { color: theme.colors.onPrimaryContainer },
               ]}
             >
-              Today's workout completed! Great work!
+              {"Today's workout completed! Tap to review."}
             </Text>
-          </View>
+          </Pressable>
         ) : isRestDayToday ? (
           <View
             style={[
@@ -430,6 +429,24 @@ export default function ProgramsTab() {
               Enjoy your rest day! Active recovery or stretching recommended.
             </Text>
           </View>
+        ) : isInProgressToday ? (
+          <Pressable
+            style={[
+              styles.startWorkoutBtn,
+              { backgroundColor: theme.colors.errorContainer || theme.colors.primary },
+            ]}
+            onPress={() => router.push('/workout/today?kind=today')}
+          >
+            <Play size={16} color={theme.colors.onErrorContainer || theme.colors.onPrimary} fill={theme.colors.onErrorContainer || theme.colors.onPrimary} />
+            <Text
+              style={[
+                styles.startWorkoutBtnText,
+                { color: theme.colors.onErrorContainer || theme.colors.onPrimary },
+              ]}
+            >
+              {"Resume Today's Workout"}
+            </Text>
+          </Pressable>
         ) : (
           <Pressable
             style={[
@@ -445,7 +462,7 @@ export default function ProgramsTab() {
                 { color: theme.colors.onPrimary },
               ]}
             >
-              Start Today's Workout
+              {"Start Today's Workout"}
             </Text>
           </Pressable>
         )}
@@ -523,12 +540,12 @@ export default function ProgramsTab() {
 
               {/* Days in this week */}
               <View style={styles.daysList}>
-                {(week.days || []).map((day) => {
+                {(week.days || []).map((day, dIdx) => {
                   const isToday =
                     isCurrentWeek && day.dayNumber === currentDayNum;
                   return (
                     <View
-                      key={String(day._id || `day_${day.dayNumber}`)}
+                      key={`program-day-${String(day._id || day.dayNumber || dIdx)}-${dIdx}`}
                       style={[
                         styles.dayRow,
                         { borderBottomColor: theme.colors.outlineVariant },

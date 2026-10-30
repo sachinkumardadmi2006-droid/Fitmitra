@@ -9,11 +9,11 @@ export const profileService = {
   },
 
   /**
-   * Submit complete onboarding setup (POST /users/me/onboarding)
+   * Submit complete onboarding setup (POST /profiles/me/onboarding)
    * @param {object} payload
    */
   async completeOnboarding(payload) {
-    return api.post('/users/me/onboarding', payload);
+    return api.post('/profiles/me/onboarding', payload);
   },
 
   /**

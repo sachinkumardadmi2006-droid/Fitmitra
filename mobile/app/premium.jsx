@@ -9,31 +9,29 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
-  Shield,
   X,
-  Sparkles,
   Crown,
   CheckCircle2,
-  Lock,
   Zap,
 } from 'lucide-react-native';
 import { subscriptionService } from '../services/subscriptionService';
 import { openCheckout } from '../services/paymentCheckout';
-import { api } from '../services/api';
 import { queryKeys } from '../constants/queryKeys';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../theme/ThemeContext';
 import AppHeader from '../components/ui/AppHeader';
 import AppCard from '../components/ui/AppCard';
 import AppButton from '../components/ui/AppButton';
-import Skeleton from '../components/ui/Skeleton';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export default function PremiumScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const returnTo = params?.returnTo ? String(params.returnTo) : null;
   const queryClient = useQueryClient();
   const { user, refreshProfile } = useAuth();
   const { theme } = useAppTheme();
@@ -42,9 +40,6 @@ export default function PremiumScreen() {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  // Payment order details when checkout required
-  const [paymentOrder, setPaymentOrder] = useState(null);
 
   // 1. Subscription Plans Query
   const plansQuery = useQuery({
@@ -118,7 +113,6 @@ export default function PremiumScreen() {
 
   const handleOpenPlanModal = (plan) => {
     setSelectedPlan(plan);
-    setPaymentOrder(null);
     setModalVisible(true);
   };
 
@@ -139,7 +133,17 @@ export default function PremiumScreen() {
         await invalidateSuccessQueries();
         Alert.alert(
           'Free Trial Activated! 🎉',
-          `Your ${plan.trialDays || 7}-day trial of ${plan.name} is now active. All Pro programs are unlocked!`
+          `Your ${plan.trialDays || 7}-day trial of ${plan.name} is now active. All Pro programs are unlocked!`,
+          [
+            {
+              text: returnTo ? 'Continue to Onboarding' : 'Continue',
+              onPress: () => {
+                if (returnTo) {
+                  router.replace(returnTo);
+                }
+              },
+            },
+          ]
         );
         return;
       }
@@ -179,12 +183,32 @@ export default function PremiumScreen() {
           if (confirmed) {
             Alert.alert(
               'FitMitra PRO Activated! 🏆',
-              `Welcome to ${plan.name}! Your subscription is now active.`
+              `Welcome to ${plan.name}! Your subscription is now active.`,
+              [
+                {
+                  text: returnTo ? 'Continue to Onboarding' : 'Continue',
+                  onPress: () => {
+                    if (returnTo) {
+                      router.replace(returnTo);
+                    }
+                  },
+                },
+              ]
             );
           } else {
             Alert.alert(
               'Payment Processing',
-              'Payment received, confirming... Your subscription will activate shortly once confirmed by the bank.'
+              'Payment received, confirming... Your subscription will activate shortly once confirmed by the bank.',
+              [
+                {
+                  text: returnTo ? 'Continue to Onboarding' : 'Continue',
+                  onPress: () => {
+                    if (returnTo) {
+                      router.replace(returnTo);
+                    }
+                  },
+                },
+              ]
             );
           }
         } else if (checkoutResult.status === 'failed') {
@@ -222,7 +246,18 @@ export default function PremiumScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <AppHeader title="FitMitra PRO" onBack={() => router.back()} />
+      <AppHeader
+        title="FitMitra PRO"
+        onBack={() => {
+          if (returnTo) {
+            router.replace(returnTo);
+          } else if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(tabs)');
+          }
+        }}
+      />
 
       <ScrollView
         style={styles.flex}

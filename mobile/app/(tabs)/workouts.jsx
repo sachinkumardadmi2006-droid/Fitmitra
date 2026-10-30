@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,13 @@ import {
   RotateCcw,
   CheckCircle2,
   Clock,
-  Lock,
   ChevronRight,
   Sparkles,
   Award,
   Zap,
+  Play,
+  VideoOff,
 } from 'lucide-react-native';
-import { Chip } from 'react-native-paper';
 import { workoutService, normalizeTodayWorkout } from '../../services/workoutService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
@@ -31,20 +31,11 @@ import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
 
-const GOAL_FILTERS = [
-  { key: 'ALL', label: 'All' },
-  { key: 'MUSCLE_GAIN', label: 'Muscle Gain' },
-  { key: 'WEIGHT_LOSS', label: 'Weight Loss' },
-  { key: 'GENERAL_FITNESS', label: 'General Fitness' },
-];
-
 export default function WorkoutsScreen() {
   const router = useRouter();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
   const { isAuthenticated } = useAuth();
-
-  const [selectedFilter, setSelectedFilter] = useState('ALL');
 
   // 1. Today's Workout Query
   const todayQuery = useQuery({
@@ -69,28 +60,7 @@ export default function WorkoutsScreen() {
     staleTime: 60 * 1000,
   });
 
-  // 3. Programs Query (cached per goal filter)
-  const programsQuery = useQuery({
-    queryKey: queryKeys.programs(selectedFilter),
-    queryFn: async () => {
-      const programParams = {};
-      if (selectedFilter && selectedFilter !== 'ALL') {
-        programParams.goal = selectedFilter;
-      }
-      const res = await workoutService.getPrograms(programParams);
-      return Array.isArray(res?.data)
-        ? res.data
-        : Array.isArray(res?.items)
-        ? res.items
-        : Array.isArray(res)
-        ? res
-        : [];
-    },
-    enabled: Boolean(isAuthenticated),
-    staleTime: 60 * 1000,
-  });
-
-  // 4. Workout History Query
+  // 3. Workout History Query
   const historyQuery = useQuery({
     queryKey: queryKeys.workoutHistory(10),
     queryFn: async () => {
@@ -109,31 +79,37 @@ export default function WorkoutsScreen() {
 
   const todayWorkout = todayQuery.data || null;
   const currentProgram = currentProgramQuery.data || null;
-  const programs = programsQuery.data || [];
   const history = historyQuery.data || [];
 
-  const loading =
-    (todayQuery.isLoading && !todayQuery.data) ||
-    (programsQuery.isLoading && !programsQuery.data);
+  const todayExercises = useMemo(() => {
+    const raw = todayWorkout?.workout?.exercises || [];
+    const seen = new Set();
+    const result = [];
+    for (const ex of raw) {
+      const rawId = typeof ex.exerciseId === 'object' ? (ex.exerciseId?._id || '') : (ex.exerciseId || ex._id || '');
+      const key = rawId && !rawId.startsWith('ex_') ? rawId : (ex.slug || (ex.name || '').toLowerCase().trim());
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(ex);
+      }
+    }
+    return result;
+  }, [todayWorkout?.workout?.exercises]);
+
+  const loading = todayQuery.isLoading && !todayQuery.data;
 
   const refreshing =
     todayQuery.isRefetching ||
     currentProgramQuery.isRefetching ||
-    programsQuery.isRefetching ||
     historyQuery.isRefetching;
 
   const onRefresh = useCallback(async () => {
     await Promise.all([
       todayQuery.refetch(),
       currentProgramQuery.refetch(),
-      programsQuery.refetch(),
       historyQuery.refetch(),
     ]);
-  }, [todayQuery, currentProgramQuery, programsQuery, historyQuery]);
-
-  const handleFilterChange = (key) => {
-    setSelectedFilter(key);
-  };
+  }, [todayQuery, currentProgramQuery, historyQuery]);
 
   const formatGoal = (goal) => {
     switch (goal) {
@@ -153,6 +129,7 @@ export default function WorkoutsScreen() {
     return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
   };
 
+  const hasProgram = todayWorkout?.hasProgram !== false && todayWorkout?.type !== 'no_program';
   const sessionStatus = todayWorkout?.session?.status || 'not_started';
   const isWorkoutCompleted = Boolean(todayWorkout?.hasCompletedToday || sessionStatus === 'completed');
   const isWorkoutInProgress = sessionStatus === 'in_progress';
@@ -188,7 +165,14 @@ export default function WorkoutsScreen() {
           >
             <View style={styles.cardHeaderRow}>
               <View style={styles.tagWrap}>
-                {isWorkoutCompleted ? (
+                {!hasProgram ? (
+                  <View style={[styles.statusTag, { backgroundColor: colors.secondaryContainer }]}>
+                    <Dumbbell size={13} color={colors.onSecondaryContainer} />
+                    <Text style={[styles.statusTagText, { color: colors.onSecondaryContainer }]}>
+                      GET STARTED
+                    </Text>
+                  </View>
+                ) : isWorkoutCompleted ? (
                   <View style={[styles.statusTag, { backgroundColor: colors.primaryContainer }]}>
                     <CheckCircle2 size={13} color={colors.onPrimaryContainer} />
                     <Text style={[styles.statusTagText, { color: colors.onPrimaryContainer }]}>
@@ -219,35 +203,43 @@ export default function WorkoutsScreen() {
                 )}
               </View>
 
-              <Text style={[styles.levelBadge, { color: colors.onSurfaceVariant }]}>
-                {todayWorkout.workout.level || 'Standard'}
-              </Text>
+              {hasProgram && todayWorkout.workout?.level && (
+                <Text style={[styles.levelBadge, { color: colors.onSurfaceVariant }]}>
+                  {todayWorkout.workout.level}
+                </Text>
+              )}
             </View>
 
             <Text style={[styles.todayTitle, { color: colors.onSurface }]}>
-              {isRestDay ? 'Rest & Muscle Recovery' : todayWorkout.workout.title}
+              {!hasProgram
+                ? 'Choose Your Workout Plan'
+                : isRestDay
+                ? 'Rest & Muscle Recovery'
+                : todayWorkout.workout?.title || 'Daily Training Routine'}
             </Text>
 
             <Text style={[styles.todaySub, { color: colors.onSurfaceVariant }]}>
-              {isRestDay
+              {!hasProgram
+                ? 'Browse our structured programs below and choose a plan that fits your goal to start receiving daily workouts.'
+                : isRestDay
                 ? 'Your muscles repair and strengthen during rest days. Hydrate and eat high-protein meals.'
-                : todayWorkout.workout.programName
+                : todayWorkout.workout?.programName
                 ? `Part of ${todayWorkout.workout.programName}`
                 : 'Follow the exercise sets and log each exercise to track your performance.'}
             </Text>
 
-            {!isRestDay && (
+            {hasProgram && !isRestDay && (
               <View style={styles.metaRow}>
                 <View style={styles.metaItem}>
                   <Clock size={15} color={colors.primary} />
                   <Text style={[styles.metaText, { color: colors.onSurface }]}>
-                    ~{todayWorkout.workout.estimatedMin || 40} mins
+                    ~{todayWorkout.workout?.estimatedMin || 40} mins
                   </Text>
                 </View>
                 <View style={styles.metaItem}>
                   <Dumbbell size={15} color={colors.primary} />
                   <Text style={[styles.metaText, { color: colors.onSurface }]}>
-                    {todayWorkout.workout.exercises?.length || 0} exercises
+                    {todayWorkout.workout?.exercises?.length || 0} exercises
                   </Text>
                 </View>
                 <View style={styles.metaItem}>
@@ -260,24 +252,31 @@ export default function WorkoutsScreen() {
             )}
 
             <View style={styles.todayActionWrap}>
-              {isWorkoutCompleted ? (
+              {!hasProgram ? (
+                <AppButton
+                  tone="primary"
+                  label="Setup Profile"
+                  icon="account"
+                  onPress={() => router.push('/profile')}
+                />
+              ) : isWorkoutCompleted ? (
                 <AppButton
                   mode="outlined"
-                  label="Review Completed Routine"
+                  label="Review Today's Workout"
                   icon="check-circle"
                   onPress={() => router.push(`/workout/${todayWorkoutId}?kind=today`)}
                 />
               ) : isRestDay ? (
-                <AppButton
-                  mode="outlined"
-                  label="Explore Workout Programs"
-                  icon="compass"
-                  onPress={() => {}}
-                />
+                <View style={[styles.restTagRow, { backgroundColor: colors.surfaceVariant }]}>
+                  <Sparkles size={14} color={colors.primary} />
+                  <Text style={[styles.restTagText, { color: colors.onSurfaceVariant }]}>
+                    Take time to rest & recover today
+                  </Text>
+                </View>
               ) : isWorkoutInProgress ? (
                 <AppButton
                   tone="primary"
-                  label="Resume Workout Session"
+                  label="Resume Today's Workout"
                   icon="play"
                   onPress={() => router.push(`/workout/${todayWorkoutId}?kind=today`)}
                 />
@@ -328,118 +327,157 @@ export default function WorkoutsScreen() {
               label="View Program Details"
               icon="arrow-right"
               style={{ alignSelf: 'flex-start', marginTop: 4 }}
-              onPress={() => router.push(`/workout/${currentProgram.program.id}?kind=program`)}
+              onPress={() =>
+                router.push(
+                  `/workout/${currentProgram.program.id || currentProgram.program._id}?kind=program`
+                )
+              }
             />
           </AppCard>
         )}
 
-        {/* 3. Program Discovery Section */}
-        <SectionHeader title="Explore Programs" />
+        {/* 3. Today's Scheduled Exercises Section (Strictly Scoped) */}
+        <SectionHeader
+          title={isRestDay ? "Today's Schedule" : `Today's Exercises (${todayExercises.length})`}
+        />
 
-        {/* Filter Chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterChipRow}
-        >
-          {GOAL_FILTERS.map((f) => {
-            const isSelected = selectedFilter === f.key;
-            return (
-              <Chip
-                key={f.key}
-                selected={isSelected}
-                onPress={() => handleFilterChange(f.key)}
-                style={[
-                  styles.filterChip,
-                  isSelected
-                    ? { backgroundColor: colors.primaryContainer }
-                    : { backgroundColor: colors.surfaceVariant },
-                ]}
-                textStyle={{
-                  color: isSelected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-                  fontWeight: isSelected ? '700' : '500',
-                  fontSize: 13,
-                }}
-              >
-                {f.label}
-              </Chip>
-            );
-          })}
-        </ScrollView>
-
-        {/* Programs List */}
-        {loading && programs.length === 0 ? (
+        {loading ? (
           <View style={styles.skeletonWrap}>
-            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
-            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
-            <Skeleton height={140} radius={custom.radius.lg} style={styles.mbMd} />
+            <Skeleton height={90} radius={custom.radius.lg} style={styles.mbMd} />
+            <Skeleton height={90} radius={custom.radius.lg} style={styles.mbMd} />
           </View>
-        ) : programs.length > 0 ? (
-          programs.map((prog, pIdx) => {
-            const progId = String(prog._id?._id || prog._id || prog.id || pIdx);
-            const isLocked = Boolean(prog.locked);
+        ) : isRestDay ? (
+          <EmptyState
+            icon="weather-night"
+            title="Scheduled Rest Day"
+            message="Recovery is essential for muscle repair and endurance. Hydrate well, do light stretching, and get ready for your next session!"
+            actionLabel="Browse All Programs"
+            onAction={() => router.push('/(tabs)/programs')}
+          />
+        ) : todayExercises.length > 0 ? (
+          todayExercises.map((exercise, idx) => {
+            const hasVideo = Boolean(exercise.videoUrl);
+            const exerciseRawId = typeof exercise.exerciseId === 'object' ? (exercise.exerciseId?._id || '') : (exercise.exerciseId || exercise._id || '');
+            const targetExerciseId = typeof exercise.exerciseId === 'object' ? (exercise.exerciseId?._id || exercise.exerciseId) : (exercise.exerciseId || exercise._id);
+            const exNameKey = String(exercise.name || '').toLowerCase().trim();
+
+            const isCompleted = Boolean(
+              todayWorkout?.session?.completedSetsMap?.[`${idx}_0`] ||
+              (exerciseRawId && todayWorkout?.session?.completedSetsMap?.[`${exerciseRawId}_0`]) ||
+              (targetExerciseId && todayWorkout?.session?.completedSetsMap?.[`${targetExerciseId}_0`]) ||
+              (exerciseRawId && todayWorkout?.session?.completedExerciseMap?.[exerciseRawId]) ||
+              (targetExerciseId && todayWorkout?.session?.completedExerciseMap?.[targetExerciseId]) ||
+              (exNameKey && todayWorkout?.session?.completedExerciseMap?.[exNameKey])
+            );
+
+            const exerciseKey = `today-ex-${exerciseRawId || 'item'}-${idx}`;
 
             return (
               <AppCard
-                key={progId}
+                key={exerciseKey}
                 variant="elevated"
-                onPress={() => router.push(`/workout/${progId}?kind=program`)}
-                style={styles.programCard}
+                style={styles.exerciseCard}
+                onPress={() =>
+                  router.push(
+                    `/workout/exercise/${targetExerciseId}?index=${idx}&total=${todayExercises.length}`
+                  )
+                }
               >
-                <View style={styles.programCardTop}>
-                  <View style={styles.programTitleCol}>
-                    <Text style={[styles.programTitle, { color: colors.onSurface }]} numberOfLines={1}>
-                      {prog.name}
-                    </Text>
-                    <Text style={[styles.programDesc, { color: colors.onSurfaceVariant }]} numberOfLines={2}>
-                      {prog.description || 'Structured strength and conditioning plan tailored to build endurance and muscle.'}
-                    </Text>
-                  </View>
-
-                  {isLocked && (
+                <View style={styles.exCardHeader}>
+                  <View style={styles.exCardLeft}>
                     <View
                       style={[
-                        styles.lockBadge,
+                        styles.exIndexBadge,
+                        {
+                          backgroundColor: isCompleted
+                            ? colors.primaryContainer
+                            : colors.surfaceVariant,
+                        },
+                      ]}
+                    >
+                      {isCompleted ? (
+                        <CheckCircle2 size={14} color={colors.onPrimaryContainer} />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.exIndexText,
+                            { color: colors.onSurfaceVariant },
+                          ]}
+                        >
+                          #{idx + 1}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.exTitleCol}>
+                      <Text
+                        style={[styles.exTitleText, { color: colors.onSurface }]}
+                        numberOfLines={1}
+                      >
+                        {exercise.name}
+                      </Text>
+                      <View style={styles.exMetaRow}>
+                        <Text
+                          style={[styles.exMetaText, { color: colors.onSurfaceVariant }]}
+                        >
+                          {exercise.sets} Sets • {exercise.reps} Reps
+                        </Text>
+                        <View style={styles.dotSeparator} />
+                        <Text
+                          style={[styles.exMetaText, { color: colors.onSurfaceVariant }]}
+                        >
+                          {exercise.restSec}s rest
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <ChevronRight size={18} color={colors.onSurfaceVariant} />
+                </View>
+
+                {/* Badges / Muscle tags row */}
+                <View style={styles.exBottomRow}>
+                  {exercise.muscleGroups && exercise.muscleGroups.length > 0 && (
+                    <View
+                      style={[
+                        styles.muscleTagPill,
                         { backgroundColor: colors.surfaceVariant },
                       ]}
                     >
-                      <Lock size={14} color={colors.secondary} />
-                      <Text style={[styles.lockText, { color: colors.secondary }]}>PRO</Text>
+                      <Text
+                        style={[styles.muscleTagText, { color: colors.onSurfaceVariant }]}
+                        numberOfLines={1}
+                      >
+                        {exercise.muscleGroups.slice(0, 2).join(', ')}
+                      </Text>
                     </View>
                   )}
-                </View>
 
-                {/* Metadata Pills */}
-                <View style={styles.progMetaRow}>
-                  <View style={[styles.progPill, { backgroundColor: colors.surfaceVariant }]}>
-                    <Text style={[styles.progPillText, { color: colors.onSurfaceVariant }]}>
-                      {formatGoal(prog.goal)}
-                    </Text>
-                  </View>
-
-                  <View style={[styles.progPill, { backgroundColor: colors.surfaceVariant }]}>
-                    <Text style={[styles.progPillText, { color: colors.onSurfaceVariant }]}>
-                      {formatLevel(prog.level)}
-                    </Text>
-                  </View>
-
-                  <View style={[styles.progPill, { backgroundColor: colors.surfaceVariant }]}>
-                    <Clock size={12} color={colors.onSurfaceVariant} style={{ marginRight: 4 }} />
-                    <Text style={[styles.progPillText, { color: colors.onSurfaceVariant }]}>
-                      {prog.durationWeeks ? `${prog.durationWeeks} Wks` : '4 Wks'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.progFooterRow}>
-                  <Text style={[styles.progDaysMeta, { color: colors.onSurfaceVariant }]}>
-                    {prog.daysPerWeek ? `${prog.daysPerWeek} days / week` : 'Structured schedule'}
-                  </Text>
-                  <View style={styles.rowAlign}>
-                    <Text style={[styles.viewDetailsText, { color: custom.primaryStrong }]}>
-                      {isLocked ? 'View Details' : 'Start Workout'}
-                    </Text>
-                    <ChevronRight size={16} color={custom.primaryStrong} />
+                  <View
+                    style={[
+                      styles.videoTagPill,
+                      hasVideo
+                        ? { backgroundColor: colors.primaryContainer }
+                        : { backgroundColor: colors.surfaceVariant },
+                    ]}
+                  >
+                    {hasVideo ? (
+                      <>
+                        <Play size={11} color={colors.onPrimaryContainer} style={{ marginRight: 3 }} />
+                        <Text
+                          style={[styles.videoTagText, { color: colors.onPrimaryContainer }]}
+                        >
+                          Video Available
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <VideoOff size={11} color={colors.onSurfaceVariant} style={{ marginRight: 3 }} />
+                        <Text
+                          style={[styles.videoTagText, { color: colors.onSurfaceVariant }]}
+                        >
+                          Video Coming Soon
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </View>
               </AppCard>
@@ -448,10 +486,8 @@ export default function WorkoutsScreen() {
         ) : (
           <EmptyState
             icon="dumbbell"
-            title="No Programs Found"
-            description="No training programs match the selected filter. Try selecting 'All' to browse available routines."
-            actionLabel="Reset Filters"
-            onAction={() => handleFilterChange('ALL')}
+            title="No Exercises Configured"
+            description="There are no exercises configured for today's workout in your active plan."
           />
         )}
 
@@ -472,11 +508,14 @@ export default function WorkoutsScreen() {
             const durationMins = Math.max(1, Math.round((session.durationSeconds || 1800) / 60));
             const calories = session.caloriesEstimate || Math.round(durationMins * 7.5);
 
+            const sessionKey = `history-session-${String(session._id?._id || session._id || session.id || 'sess')}-${index}`;
+
             return (
               <AppCard
-                key={String(session._id?._id || session._id || session.id || index)}
+                key={sessionKey}
                 variant="outlined"
                 style={styles.historyCard}
+                onPress={() => router.push(`/workout/${session._id || session.id}?kind=session`)}
               >
                 <View style={styles.historyRow}>
                   <View
@@ -633,81 +672,125 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 4,
   },
-  filterChip: {
-    borderRadius: 20,
-  },
-  skeletonWrap: {
-    paddingVertical: 8,
-  },
-  mbMd: {
-    marginBottom: 12,
-  },
-  programCard: {
-    marginBottom: 12,
-  },
-  programCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  exerciseCard: {
     marginBottom: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  programTitleCol: {
+  exCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  exCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
     marginRight: 8,
   },
-  programTitle: {
-    fontSize: 16,
+  exIndexBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  exIndexText: {
+    fontSize: 12,
     fontWeight: '800',
-    marginBottom: 4,
   },
-  programDesc: {
-    fontSize: 13,
-    lineHeight: 18,
+  exTitleCol: {
+    flex: 1,
   },
-  lockBadge: {
+  exTitleText: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  exMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
   },
-  lockText: {
-    fontSize: 11,
-    fontWeight: '800',
+  exMetaText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
-  progMetaRow: {
+  dotSeparator: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#888',
+    marginHorizontal: 6,
+  },
+  exBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.2)',
   },
-  progPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  muscleTagPill: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
   },
-  progPillText: {
+  muscleTagText: {
     fontSize: 11,
     fontWeight: '600',
   },
-  progFooterRow: {
+  videoTagPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(150, 150, 150, 0.2)',
-    paddingTop: 10,
-    marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  progDaysMeta: {
-    fontSize: 12,
+  videoTagText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
-  viewDetailsText: {
-    fontSize: 13,
+  restDayCard: {
+    padding: 16,
+    marginBottom: 12,
+  },
+  restDayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  restDayIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  restDayTextCol: {
+    flex: 1,
+  },
+  restDayTitle: {
+    fontSize: 16,
     fontWeight: '700',
+    marginBottom: 4,
+  },
+  restDayDesc: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  restTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  restTagText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   historyCard: {
     marginBottom: 8,

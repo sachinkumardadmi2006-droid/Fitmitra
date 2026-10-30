@@ -8,7 +8,6 @@ import {
   Utensils,
   ShieldCheck,
   Edit3,
-  Flame,
   CheckCircle2,
   Sparkles,
   Lock,
@@ -41,46 +40,13 @@ export default function StepReviewPlan({
   const { theme, isDark } = useAppTheme();
   const { colors, custom } = theme;
 
-  // Calculate target daily calories & macros
-  const targets = useMemo(() => {
+  // Live BMI
+  const bmi = useMemo(() => {
     const w = parseFloat(weight) || 70;
     const h = parseInt(height, 10) || 170;
-    const a = parseInt(age, 10) || 24;
-
-    // BMR (Mifflin-St Jeor formula)
-    let bmr = 10 * w + 6.25 * h - 5 * a;
-    if (gender === 'Male') bmr += 5;
-    else if (gender === 'Female') bmr -= 161;
-    else bmr -= 80;
-
-    // Activity multiplier based on days per week
-    const multiplier =
-      preferredWorkoutDays >= 6
-        ? 1.65
-        : preferredWorkoutDays >= 5
-          ? 1.55
-          : preferredWorkoutDays >= 4
-            ? 1.45
-            : 1.35;
-
-    let cal = Math.round(bmr * multiplier);
-    const goalUpper = String(selectedProgram?.goal || '').toUpperCase();
-    if (goalUpper.includes('FAT') || goalUpper.includes('WEIGHT') || goalUpper.includes('LOSS')) {
-      cal -= 450;
-    } else if (goalUpper.includes('MUSCLE') || goalUpper.includes('STRENGTH') || goalUpper.includes('GAIN')) {
-      cal += 350;
-    }
-
-    const protein = Math.round(w * 2.0);
-    const fats = Math.round((cal * 0.25) / 9);
-    const carbs = Math.max(50, Math.round((cal - protein * 4 - fats * 9) / 4));
-
-    // Live BMI
     const hMeters = h / 100;
-    const bmi = (w / (hMeters * hMeters)).toFixed(1);
-
-    return { cal, protein, carbs, fats, bmi };
-  }, [weight, height, age, gender, preferredWorkoutDays, selectedProgram]);
+    return (w / (hMeters * hMeters)).toFixed(1);
+  }, [weight, height]);
 
   const formatLocation = (loc) => (loc === 'HOME' ? 'Home (Bands & Bodyweight)' : 'Gym (Full Equipment)');
   const formatTime = (timeKey) => {
@@ -112,7 +78,7 @@ export default function StepReviewPlan({
 
   return (
     <View style={styles.container}>
-      {/* 1. Daily Calorie & Macro Target Banner */}
+      {/* 1. Review Summary Banner */}
       <AppCard
         variant="elevated"
         style={[
@@ -127,14 +93,14 @@ export default function StepReviewPlan({
         <View style={styles.targetPadding}>
           <View style={styles.targetHeader}>
             <View style={styles.targetHeaderLeft}>
-              <Flame size={18} color={custom.primaryStrong || colors.primary} />
+              <Sparkles size={18} color={custom.primaryStrong || colors.primary} />
               <Text
                 style={[
                   styles.targetHeadline,
                   { color: custom.primaryStrong || colors.primary },
                 ]}
               >
-                YOUR DAILY CALIBRATION
+                PLAN REVIEW & CONFIRMATION
               </Text>
             </View>
             <View
@@ -149,7 +115,7 @@ export default function StepReviewPlan({
                   { color: custom.primaryStrong || colors.primary },
                 ]}
               >
-                {targets.cal} kcal / day
+                Ready to Launch
               </Text>
             </View>
           </View>
@@ -160,58 +126,8 @@ export default function StepReviewPlan({
               { color: colors.onPrimaryContainer },
             ]}
           >
-            Calibrated for your {selectedProgram?.name || selectedProgram?.title || 'program'} and {preferredWorkoutDays}-day training schedule.
+            Review your fitness profile and program selections below. Upon confirmation, FitMitra will calibrate your daily training schedule and personalized nutrition targets.
           </Text>
-
-          {/* Macro Breakdown Grid */}
-          <View style={styles.macroGrid}>
-            <View
-              style={[
-                styles.macroTile,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>
-                PROTEIN
-              </Text>
-              <Text
-                style={[
-                  styles.macroValue,
-                  { color: custom.primaryStrong || colors.primary },
-                ]}
-              >
-                {targets.protein}g
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.macroTile,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>
-                CARBS
-              </Text>
-              <Text style={[styles.macroValue, { color: colors.onSurface }]}>
-                {targets.carbs}g
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.macroTile,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>
-                FATS
-              </Text>
-              <Text style={[styles.macroValue, { color: colors.onSurface }]}>
-                {targets.fats}g
-              </Text>
-            </View>
-          </View>
         </View>
       </AppCard>
 
@@ -257,7 +173,7 @@ export default function StepReviewPlan({
               {name || 'Athlete'} • {gender} • {age} yrs
             </Text>
             <Text style={[styles.summarySubText, { color: colors.onSurfaceVariant }]}>
-              Height: {height} cm • Weight: {weight} kg • BMI: {targets.bmi}
+              Height: {height} cm • Weight: {weight} kg • BMI: {bmi}
             </Text>
           </View>
         </AppCard>

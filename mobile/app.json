@@ -25,7 +25,9 @@
       "expo-status-bar",
       "expo-secure-store",
       "expo-web-browser",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-font",
+      "expo-splash-screen"
     ]
   }
 }

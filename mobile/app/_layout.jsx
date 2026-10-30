@@ -1,16 +1,27 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { onDbUpdate } from '../utils/events';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
-import { authService } from '../services/authService';
 import { AppThemeProvider, useAppTheme } from '../theme/ThemeContext';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../services/queryClient';
 import { LoadingScreen, SnackbarProvider } from '../components/ui';
 import PaymentCheckoutModal from '../components/payment/PaymentCheckoutModal';
+
+LogBox.ignoreLogs([
+  'Cannot connect to Expo CLI',
+  '[FitMitra API Error]',
+  '[FitMitra API]',
+  'Session expired',
+  'Session refresh failed',
+  '"textShadow*" style props are deprecated',
+  '"shadow*" style props are deprecated',
+  'props.pointerEvents is deprecated',
+  'Animated: `useNativeDriver` is not supported',
+  'Cannot record touch end without a touch start',
+]);
 
 function ThemedStack() {
   const { theme } = useAppTheme();
@@ -28,12 +39,14 @@ function ThemedStack() {
       <Stack.Screen name="notifications" />
       <Stack.Screen name="leaderboard" />
       <Stack.Screen name="profile" />
+      <Stack.Screen name="edit-profile" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="ai-coach" />
       <Stack.Screen name="store" />
       <Stack.Screen name="orders" />
       <Stack.Screen name="premium" />
       <Stack.Screen name="workout/[workoutId]" />
+      <Stack.Screen name="workout/exercise/[exerciseId]" />
       <Stack.Screen name="recipe/[recipeId]" />
       <Stack.Screen name="+not-found" />
     </Stack>
@@ -51,12 +64,19 @@ function ThemedRoot({ children }) {
 }
 
 function RootNavigator() {
-  const { isLoading, isAuthenticated, isOnboarded } = useAuth();
+  const {
+    isLoading,
+    isAuthenticated,
+    isOnboarded,
+    user,
+    emailVerified,
+    requiresEmailVerification,
+  } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const { isDark } = useTheme();
 
-  // Authentication Gate: token -> profile -> onboarding
+  // Authentication Gate: token -> emailVerified -> isOnboarded -> main tabs
   useEffect(() => {
     if (isLoading) return;
 
@@ -67,6 +87,9 @@ function RootNavigator() {
     const inOnboarding =
       segments[0] === 'onboarding' ||
       segments[1] === 'onboarding';
+    const isOtpScreen =
+      segments[0] === 'otp' ||
+      segments[1] === 'otp';
     const isAtRoot = !segments[0] || segments[0] === 'index';
 
     if (!isAuthenticated) {
@@ -87,19 +110,23 @@ function RootNavigator() {
       if (inProtectedGroup || isAtRoot) {
         router.replace('/login');
       }
+    } else if (requiresEmailVerification || (user && !emailVerified && !user.authProviders?.includes('GOOGLE') && user.authProvider !== 'GOOGLE')) {
+      // Authenticated but email verification required -> direct to OTP screen
+      if (!isOtpScreen) {
+        router.replace('/(auth)/otp');
+      }
     } else if (!isOnboarded) {
-      // Authenticated but onboarding incomplete -> direct to onboarding wizard
+      // Authenticated and verified but onboarding incomplete -> direct to onboarding wizard
       if (!inOnboarding) {
         router.replace('/(auth)/onboarding');
       }
     } else {
-      // Authenticated and onboarded -> if at entry/auth/onboarding, direct to main tabs (allow otp verification)
-      const isOtpScreen = segments[1] === 'otp' || segments[0] === 'otp';
-      if ((isAtRoot || inAuthGroup || inOnboarding) && !isOtpScreen) {
+      // Authenticated, verified, and onboarded -> direct to main tabs
+      if (isAtRoot || inAuthGroup || inOnboarding || isOtpScreen) {
         router.replace('/(tabs)');
       }
     }
-  }, [isLoading, isAuthenticated, isOnboarded, segments]);
+  }, [isLoading, isAuthenticated, isOnboarded, emailVerified, requiresEmailVerification, segments, user, router]);
 
   if (isLoading) {
     return (

@@ -1,5 +1,14 @@
 import { api } from './api';
 
+const generateIdempotencyKey = () => {
+  const chars = 'abcdef0123456789';
+  let result = 'fm_';
+  for (let i = 0; i < 29; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result; // 32 characters (well within 16-64 char requirement)
+};
+
 export const storeService = {
   /**
    * Fetch supplements catalog
@@ -19,25 +28,31 @@ export const storeService = {
   /**
    * Create an order paid via Cash (Razorpay order initiated on server)
    * @param {object} orderData { items: [{ productId, quantity }], deliveryAddress: {...} }
-   * @param {string} [idempotencyKey]
+   * @param {string} [idempotencyKey] 16-64 char string
    */
   async createCashOrder(orderData, idempotencyKey) {
-    const options = idempotencyKey
-      ? { headers: { 'Idempotency-Key': String(idempotencyKey).trim() } }
-      : {};
-    return api.post('/store/orders/cash', orderData, options);
+    const key = (typeof idempotencyKey === 'string' && idempotencyKey.trim().length >= 16 && idempotencyKey.trim().length <= 64)
+      ? idempotencyKey.trim()
+      : generateIdempotencyKey();
+
+    return api.post('/store/orders', orderData, {
+      headers: { 'Idempotency-Key': key },
+    });
   },
 
   /**
    * Redeem product using Reward Points (⚡)
    * @param {object} orderData { items: [{ productId, quantity }], deliveryAddress: {...} }
-   * @param {string} [idempotencyKey]
+   * @param {string} [idempotencyKey] 16-64 char string
    */
   async createPointsOrder(orderData, idempotencyKey) {
-    const options = idempotencyKey
-      ? { headers: { 'Idempotency-Key': String(idempotencyKey).trim() } }
-      : {};
-    return api.post('/store/orders/points', orderData, options);
+    const key = (typeof idempotencyKey === 'string' && idempotencyKey.trim().length >= 16 && idempotencyKey.trim().length <= 64)
+      ? idempotencyKey.trim()
+      : generateIdempotencyKey();
+
+    return api.post('/store/orders/redeem', orderData, {
+      headers: { 'Idempotency-Key': key },
+    });
   },
 
   /**

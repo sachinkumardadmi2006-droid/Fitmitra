@@ -8,6 +8,7 @@ import {
   ImageBackground,
   Dimensions,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,7 +20,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function Landing() {
   const router = useRouter();
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   const [activeSlide, setActiveSlide] = useState(0);
 
   const heroSlides = [
@@ -141,7 +142,7 @@ export default function Landing() {
               { color: theme.colors.onSurfaceVariant },
             ]}
           >
-            By continuing, you agree to FitMitra's{' '}
+            {"By continuing, you agree to FitMitra's "}
             <Text
               style={[
                 styles.legalLink,
@@ -228,9 +229,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     lineHeight: 36,
     marginBottom: spacing.lg,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    ...Platform.select({
+      web: { textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)' },
+      default: {
+        textShadowColor: 'rgba(0, 0, 0, 0.8)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 8,
+      },
+    }),
   },
   indicatorRow: {
     flexDirection: 'row',

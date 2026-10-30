@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { X, ShieldCheck } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
-import { spacing, radius } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { api } from '../../services/api';
 import { registerCheckoutHandler } from '../../services/paymentCheckout';
 

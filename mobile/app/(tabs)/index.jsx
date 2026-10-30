@@ -31,7 +31,7 @@ import { ProgressBar } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { dashboardService } from '../../services/dashboardService';
 import { nutritionService } from '../../services/nutritionService';
-import { workoutService, normalizeTodayWorkout, getWeekConsistency } from '../../services/workoutService';
+import { normalizeTodayWorkout, getWeekConsistency } from '../../services/workoutService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { TopBar } from '../../components/common/TopBar';
@@ -44,7 +44,6 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { EmailVerificationBanner } from '../../components/auth';
 
 const CACHE_KEY_DASHBOARD = 'fitmitra_cache_dashboard';
-const CACHE_KEY_TODAY_WORKOUT = 'fitmitra_cache_today_workout';
 
 export default function HomeDashboard() {
   const router = useRouter();
@@ -61,7 +60,7 @@ export default function HomeDashboard() {
 
   const [loggingWater, setLoggingWater] = useState(false);
 
-  // 1. Dashboard Summary Query
+  // 1. Single Authoritative Consolidated Dashboard Query
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
     queryFn: async () => {
@@ -74,54 +73,43 @@ export default function HomeDashboard() {
     staleTime: 60 * 1000,
   });
 
-  // 2. Today's Scheduled Workout Query
-  const todayQuery = useQuery({
-    queryKey: queryKeys.todayWorkout,
-    queryFn: async () => {
-      const res = await workoutService.getTodayWorkout();
-      if (res) {
-        AsyncStorage.setItem(CACHE_KEY_TODAY_WORKOUT, JSON.stringify(res)).catch(() => {});
-      }
-      return res ? normalizeTodayWorkout(res) : null;
-    },
-    staleTime: 60 * 1000,
-  });
-
-  // 3. Hydration Query
-  const waterQuery = useQuery({
-    queryKey: queryKeys.nutritionWater,
-    queryFn: async () => {
-      const res = await nutritionService.getWater();
-      return res !== null && res !== undefined ? Number(res) : 0;
-    },
-    staleTime: 60 * 1000,
-  });
-
   const dashboardData = dashboardQuery.data || null;
-  const todayWorkout = todayQuery.data || null;
-  const waterMl =
-    waterQuery.data !== undefined
-      ? waterQuery.data
-      : Number(dashboardData?.waterMl || 0);
+  const todayWorkout = dashboardData?.todayWorkout
+    ? normalizeTodayWorkout(dashboardData.todayWorkout)
+    : null;
 
-  const loading =
-    (dashboardQuery.isLoading && !dashboardQuery.data) &&
-    (todayQuery.isLoading && !todayQuery.data);
+  const profile = dashboardData?.profile || {};
+  const todayNutrition =
+    dashboardData?.nutrition?.totals ||
+    dashboardData?.nutrition?.dailyTotals ||
+    { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const nutritionTargets =
+    dashboardData?.nutrition?.targets ||
+    { calories: 2200, protein: 140, carbs: 240, fat: 65 };
+  const waterMl = Number(
+    dashboardData?.water?.totalMl ??
+    dashboardData?.water?.waterMl ??
+    0
+  );
+  const targetWater = Number(
+    dashboardData?.water?.targetMl ??
+    dashboardData?.water?.waterTargetMl ??
+    nutritionTargets?.waterMl ??
+    3000
+  );
+  const recentWorkouts = dashboardData?.recentWorkouts || [];
+  const pastWeekWorkoutsCount = Number(dashboardData?.pastWeekWorkoutsCount ?? 0);
 
-  const refreshing =
-    dashboardQuery.isRefetching ||
-    todayQuery.isRefetching ||
-    waterQuery.isRefetching;
+  const points = profile?.points ?? 0;
+  const streak = profile?.currentStreak ?? 0;
 
-  const isOffline = dashboardQuery.isError && todayQuery.isError;
+  const loading = dashboardQuery.isLoading && !dashboardQuery.data;
+  const refreshing = dashboardQuery.isRefetching;
+  const isOffline = dashboardQuery.isError && !dashboardQuery.data;
 
   const onRefresh = useCallback(async () => {
-    await Promise.all([
-      dashboardQuery.refetch(),
-      todayQuery.refetch(),
-      waterQuery.refetch(),
-    ]);
-  }, [dashboardQuery, todayQuery, waterQuery]);
+    await dashboardQuery.refetch();
+  }, [dashboardQuery]);
 
   const handleAddWater = async () => {
     if (loggingWater) return;
@@ -129,12 +117,9 @@ export default function HomeDashboard() {
     const added = 250;
     try {
       await nutritionService.logWater(added);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionWater }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
     } catch (e) {
-      console.warn('[Home] Failed to log water:', e.message);
+      console.warn('[Home] Failed to log water:', e?.message || e);
     } finally {
       setLoggingWater(false);
     }
@@ -147,16 +132,8 @@ export default function HomeDashboard() {
     return 'Good evening';
   };
 
-  const profile = dashboardData?.profile || {};
-  const todayNutrition = dashboardData?.todayNutrition || { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  const nutritionTargets = dashboardData?.nutritionTargets || { calories: 2200, protein: 140, carbs: 240, fat: 65 };
-  const targetWater = dashboardData?.waterTargetMl || nutritionTargets.waterMl || 3000;
-  const recentWorkouts = dashboardData?.recentWorkouts || [];
-
-  const points = profile?.points ?? 0;
-  const streak = profile?.currentStreak ?? 0;
-
   // Session state from today workout
+  const hasProgram = todayWorkout?.hasProgram !== false && todayWorkout?.type !== 'no_program';
   const sessionStatus = todayWorkout?.session?.status || 'not_started';
   const isWorkoutCompleted = Boolean(todayWorkout?.hasCompletedToday || sessionStatus === 'completed');
   const isWorkoutInProgress = sessionStatus === 'in_progress';
@@ -307,7 +284,14 @@ export default function HomeDashboard() {
             >
               <View style={styles.cardHeaderRow}>
                 <View style={styles.cardTagRow}>
-                  {isWorkoutCompleted ? (
+                  {!hasProgram ? (
+                    <View style={[styles.statusTag, { backgroundColor: colors.secondaryContainer }]}>
+                      <Dumbbell size={13} color={colors.onSecondaryContainer} />
+                      <Text style={[styles.statusTagText, { color: colors.onSecondaryContainer }]}>
+                        GET STARTED
+                      </Text>
+                    </View>
+                  ) : isWorkoutCompleted ? (
                     <View style={[styles.statusTag, { backgroundColor: colors.primaryContainer }]}>
                       <CheckCircle2 size={13} color={colors.onPrimaryContainer} />
                       <Text style={[styles.statusTagText, { color: colors.onPrimaryContainer }]}>
@@ -338,7 +322,7 @@ export default function HomeDashboard() {
                   )}
                 </View>
 
-                {todayWorkout?.workout?.level && (
+                {hasProgram && todayWorkout?.workout?.level && (
                   <Text style={[styles.levelLabel, { color: colors.onSurfaceVariant }]}>
                     {todayWorkout.workout.level}
                   </Text>
@@ -346,13 +330,17 @@ export default function HomeDashboard() {
               </View>
 
               <Text style={[styles.workoutTitle, { color: colors.onSurface }]}>
-                {isRestDay
+                {!hasProgram
+                  ? 'Choose Your Workout Plan'
+                  : isRestDay
                   ? 'Take Time to Recover'
                   : todayWorkout?.workout?.title || 'Daily Training Routine'}
               </Text>
 
               <Text style={[styles.workoutSub, { color: colors.onSurfaceVariant }]}>
-                {isRestDay
+                {!hasProgram
+                  ? 'Select a structured training program tailored to your fitness goal to unlock customized daily workout routines.'
+                  : isRestDay
                   ? 'Active recovery builds stronger muscle tissue. Stay hydrated and stretch gently.'
                   : todayWorkout?.workout?.programName
                   ? `Program: ${todayWorkout.workout.programName}`
@@ -360,7 +348,7 @@ export default function HomeDashboard() {
               </Text>
 
               {/* Meta metrics row */}
-              {!isRestDay && (
+              {hasProgram && !isRestDay && (
                 <View style={styles.metaRow}>
                   <View style={styles.metaItem}>
                     <Clock size={15} color={colors.primary} />
@@ -385,10 +373,17 @@ export default function HomeDashboard() {
 
               {/* Action Button */}
               <View style={styles.heroActionContainer}>
-                {isWorkoutCompleted ? (
+                {!hasProgram ? (
+                  <AppButton
+                    tone="primary"
+                    label="Choose Workout Plan"
+                    icon="compass"
+                    onPress={() => router.push('/(tabs)/workouts')}
+                  />
+                ) : isWorkoutCompleted ? (
                   <AppButton
                     mode="outlined"
-                    label="View Completed Session"
+                    label="Review Today's Workout"
                     icon="check-circle"
                     onPress={() => router.push(`/workout/${workoutId}?kind=today`)}
                   />
@@ -402,7 +397,7 @@ export default function HomeDashboard() {
                 ) : isWorkoutInProgress ? (
                   <AppButton
                     tone="primary"
-                    label="Resume Workout"
+                    label="Resume Today's Workout"
                     icon="play"
                     onPress={() => router.push(`/workout/${workoutId}?kind=today`)}
                   />
@@ -427,7 +422,7 @@ export default function HomeDashboard() {
                   </Text>
                 </View>
                 <Text style={[styles.consistencyMeta, { color: colors.onSurfaceVariant }]}>
-                  {consistencyDots.filter((d) => d.isCompleted).length} / 7 active
+                  {pastWeekWorkoutsCount} / 7 this week
                 </Text>
               </View>
 
@@ -703,7 +698,7 @@ export default function HomeDashboard() {
 
                 return (
                   <AppCard
-                    key={session._id || session.id || idx}
+                    key={`home-recent-${session._id || session.id || 'sess'}-${idx}`}
                     variant="outlined"
                     style={styles.recentSessionCard}
                   >

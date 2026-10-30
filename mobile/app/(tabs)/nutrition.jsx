@@ -16,13 +16,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Utensils,
   Plus,
-  Trash2,
   Clock,
   X,
   Search,
-  Droplets,
   Flame,
-  ChevronRight,
+  Sun,
+  Sunset,
+  Moon,
+  Apple,
+  Calendar,
 } from 'lucide-react-native';
 import { ProgressBar, Chip } from 'react-native-paper';
 import { nutritionService } from '../../services/nutritionService';
@@ -37,12 +39,15 @@ import AppButton from '../../components/ui/AppButton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
+import WaterTrackerCard from '../../components/nutrition/WaterTrackerCard';
+import AiDietPlanCard from '../../components/nutrition/AiDietPlanCard';
+import MealSectionCard from '../../components/nutrition/MealSectionCard';
 
 const MEAL_CATEGORIES = [
-  { key: 'BREAKFAST', label: 'Breakfast' },
-  { key: 'LUNCH', label: 'Lunch' },
-  { key: 'DINNER', label: 'Dinner' },
-  { key: 'SNACK', label: 'Snacks' },
+  { key: 'BREAKFAST', label: 'Breakfast', icon: Sun },
+  { key: 'LUNCH', label: 'Lunch', icon: Sunset },
+  { key: 'DINNER', label: 'Dinner', icon: Moon },
+  { key: 'SNACK', label: 'Snacks', icon: Apple },
 ];
 
 const GOAL_OPTIONS = [
@@ -75,9 +80,16 @@ export default function NutritionScreen() {
   const { t } = useTranslation();
   const language = profile?.language || user?.language || 'en';
 
-  const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const yesterdayStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }, []);
 
-  // Modals state
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  // Modals state: Custom Food Entry
   const [logModalVisible, setLogModalVisible] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState('BREAKFAST');
   const [foodName, setFoodName] = useState('');
@@ -89,43 +101,51 @@ export default function NutritionScreen() {
   const [unitInput, setUnitInput] = useState('serving');
   const [submittingMeal, setSubmittingMeal] = useState(false);
 
+  // Modals state: Quick Recipe Log
+  const [quickRecipe, setQuickRecipe] = useState(null);
+  const [recipeModalMeal, setRecipeModalMeal] = useState('LUNCH');
+  const [submittingRecipeLog, setSubmittingRecipeLog] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState(null);
+
   // Recipe filters
   const [selectedGoalTag, setSelectedGoalTag] = useState('ALL');
   const [recipeSearch, setRecipeSearch] = useState('');
 
-  // 1. Targets Query
+  // 1. Targets Query (Personalized TDEE & macro goals)
   const targetsQuery = useQuery({
     queryKey: queryKeys.nutritionTargets,
     queryFn: async () => {
       const res = await nutritionService.getTargets();
-      const t = res?.data || res;
-      return t?.calories ? t : { calories: 2200, protein: 140, carbs: 240, fat: 65, waterMl: 3000 };
+      return res || { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, waterMl: 0, hasActivePlan: false };
     },
     staleTime: 60 * 1000,
   });
 
-  // 2. Daily Log Query
+  // 2. Daily Log Query for Selected Date
   const logsQuery = useQuery({
-    queryKey: queryKeys.nutritionLogs(todayDate),
+    queryKey: queryKeys.nutritionLogs(selectedDate),
     queryFn: async () => {
-      const res = await nutritionService.getNutritionLogs(todayDate);
+      const res = await nutritionService.getNutritionLogs(selectedDate);
       const l = res?.data || res;
       return Array.isArray(l) ? l[0] : l || null;
     },
     staleTime: 60 * 1000,
   });
 
-  // 3. Hydration Query
-  const waterQuery = useQuery({
-    queryKey: queryKeys.nutritionWater,
+  // 3. AI Diet Plan Query
+  const dietPlanQuery = useQuery({
+    queryKey: queryKeys.dietPlan,
     queryFn: async () => {
-      const res = await nutritionService.getWater();
-      return typeof res === 'object' ? (res?.totalMl ?? 0) : Number(res || 0);
+      try {
+        return await nutritionService.getCurrentDietPlan();
+      } catch (_) {
+        return null;
+      }
     },
     staleTime: 60 * 1000,
   });
 
-  // 4. Recipes Query
+  // 4. Recipes Catalog Query
   const recipesQuery = useQuery({
     queryKey: ['nutrition', 'recipes', language, selectedGoalTag],
     queryFn: async () => {
@@ -145,43 +165,93 @@ export default function NutritionScreen() {
     staleTime: 60 * 1000,
   });
 
-  const targets = targetsQuery.data || { calories: 2200, protein: 140, carbs: 240, fat: 65, waterMl: 3000 };
+  const targets = targetsQuery.data || { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, waterMl: 0, hasActivePlan: false };
   const dailyLog = logsQuery.data || null;
-  const waterMl = waterQuery.data ?? 0;
+  const dietPlan = dietPlanQuery.data || null;
   const recipes = useMemo(() => recipesQuery.data || [], [recipesQuery.data]);
 
-  const loading =
-    (targetsQuery.isLoading && !targetsQuery.data) &&
-    (logsQuery.isLoading && !logsQuery.data);
+  const hasActivePlan = Boolean(dietPlan && targets.calories > 0);
 
-  const refreshing =
-    targetsQuery.isRefetching ||
-    logsQuery.isRefetching ||
-    waterQuery.isRefetching ||
-    recipesQuery.isRefetching;
+  const loading = targetsQuery.isLoading && !targetsQuery.data && logsQuery.isLoading && !logsQuery.data;
+  const refreshing = targetsQuery.isRefetching || logsQuery.isRefetching || recipesQuery.isRefetching;
 
   const onRefresh = useCallback(async () => {
     await Promise.all([
       targetsQuery.refetch(),
       logsQuery.refetch(),
-      waterQuery.refetch(),
+      dietPlanQuery.refetch(),
       recipesQuery.refetch(),
+      queryClient.invalidateQueries({ queryKey: queryKeys.nutritionWater }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
     ]);
-  }, [targetsQuery, logsQuery, waterQuery, recipesQuery]);
+  }, [targetsQuery, logsQuery, dietPlanQuery, recipesQuery, queryClient]);
 
-  const handleAddWater = async (amount = 250) => {
-    try {
-      await nutritionService.logWater(amount);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionWater }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-      ]);
-    } catch (e) {
-      console.warn('[Nutrition] Water log error:', e.message);
-    }
+  // Robust extraction of meal items from Mongoose array: [{ mealType: 'BREAKFAST', items: [...] }]
+  const getMealItems = useCallback(
+    (mealKey) => {
+      if (!dailyLog?.meals) return [];
+      if (Array.isArray(dailyLog.meals)) {
+        const found = dailyLog.meals.find(
+          (m) => String(m.mealType).toUpperCase() === String(mealKey).toUpperCase()
+        );
+        return found?.items || [];
+      }
+      return dailyLog.meals[mealKey] || [];
+    },
+    [dailyLog]
+  );
+
+  // Compute daily macros
+  const currentCalories = dailyLog?.totals?.calories || dailyLog?.dailyTotals?.calories || 0;
+  const currentProtein = dailyLog?.totals?.protein || dailyLog?.dailyTotals?.protein || 0;
+  const currentCarbs = dailyLog?.totals?.carbs || dailyLog?.dailyTotals?.carbs || 0;
+  const currentFat = dailyLog?.totals?.fat || dailyLog?.dailyTotals?.fat || 0;
+  const currentFiber = dailyLog?.totals?.fiber || dailyLog?.dailyTotals?.fiber || 0;
+
+  const targetCal = hasActivePlan ? Number(targets.calories || 0) : 0;
+  const targetProt = hasActivePlan ? Number(targets.protein || targets.proteinG || 0) : 0;
+  const targetCarb = hasActivePlan ? Number(targets.carbs || targets.carbsG || 0) : 0;
+  const targetF = hasActivePlan ? Number(targets.fat || targets.fatsG || 0) : 0;
+  const targetWat = hasActivePlan ? Number(targets.waterMl || 0) : 0;
+
+  const calProgress = targetCal > 0 ? Math.min(Math.max(currentCalories / targetCal, 0), 1) : 0;
+  const protProgress = targetProt > 0 ? Math.min(Math.max(currentProtein / targetProt, 0), 1) : 0;
+  const carbProgress = targetCarb > 0 ? Math.min(Math.max(currentCarbs / targetCarb, 0), 1) : 0;
+  const fatProgress = targetF > 0 ? Math.min(Math.max(currentFat / targetF, 0), 1) : 0;
+
+  const profileSummary = useMemo(() => {
+    return {
+      goal: typeof profile?.selectedGoal === 'object' && profile.selectedGoal !== null
+        ? profile.selectedGoal.name || profile.selectedGoal.title
+        : user?.programName || null,
+      workoutPlan: typeof profile?.selectedWorkoutPlan === 'object' && profile.selectedWorkoutPlan !== null
+        ? profile.selectedWorkoutPlan.name || profile.selectedWorkoutPlan.title
+        : user?.workoutPlanName || null,
+      age: profile?.age || user?.age,
+      gender: profile?.gender || user?.gender,
+      dietType: profile?.dietType || user?.dietType || 'VEG',
+      height: profile?.heightCm || user?.height,
+      weight: profile?.weight || profile?.weightKg || user?.weight,
+      experienceLevel: profile?.experienceLevel || 'Intermediate',
+      workoutLocation: profile?.preferredWorkoutLocation || 'GYM',
+      workoutDays: profile?.preferredWorkoutDays || 5,
+      workoutTime: profile?.preferredWorkoutTime || 'Morning',
+      budget: profile?.dailyDietBudget || 250,
+    };
+  }, [profile, user]);
+
+  const promptGeneratePlan = () => {
+    Alert.alert(
+      'AI Diet Plan Required',
+      'Your daily targets are currently 0. Please tap "Generate My AI Diet Plan" to calculate and set your personalized calorie, macro, and water targets based on your profile.'
+    );
   };
 
   const openLogModalFor = (mealType) => {
+    if (!hasActivePlan) {
+      promptGeneratePlan();
+      return;
+    }
     setSelectedMealType(mealType);
     setFoodName('');
     setCaloriesInput('');
@@ -195,14 +265,14 @@ export default function NutritionScreen() {
 
   const handleSubmitCustomMeal = async () => {
     if (!foodName.trim() || !caloriesInput.trim()) {
-      Alert.alert('Required Fields', 'Please enter at least the food name and estimated calories.');
+      Alert.alert('Required Fields', 'Please enter at least the food name and calories.');
       return;
     }
 
     setSubmittingMeal(true);
     try {
       await nutritionService.addNutritionLog({
-        date: todayDate,
+        date: selectedDate,
         mealType: selectedMealType,
         items: [
           {
@@ -213,65 +283,88 @@ export default function NutritionScreen() {
             protein: Math.max(0, Number(proteinInput) || 0),
             carbs: Math.max(0, Number(carbsInput) || 0),
             fat: Math.max(0, Number(fatInput) || 0),
+            source: 'CUSTOM',
+            estimatedBy: 'USER',
           },
         ],
       });
 
       setLogModalVisible(false);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(todayDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(selectedDate) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
       ]);
     } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to save meal item to server.');
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to log food.');
     } finally {
       setSubmittingMeal(false);
     }
   };
 
-  const handleDeleteItem = async (logId, itemId) => {
-    if (!logId || !itemId) return;
+  // Quick Log Recipe Action
+  const handleQuickLogRecipe = async () => {
+    if (!hasActivePlan) {
+      promptGeneratePlan();
+      return;
+    }
+    if (!quickRecipe) return;
+
+    setSubmittingRecipeLog(true);
     try {
-      await nutritionService.deleteNutritionLogItem(logId, itemId);
+      const cal = quickRecipe.nutritionPerServing?.calories ?? quickRecipe.calories ?? 0;
+      const p = quickRecipe.nutritionPerServing?.protein ?? quickRecipe.protein ?? 0;
+      const c = quickRecipe.nutritionPerServing?.carbs ?? quickRecipe.carbs ?? 0;
+      const f = quickRecipe.nutritionPerServing?.fat ?? quickRecipe.fat ?? 0;
+      const fib = quickRecipe.nutritionPerServing?.fiber ?? quickRecipe.fiber ?? 0;
+
+      await nutritionService.addNutritionLog({
+        date: selectedDate,
+        mealType: recipeModalMeal,
+        items: [
+          {
+            name: quickRecipe.title || 'Recipe meal',
+            quantity: 1,
+            unit: 'serving',
+            calories: cal,
+            protein: p,
+            carbs: c,
+            fat: f,
+            fiber: fib,
+            source: 'RECIPE',
+            recipeId: quickRecipe._id || quickRecipe.id,
+            estimatedBy: 'RECIPE',
+          },
+        ],
+      });
+
+      setQuickRecipe(null);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(todayDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(selectedDate) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
       ]);
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to delete item.');
+      Alert.alert('Logged!', `Added "${quickRecipe.title}" to ${recipeModalMeal.toLowerCase()}.`);
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err?.message || 'Failed to log recipe.');
+    } finally {
+      setSubmittingRecipeLog(false);
     }
   };
 
-  // Compute live daily totals from server log
-  const totals = dailyLog?.dailyTotals || dailyLog?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  const currentCalories = Math.round(totals.calories || 0);
-  const currentProtein = Math.round(totals.protein || 0);
-  const currentCarbs = Math.round(totals.carbs || 0);
-  const currentFat = Math.round(totals.fat || totals.fats || 0);
-
-  const targetCal = Math.max(1200, targets.calories || 2200);
-  const targetProt = Math.max(30, targets.protein || 140);
-  const targetCarb = Math.max(50, targets.carbs || 240);
-  const targetF = Math.max(20, targets.fat || 65);
-  const targetWat = Math.max(1000, targets.waterMl || 3000);
-
-  const calProgress = Math.min(Math.max(currentCalories / targetCal, 0), 1);
-  const protProgress = Math.min(Math.max(currentProtein / targetProt, 0), 1);
-  const carbProgress = Math.min(Math.max(currentCarbs / targetCarb, 0), 1);
-  const fatProgress = Math.min(Math.max(currentFat / targetF, 0), 1);
-  const waterProgress = Math.min(Math.max(waterMl / targetWat, 0), 1);
-
-  // Group meals
-  const logId = dailyLog?._id || dailyLog?.id;
-  const rawMeals = dailyLog?.meals || {};
-  const mealsMap = {
-    BREAKFAST: rawMeals.BREAKFAST || rawMeals.breakfast || [],
-    LUNCH: rawMeals.LUNCH || rawMeals.lunch || [],
-    DINNER: rawMeals.DINNER || rawMeals.dinner || [],
-    SNACK: rawMeals.SNACK || rawMeals.snack || rawMeals.SNACKS || [],
+  const handleDeleteItem = async (logId, itemId) => {
+    if (!logId || !itemId) return;
+    setDeletingItemId(itemId);
+    try {
+      await nutritionService.deleteNutritionLogItem(logId, itemId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionLogs(selectedDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]);
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err?.message || 'Failed to delete item.');
+    } finally {
+      setDeletingItemId(null);
+    }
   };
-
-  const totalItemsCount = Object.values(mealsMap).reduce((sum, items) => sum + (items?.length || 0), 0);
 
   const filteredRecipes = useMemo(() => {
     return recipes.filter((r) => {
@@ -283,9 +376,61 @@ export default function NutritionScreen() {
     });
   }, [recipes, recipeSearch, selectedGoalTag]);
 
+  const logId = dailyLog?._id || dailyLog?.id;
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <TopBar title="Diet & Nutrition" subtitle="Macros, meals & recipes" />
+
+      {/* Date Switcher Strip */}
+      <View style={[styles.dateStrip, { backgroundColor: colors.surface, borderBottomColor: colors.outlineVariant }]}>
+        <View style={styles.dateRow}>
+          <Pressable
+            style={[
+              styles.datePill,
+              selectedDate === yesterdayStr
+                ? { backgroundColor: colors.primaryContainer, borderColor: colors.primary }
+                : { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+            ]}
+            onPress={() => setSelectedDate(yesterdayStr)}
+          >
+            <Text
+              style={[
+                styles.datePillText,
+                { color: selectedDate === yesterdayStr ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+              ]}
+            >
+              Yesterday
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.datePill,
+              selectedDate === todayStr
+                ? { backgroundColor: colors.primaryContainer, borderColor: colors.primary }
+                : { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+            ]}
+            onPress={() => setSelectedDate(todayStr)}
+          >
+            <Text
+              style={[
+                styles.datePillText,
+                { color: selectedDate === todayStr ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+              ]}
+            >
+              Today
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.dateLabelRow}>
+          <Calendar size={13} color={colors.onSurfaceVariant} />
+          <Text style={[styles.currentDateLabel, { color: colors.onSurfaceVariant }]}>
+            {selectedDate === todayStr ? 'Today' : selectedDate}
+          </Text>
+        </View>
+      </View>
 
       <ScrollView
         style={styles.flex}
@@ -318,7 +463,9 @@ export default function NutritionScreen() {
                     Daily Macro Intake
                   </Text>
                   <Text style={[styles.summaryDate, { color: colors.onSurfaceVariant }]}>
-                    {"Today's Goals & Targets"}
+                    {hasActivePlan
+                      ? (selectedDate === todayStr ? "Today's Targets" : `Log for ${selectedDate}`)
+                      : 'Targets unlock with AI Plan'}
                   </Text>
                 </View>
                 <View
@@ -327,7 +474,7 @@ export default function NutritionScreen() {
                     { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
                   ]}
                 >
-                  <Flame size={14} color={colors.secondary} />
+                  <Flame size={14} color={hasActivePlan ? colors.secondary : colors.onSurfaceVariant} />
                   <Text style={[styles.calTargetPillText, { color: colors.onSurface }]}>
                     Target: {targetCal} kcal
                   </Text>
@@ -346,7 +493,11 @@ export default function NutritionScreen() {
                     {currentCalories} <Text style={styles.calUnit}>kcal eaten</Text>
                   </Text>
                   <Text style={[styles.calRemaining, { color: colors.onSurfaceVariant }]}>
-                    {Math.max(0, targetCal - currentCalories)} kcal remaining
+                    {hasActivePlan
+                      ? (targetCal >= currentCalories
+                        ? `${targetCal - currentCalories} kcal left`
+                        : `${currentCalories - targetCal} kcal over`)
+                      : '0 kcal target'}
                   </Text>
                 </View>
               </View>
@@ -370,135 +521,72 @@ export default function NutritionScreen() {
                 </View>
 
                 <View style={styles.macroCol}>
-                  <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>Fats</Text>
+                  <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>Fat</Text>
                   <Text style={[styles.macroVal, { color: colors.onSurface }]}>
                     {currentFat} / {targetF}g
                   </Text>
                   <ProgressBar progress={fatProgress} color={colors.outline} style={styles.macroBar} />
                 </View>
+
+                {hasActivePlan && currentFiber > 0 && (
+                  <View style={styles.macroCol}>
+                    <Text style={[styles.macroLabel, { color: colors.onSurfaceVariant }]}>Fiber</Text>
+                    <Text style={[styles.macroVal, { color: colors.onSurface }]}>
+                      {currentFiber} / 30g
+                    </Text>
+                    <ProgressBar
+                      progress={Math.min(currentFiber / 30, 1)}
+                      color={custom.primaryStrong}
+                      style={styles.macroBar}
+                    />
+                  </View>
+                )}
               </View>
             </AppCard>
 
-            {/* 2. Hydration Tracking Card */}
-            <AppCard variant="outlined" style={styles.hydrationCard}>
-              <View style={styles.hydrationHeader}>
-                <View style={styles.rowAlign}>
-                  <Droplets size={18} color={colors.primary} />
-                  <Text style={[styles.hydrationTitle, { color: colors.onSurface }]}>
-                    Hydration Tracker
-                  </Text>
-                </View>
-                <Text style={[styles.waterVal, { color: colors.onSurface }]}>
-                  {waterMl} <Text style={styles.waterTargetSub}>/ {targetWat} ml</Text>
-                </Text>
-              </View>
+            {/* 2. AI Diet Plan Card */}
+            <AiDietPlanCard
+              dietPlan={dietPlan}
+              isLoading={dietPlanQuery.isLoading}
+              profileSummary={profileSummary}
+              onPlanGenerated={() => {
+                targetsQuery.refetch();
+                dietPlanQuery.refetch();
+              }}
+            />
 
-              <ProgressBar
-                progress={waterProgress}
-                color={colors.primary}
-                style={styles.waterProgressBar}
-              />
+            {/* 3. Hydration Tracking Card */}
+            <WaterTrackerCard
+              targetWater={targetWat}
+              isLocked={!hasActivePlan}
+              onPromptPlan={promptGeneratePlan}
+            />
 
-              <View style={styles.waterActionRow}>
-                <Text style={[styles.waterPct, { color: colors.onSurfaceVariant }]}>
-                  {Math.round(waterProgress * 100)}% of daily recommendation
-                </Text>
-
-                <Pressable
-                  style={[
-                    styles.addWaterBtn,
-                    {
-                      backgroundColor: colors.primaryContainer,
-                      borderColor: colors.primary,
-                    },
-                  ]}
-                  onPress={() => handleAddWater(250)}
-                >
-                  <Plus size={14} color={colors.onPrimaryContainer} />
-                  <Text style={[styles.addWaterBtnText, { color: colors.onPrimaryContainer }]}>
-                    +250 ml
-                  </Text>
-                </Pressable>
-              </View>
-            </AppCard>
-
-            {/* 3. Meals Logged Section */}
+            {/* 4. Meals Breakdown Section */}
             <SectionHeader
-              title={`Today's Meals (${totalItemsCount} items)`}
+              title="Daily Meals"
               actionLabel="Add Food"
               onAction={() => openLogModalFor('BREAKFAST')}
             />
 
             {MEAL_CATEGORIES.map((cat) => {
-              const items = mealsMap[cat.key] || [];
-              const categoryCalories = items.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
-
+              const items = getMealItems(cat.key);
               return (
-                <AppCard key={cat.key} variant="elevated" style={styles.mealCard}>
-                  <View style={styles.mealHeaderRow}>
-                    <View style={styles.rowAlign}>
-                      <Text style={[styles.mealCategoryTitle, { color: colors.onSurface }]}>
-                        {cat.label}
-                      </Text>
-                      {items.length > 0 && (
-                        <View style={[styles.mealCountBadge, { backgroundColor: colors.surfaceVariant }]}>
-                          <Text style={[styles.mealCountText, { color: colors.onSurfaceVariant }]}>
-                            {categoryCalories} kcal
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <Pressable
-                      style={[styles.addMealIconBtn, { backgroundColor: colors.surfaceVariant }]}
-                      onPress={() => openLogModalFor(cat.key)}
-                      hitSlop={8}
-                    >
-                      <Plus size={16} color={colors.onSurface} />
-                    </Pressable>
-                  </View>
-
-                  {items.length > 0 ? (
-                    <View style={styles.itemsList}>
-                      {items.map((item, idx) => (
-                        <View
-                          key={String(item._id?._id || item._id || item.id || idx)}
-                          style={[
-                            styles.itemRow,
-                            idx > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.outlineVariant } : null,
-                          ]}
-                        >
-                          <View style={styles.itemMetaCol}>
-                            <Text style={[styles.itemName, { color: colors.onSurface }]}>
-                              {item.name}
-                            </Text>
-                            <Text style={[styles.itemSub, { color: colors.onSurfaceVariant }]}>
-                              {item.calories} kcal • {item.protein || 0}g P • {item.carbs || 0}g C • {item.fat || 0}g F
-                            </Text>
-                          </View>
-
-                          {logId && (
-                            <Pressable
-                              style={styles.deleteBtn}
-                              onPress={() => handleDeleteItem(logId, item._id || item.id)}
-                              hitSlop={8}
-                            >
-                              <Trash2 size={16} color={colors.error} />
-                            </Pressable>
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={[styles.emptyMealText, { color: colors.onSurfaceVariant }]}>
-                      No {cat.label.toLowerCase()} items logged yet.
-                    </Text>
-                  )}
-                </AppCard>
+                <MealSectionCard
+                  key={cat.key}
+                  mealType={cat.key}
+                  label={cat.label}
+                  icon={cat.icon}
+                  items={items}
+                  logId={logId}
+                  onAddFood={openLogModalFor}
+                  onDeleteItem={handleDeleteItem}
+                  deletingItemId={deletingItemId}
+                />
               );
             })}
 
-            {/* 4. Healthy Recipes Section */}
+            {/* 5. Healthy Recipes Section */}
             <SectionHeader
               title={`${t('recipes.catalogTitle')} (${recipes.length})`}
               style={{ marginTop: 20 }}
@@ -563,6 +651,7 @@ export default function NutritionScreen() {
               </ScrollView>
             </View>
 
+            {/* Recipes Feed with 1-Tap Quick Log */}
             {filteredRecipes.length > 0 ? (
               filteredRecipes.map((recipe, rIdx) => {
                 const recipeId = recipe._id?._id || recipe._id || recipe.id;
@@ -577,7 +666,7 @@ export default function NutritionScreen() {
 
                 return (
                   <AppCard
-                    key={String(recipeId || rIdx)}
+                    key={`recipe-${String(recipeId || 'item')}-${rIdx}`}
                     variant="outlined"
                     style={styles.recipeCard}
                     onPress={() => router.push(`/recipe/${recipeId}`)}
@@ -641,7 +730,20 @@ export default function NutritionScreen() {
                         </View>
                       </View>
 
-                      <ChevronRight size={18} color={custom.primaryStrong} />
+                      {/* Quick Log Action */}
+                      <Pressable
+                        style={[styles.quickLogBtn, { backgroundColor: colors.primaryContainer }]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setQuickRecipe(recipe);
+                        }}
+                        hitSlop={6}
+                      >
+                        <Plus size={14} color={colors.onPrimaryContainer} />
+                        <Text style={[styles.quickLogText, { color: colors.onPrimaryContainer }]}>
+                          Log
+                        </Text>
+                      </Pressable>
                     </View>
                   </AppCard>
                 );
@@ -657,7 +759,66 @@ export default function NutritionScreen() {
         )}
       </ScrollView>
 
-      {/* 5. Custom Meal Log Modal */}
+      {/* 6. Quick Recipe Log Modal */}
+      {quickRecipe && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setQuickRecipe(null)}>
+          <View style={styles.modalBackdrop}>
+            <View
+              style={[
+                styles.modalCard,
+                { backgroundColor: colors.surface, borderColor: colors.outlineVariant },
+              ]}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                  Log Recipe to Meal
+                </Text>
+                <Pressable onPress={() => setQuickRecipe(null)} hitSlop={8}>
+                  <X size={20} color={colors.onSurfaceVariant} />
+                </Pressable>
+              </View>
+
+              <Text style={[styles.quickRecipeSub, { color: colors.onSurfaceVariant }]}>
+                Adding <Text style={{ fontWeight: '700', color: colors.onSurface }}>{quickRecipe.title}</Text> ({quickRecipe.nutritionPerServing?.calories ?? quickRecipe.calories ?? 0} kcal, 1 serving) to:
+              </Text>
+
+              <View style={styles.chipRow}>
+                {MEAL_CATEGORIES.map((cat) => (
+                  <Chip
+                    key={cat.key}
+                    selected={recipeModalMeal === cat.key}
+                    onPress={() => setRecipeModalMeal(cat.key)}
+                    style={[
+                      styles.categoryChip,
+                      recipeModalMeal === cat.key
+                        ? { backgroundColor: colors.primaryContainer }
+                        : { backgroundColor: colors.surfaceVariant },
+                    ]}
+                    textStyle={{
+                      color: recipeModalMeal === cat.key ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {cat.label}
+                  </Chip>
+                ))}
+              </View>
+
+              <View style={styles.modalActionWrap}>
+                <AppButton
+                  tone="primary"
+                  label={`Log to ${recipeModalMeal.toLowerCase()}`}
+                  loading={submittingRecipeLog}
+                  onPress={handleQuickLogRecipe}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* 7. Custom Meal Log Modal */}
       <Modal visible={logModalVisible} transparent animationType="slide" onRequestClose={() => setLogModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View
@@ -671,7 +832,7 @@ export default function NutritionScreen() {
           >
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
-                Log Meal Item
+                Log Food Item
               </Text>
               <Pressable onPress={() => setLogModalVisible(false)} hitSlop={8}>
                 <X size={20} color={colors.onSurfaceVariant} />
@@ -709,7 +870,7 @@ export default function NutritionScreen() {
                 styles.modalInput,
                 { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
               ]}
-              placeholder="e.g., Grilled Chicken Salad, Oatmeal"
+              placeholder="e.g., Oatmeal with Berries, Chicken Salad"
               placeholderTextColor={colors.onSurfaceVariant}
               value={foodName}
               onChangeText={setFoodName}
@@ -801,9 +962,41 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  dateStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  datePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  datePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dateLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  currentDateLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 40,
   },
   skeletonWrap: {
@@ -813,17 +1006,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   summaryCard: {
+    padding: 16,
     marginBottom: 16,
   },
   summaryTopRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   summaryTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   summaryDate: {
     fontSize: 12,
@@ -833,22 +1027,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
   },
   calTargetPillText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   calSection: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   calProgressBar: {
     height: 8,
     borderRadius: 4,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   calRow: {
     flexDirection: 'row',
@@ -856,8 +1050,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   calEaten: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   calUnit: {
     fontSize: 12,
@@ -869,153 +1063,43 @@ const styles = StyleSheet.create({
   macroColumnsRow: {
     flexDirection: 'row',
     gap: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(150, 150, 150, 0.2)',
-    paddingTop: 12,
   },
   macroCol: {
     flex: 1,
+    gap: 4,
   },
   macroLabel: {
     fontSize: 11,
-    marginBottom: 2,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   macroVal: {
     fontSize: 12,
     fontWeight: '700',
-    marginBottom: 4,
   },
   macroBar: {
     height: 4,
     borderRadius: 2,
   },
-  hydrationCard: {
-    marginBottom: 16,
-  },
-  hydrationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  hydrationTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  waterVal: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  waterTargetSub: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  waterProgressBar: {
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  waterActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  waterPct: {
-    fontSize: 12,
-  },
-  addWaterBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  addWaterBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  mealCard: {
-    marginBottom: 12,
-  },
-  mealHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  mealCategoryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  mealCountBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    marginLeft: 8,
-  },
-  mealCountText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  addMealIconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  itemsList: {
-    marginTop: 4,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  itemMetaCol: {
-    flex: 1,
-    marginRight: 8,
-  },
-  itemName: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  itemSub: {
-    fontSize: 12,
-  },
-  deleteBtn: {
-    padding: 6,
-  },
-  emptyMealText: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    paddingVertical: 4,
-  },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
     gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 40,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
     fontSize: 13,
-    padding: 0,
   },
   goalChipsContainer: {
-    marginBottom: 12,
+    marginBottom: 14,
   },
   goalChipsScroll: {
     gap: 8,
-    paddingVertical: 2,
   },
   goalChip: {
     paddingHorizontal: 12,
@@ -1029,88 +1113,107 @@ const styles = StyleSheet.create({
   },
   recipeCard: {
     marginBottom: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   recipeCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 10,
     gap: 12,
   },
   recipeThumb: {
-    width: 68,
-    height: 68,
-    borderRadius: 10,
+    width: 64,
+    height: 64,
+    borderRadius: 8,
   },
   recipeThumbPlaceholder: {
-    width: 68,
-    height: 68,
-    borderRadius: 10,
+    width: 64,
+    height: 64,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   recipeInfoCol: {
     flex: 1,
+    gap: 3,
   },
   recipeTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    marginBottom: 2,
   },
   recipeMacroText: {
-    fontSize: 12,
-    marginBottom: 4,
+    fontSize: 11,
+    fontWeight: '500',
   },
   recipeMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
+    gap: 4,
   },
   recipeMetaText: {
     fontSize: 11,
-    fontWeight: '500',
   },
   recipeMetaDot: {
-    fontSize: 10,
+    fontSize: 11,
   },
   recipeGoalTag: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1,
     borderRadius: 4,
+    marginLeft: 2,
   },
   recipeGoalTagText: {
     fontSize: 10,
     fontWeight: '700',
   },
+  quickLogBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  quickLogText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quickRecipeSub: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalCard: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     borderWidth: 1,
-    padding: 20,
+    padding: 16,
     maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 14,
   },
   categoryChip: {
-    borderRadius: 16,
+    height: 32,
   },
   inputLabel: {
     fontSize: 12,
@@ -1118,19 +1221,19 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   modalInput: {
-    height: 44,
-    borderRadius: 10,
+    height: 42,
+    borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 12,
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 12,
   },
   twoColInputRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   modalActionWrap: {
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 8,
   },
 });

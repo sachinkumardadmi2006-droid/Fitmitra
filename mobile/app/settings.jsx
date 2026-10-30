@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -87,22 +88,34 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of your FitMitra account?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await logout();
-            router.replace('/login');
-          } catch (err) {
-            console.warn('[Settings] Logout error:', err?.message || err);
-            router.replace('/login');
-          }
+    const doLogout = async () => {
+      try {
+        await logout();
+        router.replace('/login');
+      } catch (err) {
+        console.warn('[Settings] Logout error:', err?.message || err);
+        router.replace('/login');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm('Are you sure you want to sign out of your FitMitra account?')
+          : true;
+      if (confirmed) {
+        doLogout();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure you want to sign out of your FitMitra account?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: doLogout,
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   return (

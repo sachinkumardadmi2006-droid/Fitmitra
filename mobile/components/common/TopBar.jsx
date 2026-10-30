@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Dumbbell, Bell, ChevronLeft, ShoppingBag } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../hooks/useCart';
 import { notificationService } from '../../services/notificationService';
 import { FontSize, BorderRadius } from '../../constants/theme';
@@ -19,11 +20,14 @@ export const TopBar = ({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { isAuthenticated } = useAuth();
   const { totalQuantity: cartCount } = useCart();
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
+    if (!isAuthenticated) return;
+
     (async () => {
       try {
         const res = await notificationService.getNotifications({ limit: 20 });
@@ -36,7 +40,7 @@ export const TopBar = ({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   return (
     <View
