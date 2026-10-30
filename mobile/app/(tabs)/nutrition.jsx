@@ -170,9 +170,10 @@ export default function NutritionScreen() {
   const dietPlan = dietPlanQuery.data || null;
   const recipes = useMemo(() => recipesQuery.data || [], [recipesQuery.data]);
 
-  const hasActivePlan = Boolean(dietPlan && targets.calories > 0);
+  const hasActivePlan = Boolean(
+    dietPlan && (dietPlan._id || dietPlan.id || dietPlan.title || dietPlan.dailyTargets)
+  );
 
-  const loading = targetsQuery.isLoading && !targetsQuery.data && logsQuery.isLoading && !logsQuery.data;
   const refreshing = targetsQuery.isRefetching || logsQuery.isRefetching || recipesQuery.isRefetching;
 
   const onRefresh = useCallback(async () => {
@@ -382,55 +383,57 @@ export default function NutritionScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <TopBar title="Diet & Nutrition" subtitle="Macros, meals & recipes" />
 
-      {/* Date Switcher Strip */}
-      <View style={[styles.dateStrip, { backgroundColor: colors.surface, borderBottomColor: colors.outlineVariant }]}>
-        <View style={styles.dateRow}>
-          <Pressable
-            style={[
-              styles.datePill,
-              selectedDate === yesterdayStr
-                ? { backgroundColor: colors.primaryContainer, borderColor: colors.primary }
-                : { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-            ]}
-            onPress={() => setSelectedDate(yesterdayStr)}
-          >
-            <Text
+      {/* Date Switcher Strip - Only shown when user has an active diet plan */}
+      {hasActivePlan && (
+        <View style={[styles.dateStrip, { backgroundColor: colors.surface, borderBottomColor: colors.outlineVariant }]}>
+          <View style={styles.dateRow}>
+            <Pressable
               style={[
-                styles.datePillText,
-                { color: selectedDate === yesterdayStr ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+                styles.datePill,
+                selectedDate === yesterdayStr
+                  ? { backgroundColor: colors.primaryContainer, borderColor: colors.primary }
+                  : { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
               ]}
+              onPress={() => setSelectedDate(yesterdayStr)}
             >
-              Yesterday
-            </Text>
-          </Pressable>
+              <Text
+                style={[
+                  styles.datePillText,
+                  { color: selectedDate === yesterdayStr ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+                ]}
+              >
+                Yesterday
+              </Text>
+            </Pressable>
 
-          <Pressable
-            style={[
-              styles.datePill,
-              selectedDate === todayStr
-                ? { backgroundColor: colors.primaryContainer, borderColor: colors.primary }
-                : { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-            ]}
-            onPress={() => setSelectedDate(todayStr)}
-          >
-            <Text
+            <Pressable
               style={[
-                styles.datePillText,
-                { color: selectedDate === todayStr ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+                styles.datePill,
+                selectedDate === todayStr
+                  ? { backgroundColor: colors.primaryContainer, borderColor: colors.primary }
+                  : { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
               ]}
+              onPress={() => setSelectedDate(todayStr)}
             >
-              Today
-            </Text>
-          </Pressable>
-        </View>
+              <Text
+                style={[
+                  styles.datePillText,
+                  { color: selectedDate === todayStr ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+                ]}
+              >
+                Today
+              </Text>
+            </Pressable>
+          </View>
 
-        <View style={styles.dateLabelRow}>
-          <Calendar size={13} color={colors.onSurfaceVariant} />
-          <Text style={[styles.currentDateLabel, { color: colors.onSurfaceVariant }]}>
-            {selectedDate === todayStr ? 'Today' : selectedDate}
-          </Text>
+          <View style={styles.dateLabelRow}>
+            <Calendar size={13} color={colors.onSurfaceVariant} />
+            <Text style={[styles.currentDateLabel, { color: colors.onSurfaceVariant }]}>
+              {selectedDate === todayStr ? 'Today' : selectedDate}
+            </Text>
+          </View>
         </View>
-      </View>
+      )}
 
       <ScrollView
         style={styles.flex}
@@ -447,11 +450,26 @@ export default function NutritionScreen() {
         }
       >
         {/* Loading Skeleton */}
-        {loading && !dailyLog && recipes.length === 0 ? (
+        {dietPlanQuery.isLoading && !dietPlan ? (
           <View style={styles.skeletonWrap}>
             <Skeleton height={180} radius={custom.radius.lg} style={styles.mbLg} />
             <Skeleton height={100} radius={custom.radius.lg} style={styles.mbLg} />
             <Skeleton height={120} radius={custom.radius.lg} />
+          </View>
+        ) : !hasActivePlan ? (
+          /* Before plan creation: ONLY show the AI Diet Plan creation card */
+          <View style={styles.noPlanSection}>
+            <AiDietPlanCard
+              dietPlan={dietPlan}
+              isLoading={dietPlanQuery.isLoading}
+              profileSummary={profileSummary}
+              onPlanGenerated={() => {
+                targetsQuery.refetch();
+                dietPlanQuery.refetch();
+                logsQuery.refetch();
+                recipesQuery.refetch();
+              }}
+            />
           </View>
         ) : (
           <>
@@ -998,6 +1016,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 40,
+  },
+  noPlanSection: {
+    paddingTop: 8,
+    paddingBottom: 20,
   },
   skeletonWrap: {
     paddingVertical: 12,

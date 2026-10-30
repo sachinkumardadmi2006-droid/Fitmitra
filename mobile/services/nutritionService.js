@@ -168,7 +168,7 @@ export const nutritionService = {
    */
   async getCurrentDietPlan() {
     const res = await api.get('/nutrition/diet-plan');
-    return res?.data || res || null;
+    return res?.data !== undefined ? res.data : (res || null);
   },
 
   /**

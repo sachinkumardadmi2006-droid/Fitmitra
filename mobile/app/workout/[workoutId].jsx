@@ -361,6 +361,7 @@ function ExercisePreviewPanel({
   totalExercises,
   theme,
   t,
+  isCompleted,
   onClose,
   onCompleteExercise,
   onNextExercise,
@@ -504,15 +505,33 @@ function ExercisePreviewPanel({
 
       {/* Bottom Action Buttons */}
       <View style={[previewStyles.bottomBar, { backgroundColor: colors.surface, borderTopColor: colors.outlineVariant }]}>
-        <Pressable
-          style={[previewStyles.completeBtn, { backgroundColor: colors.primaryContainer }]}
-          onPress={onCompleteExercise}
-        >
-          <Check size={16} color={colors.onPrimaryContainer} />
-          <Text style={[previewStyles.completeBtnText, { color: colors.onPrimaryContainer }]}>
-            Complete Exercise
-          </Text>
-        </Pressable>
+        {isCompleted ? (
+          <View
+            style={[
+              previewStyles.completeBtn,
+              {
+                backgroundColor: 'rgba(53, 208, 127, 0.12)',
+                borderColor: 'rgba(53, 208, 127, 0.35)',
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <Check size={16} color="#35D07F" />
+            <Text style={[previewStyles.completeBtnText, { color: '#35D07F', fontWeight: '700' }]}>
+              Completed
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={[previewStyles.completeBtn, { backgroundColor: colors.primaryContainer }]}
+            onPress={onCompleteExercise}
+          >
+            <Check size={16} color={colors.onPrimaryContainer} />
+            <Text style={[previewStyles.completeBtnText, { color: colors.onPrimaryContainer }]}>
+              Complete Exercise
+            </Text>
+          </Pressable>
+        )}
 
         {!isLast && (
           <Pressable
@@ -994,6 +1013,7 @@ export default function WorkoutDetailAndPlayerScreen() {
 
   // Toggle set completion and trigger rest
   const handleToggleSet = async (setIdx) => {
+    if (isCompletedSession) return;
     const key = `${currentExIndex}_${setIdx}`;
     const nextCompleted = !completedSets[key];
 
@@ -1732,7 +1752,7 @@ export default function WorkoutDetailAndPlayerScreen() {
                   style={styles.exerciseCard}
                   onPress={() =>
                     router.push(
-                      `/workout/exercise/${targetExerciseId}?index=${index}&total=${exerciseList.length}`
+                      `/workout/exercise/${targetExerciseId}?index=${index}&total=${exerciseList.length}${isCompletedSession ? '&isCompleted=true' : ''}`
                     )
                   }
                 >
@@ -1847,8 +1867,10 @@ export default function WorkoutDetailAndPlayerScreen() {
           totalExercises={exerciseList.length}
           theme={theme}
           t={t}
+          isCompleted={isCompletedSession}
           onClose={() => setPreviewExIndex(null)}
           onCompleteExercise={() => {
+            if (isCompletedSession) return;
             // Start workout if not started, mark first set done, close preview
             if (!isPlaying) {
               handleStartWorkout();

@@ -14,6 +14,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import {
   ArrowLeft,
   Check,
+  CheckCircle2,
   ChevronRight,
   Clock,
   Dumbbell,
@@ -79,7 +80,7 @@ export default function ExerciseDetailScreen() {
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
-  const { exerciseId, index: rawIndex, total: rawTotal } = useLocalSearchParams();
+  const { exerciseId, index: rawIndex, total: rawTotal, isCompleted: rawIsCompleted } = useLocalSearchParams();
 
   const [completing, setCompleting] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -98,6 +99,14 @@ export default function ExerciseDetailScreen() {
 
   const todayData = todayQuery.data || null;
   const exercises = useMemo(() => todayData?.workout?.exercises || [], [todayData]);
+
+  // Determine if workout is already completed
+  const isWorkoutCompleted = useMemo(() => {
+    if (rawIsCompleted === 'true' || rawIsCompleted === true) return true;
+    if (todayData?.hasCompletedToday) return true;
+    if (todayData?.session?.status === 'completed') return true;
+    return false;
+  }, [rawIsCompleted, todayData]);
 
   // Determine current exercise and index
   const currentIndex = useMemo(() => {
@@ -123,7 +132,7 @@ export default function ExerciseDetailScreen() {
 
   // Handle "Complete Exercise" -> saves to database, then auto-navigates to next exercise
   const handleCompleteExercise = async () => {
-    if (completing || !currentExercise) return;
+    if (completing || !currentExercise || isWorkoutCompleted) return;
     setCompleting(true);
 
     try {
@@ -201,7 +210,7 @@ export default function ExerciseDetailScreen() {
     const nextEx = exercises[nextIndex];
     if (nextEx) {
       router.replace(
-        `/workout/exercise/${nextEx.exerciseId}?index=${nextIndex}&total=${totalExercises}`
+        `/workout/exercise/${nextEx.exerciseId}?index=${nextIndex}&total=${totalExercises}${isWorkoutCompleted ? '&isCompleted=true' : ''}`
       );
     }
   };
@@ -430,26 +439,44 @@ export default function ExerciseDetailScreen() {
           },
         ]}
       >
-        <Pressable
-          style={[
-            styles.completeBtn,
-            { backgroundColor: colors.primary },
-            completing && { opacity: 0.75 },
-          ]}
-          onPress={handleCompleteExercise}
-          disabled={completing}
-        >
-          {completing ? (
-            <ActivityIndicator size="small" color={colors.onPrimary} />
-          ) : (
-            <>
-              <Check size={18} color={colors.onPrimary} style={{ marginRight: 6 }} />
-              <Text style={[styles.completeBtnText, { color: colors.onPrimary }]}>
-                {isLastExercise ? 'Complete Routine' : 'Complete Exercise'}
-              </Text>
-            </>
-          )}
-        </Pressable>
+        {isWorkoutCompleted ? (
+          <View
+            style={[
+              styles.completeBtn,
+              {
+                backgroundColor: 'rgba(53, 208, 127, 0.12)',
+                borderColor: 'rgba(53, 208, 127, 0.35)',
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <CheckCircle2 size={18} color="#35D07F" style={{ marginRight: 6 }} />
+            <Text style={[styles.completeBtnText, { color: '#35D07F' }]}>
+              Completed
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={[
+              styles.completeBtn,
+              { backgroundColor: colors.primary },
+              completing && { opacity: 0.75 },
+            ]}
+            onPress={handleCompleteExercise}
+            disabled={completing}
+          >
+            {completing ? (
+              <ActivityIndicator size="small" color={colors.onPrimary} />
+            ) : (
+              <>
+                <Check size={18} color={colors.onPrimary} style={{ marginRight: 6 }} />
+                <Text style={[styles.completeBtnText, { color: colors.onPrimary }]}>
+                  {isLastExercise ? 'Complete Routine' : 'Complete Exercise'}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        )}
 
         <Pressable
           style={[
@@ -463,7 +490,7 @@ export default function ExerciseDetailScreen() {
           disabled={completing}
         >
           <Text style={[styles.nextBtnText, { color: colors.onSurface }]}>
-            {isLastExercise ? 'Finish' : 'Next'}
+            {isLastExercise ? (isWorkoutCompleted ? 'Back to Workouts' : 'Finish') : 'Next'}
           </Text>
           <ChevronRight size={18} color={colors.onSurface} style={{ marginLeft: 2 }} />
         </Pressable>
