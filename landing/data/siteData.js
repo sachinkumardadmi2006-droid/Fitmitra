@@ -8,47 +8,46 @@ const siteData = {
   siteUrl: "https://www.example.com", // TODO: your real domain, e.g. https://nexvyro.in
 
   brand: {
-    name: "Nexvyro Fitness",
-    shortName: "Nexvyro",
+    name: "Nutrients Ocean",
+    shortName: "Nutriocean",
     tagline: "Fresh protein, made right by your gym.",
-    logo: "/images/logo.svg", // TODO: after adding public/images/logo.png change this to "/images/logo.png"
+    logo: "/images/logo.png", // TODO: after adding public/images/logo.png change this to "/images/logo.png"
   },
 
   contact: {
-    phoneDisplay: "+91 98765 43210",
-    phoneRaw: "+919876543210",
-    whatsappNumber: "919876543210",
+    phoneDisplay: "+91 70199 93154",
+    phoneRaw: "+917019993154",
+    whatsappNumber: "917019993154",
     email: "support@fitmitra.in",
   },
 
   socials: {
     whatsapp: "https://wa.me/919876543210?text=Hi%20Nexvyro%20Fitness%2C%20I%20would%20like%20to%20pre-order",
-    instagram: "https://instagram.com/fitmitra_fitness",
+    instagram: "https://instagram.com/nutrientsocean.in",
     youtube: "https://youtube.com/@fitmitra-fitness",
     twitter: "https://x.com/fitmitra",
     facebook: "https://facebook.com/fitmitra.fitness",
   },
 
   legal: {
-    companyName: "Fitmitra (Nexvyro Fitness)",
-    brandName: "Nexvyro Fitness",
+    companyName: "Nexvyro (Nutrients Ocean)",
+    brandName: "Nutrients Ocean",
     lastUpdated: "October 2026",
-    address: "Opposite Gym, Mangalore, Karnataka 575001, India",
+    address: "Opposite Cobra Fitness Club, Valencia, Kankanadi, Mangalore, Karnataka 575001, India",
     supportEmail: "support@fitmitra.in",
-    supportPhone: "+91 98765 43210",
+    supportPhone: "+91 70199 93154",
     refundWindow: "Immediate for stall pickup issues / 14 days for packaged supplements",
     responseTimeline: "Within 24 business hours",
   },
 
   location: {
-    gymName: "[Gym Name]", // TODO
-    addressLine: "Opposite [Gym Name], [Area], Mangalore", // TODO
+    gymName: "Cobra Fitness Club", // TODO
+    addressLine: "Opposite Cobra Fitness Club, Valencia, Kankanadi, Mangalore", // TODO
     mapsLink: "https://maps.app.goo.gl/5dnLPACG8KJUQa7A7",
     mapPhoto: "/images/google-map.jpg",
     mapsEmbedUrl: "", // OPTIONAL: paste a Google Maps "Embed a map" src URL here to show a live map
     timings: [
-      { label: "Morning", time: "6:00 AM - 10:00 AM" }, // TODO
-      { label: "Evening", time: "5:00 PM - 9:00 PM" }, // TODO
+      { label: "Evening", time: "5:00 PM - 8:00 PM" }, // TODO
     ],
   },
 
@@ -57,7 +56,7 @@ const siteData = {
     headlineHighlight: "fresh protein.",
     subtext:
       "Protein meals, protein shakes and milk, prepared fresh at our stall right opposite your gym. Call, pre-order and pick up in minutes.",
-    image: "/images/placeholder.svg", // TODO: add a real photo e.g. "/images/hero.jpg". While this path contains the word "placeholder", a built-in 3D shake illustration is shown instead.
+    image: '/images/hero_showcase.jpg',
     backgroundImage: "", // OPTIONAL: e.g. "/images/hero-bg.jpg"
     videoUrl: "", // OPTIONAL: e.g. "/videos/hero.mp4" (muted looping clip, keep under 5 MB)
     videoPoster: "", // OPTIONAL: e.g. "/images/hero-poster.jpg"
@@ -77,28 +76,36 @@ const siteData = {
     note: "Call us to pre-order and pick up at the stall.",
     items: [
       {
-        id: "protein-meal",
-        name: "Protein Meal",
+        id: "protein_meal",
+        name: "Chocolate Protein Oats Bowl",
         tag: "Meal",
-        description: "A filling, protein-rich meal prepared fresh at our stall.",
-        price: "₹__", // TODO
-        image: "/images/placeholder.svg", // TODO: e.g. "/images/protein-meal.jpg"
+        description: "Creamy chocolate oats topped with banana, almonds, chia seeds and rich chocolate chunks.",
+        price: "₹89", // TODO
+        image: "/images/protein_meal.png", // TODO: e.g. "/images/protein-meal.jpg"
       },
       {
-        id: "protein-shake",
-        name: "Protein Shake",
-        tag: "Shake",
-        description: "A fresh protein shake blended on the spot, ready for before or after your workout.",
-        price: "₹__", // TODO
-        image: "/images/placeholder.svg", // TODO: e.g. "/images/protein-shake.jpg"
+        id: "nightout_protein_meal",
+        name: "Nightfuel Protein Bowl",
+        tag: "Meal",
+        description: "A nutritious oats bowl loaded with banana, pomegranate, nuts and seeds for a satisfying evening meal.",
+        price: "₹79", // TODO
+        image: "/images/nightout_protein_meal.png", // TODO: e.g. "/images/protein-shake.jpg"
       },
       {
-        id: "milk",
-        name: "Milk",
-        tag: "Drink",
-        description: "Fresh, simple milk to go with your training.",
-        price: "₹__", // TODO
-        image: "/images/placeholder.svg", // TODO: e.g. "/images/milk.jpg"
+        id: "dryfruits_sandwich",
+        name: "Fruit & Dry Fruit Sandwich",
+        tag: "Snacks",
+        description: "Fresh banana, pomegranate and assorted dry fruits layered between wholesome bread slices.",
+        price: "₹69", // TODO
+        image: "/images/dryfruits_sandwich.png", // TODO: e.g. "/images/milk.jpg"
+      },
+      {
+        id: "peanut_banana_sandwich",
+        name: "Peanut Butter Banana Sandwich",
+        tag: "Snacks",
+        description: "Delicious whole-wheat bread filled with creamy peanut butter, fresh banana slices and crunchy peanuts.",
+        price: "₹49", // TODO
+        image: "/images/peanut_banana_sandwich.png", // TODO: e.g. "/images/milk.jpg"
       },
     ],
   },
@@ -180,9 +187,9 @@ const siteData = {
     title: "Meet the team",
     subtitle: "Three students, one goal: better fuel for your training.",
     members: [
-      { name: "Sachin Kumar", role: "Founder", photo: "/images/placeholder.svg" }, // TODO
-      { name: "Shivanna", role: "Co-founder", photo: "/images/placeholder.svg" }, // TODO
-      { name: "Team Member 3", role: "Co-founder", photo: "/images/placeholder.svg" }, // TODO
+      { name: "Sachin Kumar", role: "Founder", photo: "/images/sachinkumar.jpg" }, // TODO
+      { name: "Shivanna", role: "Co-founder", photo: "/images/shivanna.jpg" }, // TODO
+      { name: "Team Member 3", role: "Co-founder", photo: "/images/uday.jpg" }, // TODO
     ],
   },
 };
