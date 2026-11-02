@@ -22,6 +22,9 @@ import {
   Trash2,
   X,
   Zap,
+  Trophy,
+  Ruler,
+  Camera,
 } from 'lucide-react-native';
 import { ProgressBar } from 'react-native-paper';
 import { progressService } from '../../services/progressService';
@@ -36,6 +39,29 @@ import AppButton from '../../components/ui/AppButton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
+import {
+  WeightTrendChart,
+  VolumeBarChart,
+  PersonalBestsCard,
+  BodyMeasurementsCard,
+  TransformationPhotosCard,
+  UploadPhotoModal,
+} from '../../components/progress';
+
+const TIMEFRAMES = [
+  { label: '30D', days: 30 },
+  { label: '90D', days: 90 },
+  { label: '180D', days: 180 },
+  { label: '1 Year', days: 365 },
+];
+
+const TABS = [
+  { key: 'WEIGHT', label: 'Weight', icon: Scale },
+  { key: 'VOLUME', label: 'Volume', icon: Dumbbell },
+  { key: 'PRS', label: 'PRs', icon: Trophy },
+  { key: 'BODY', label: 'Body', icon: Ruler },
+  { key: 'PHOTOS', label: 'Photos', icon: Camera },
+];
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -44,16 +70,33 @@ export default function ProgressScreen() {
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
 
-  // Log Weight Modal
+  // Selected timeframe (days)
+  const [selectedDays, setSelectedDays] = useState(90);
+
+  // Active segmented tab
+  const [activeTab, setActiveTab] = useState('WEIGHT');
+
+  // Modals state: Log Weight
   const [weightModalVisible, setWeightModalVisible] = useState(false);
   const [weightInput, setWeightInput] = useState('');
   const [submittingWeight, setSubmittingWeight] = useState(false);
 
+  // Modals state: Log Body Measurements
+  const [measurementsModalVisible, setMeasurementsModalVisible] = useState(false);
+  const [chestInput, setChestInput] = useState('');
+  const [waistInput, setWaistInput] = useState('');
+  const [armsInput, setArmsInput] = useState('');
+  const [thighsInput, setThighsInput] = useState('');
+  const [submittingMeasurements, setSubmittingMeasurements] = useState(false);
+
+  // Modals state: Upload Transformation Photo
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+
   // 1. Progress Summary Query
   const summaryQuery = useQuery({
-    queryKey: queryKeys.progressSummary(90),
+    queryKey: queryKeys.progressSummary(selectedDays),
     queryFn: async () => {
-      const res = await progressService.getProgressSummary(90);
+      const res = await progressService.getProgressSummary(selectedDays);
       return res?.data || res || null;
     },
     staleTime: 60 * 1000,
@@ -61,11 +104,13 @@ export default function ProgressScreen() {
 
   // 2. Weight History Query
   const weightQuery = useQuery({
-    queryKey: queryKeys.progressWeight(90),
+    queryKey: queryKeys.progressWeight(selectedDays),
     queryFn: async () => {
-      const res = await progressService.getWeightHistory(90);
+      const res = await progressService.getWeightHistory(selectedDays);
       const wData = res?.data || res;
-      return Array.isArray(wData?.history)
+      return Array.isArray(wData?.entries)
+        ? wData.entries
+        : Array.isArray(wData?.history)
         ? wData.history
         : Array.isArray(wData)
         ? wData
@@ -74,7 +119,27 @@ export default function ProgressScreen() {
     staleTime: 60 * 1000,
   });
 
-  // 3. Workout Stats Query
+  // 3. Body Measurements Query
+  const measurementsQuery = useQuery({
+    queryKey: queryKeys.progressMeasurements(30),
+    queryFn: async () => {
+      const res = await progressService.getMeasurements(30);
+      return res?.data || res || { entries: [], changes: {} };
+    },
+    staleTime: 60 * 1000,
+  });
+
+  // 4. Transformation Photos Query
+  const photosQuery = useQuery({
+    queryKey: queryKeys.progressPhotos(30),
+    queryFn: async () => {
+      const res = await progressService.getPhotos({ limit: 30 });
+      return res?.photos || [];
+    },
+    staleTime: 60 * 1000,
+  });
+
+  // 5. Workout Stats Query
   const statsQuery = useQuery({
     queryKey: queryKeys.workoutStats,
     queryFn: async () => {
@@ -84,7 +149,7 @@ export default function ProgressScreen() {
     staleTime: 60 * 1000,
   });
 
-  // 4. Workout History Query
+  // 6. Workout History Query
   const historyQuery = useQuery({
     queryKey: queryKeys.workoutHistory(10),
     queryFn: async () => {
@@ -99,7 +164,7 @@ export default function ProgressScreen() {
     staleTime: 60 * 1000,
   });
 
-  // 5. Profile Query (fallback to AuthContext profile if available)
+  // 7. Profile Query
   const profileQuery = useQuery({
     queryKey: queryKeys.profile,
     queryFn: async () => {
@@ -112,17 +177,23 @@ export default function ProgressScreen() {
 
   const summary = summaryQuery.data || null;
   const weightHistory = weightQuery.data || [];
+  const measurementsData = measurementsQuery.data || { entries: [], changes: {} };
+  const photos = photosQuery.data || [];
   const workoutStats = statsQuery.data || null;
   const workoutHistory = historyQuery.data || [];
   const profile = profileQuery.data || authProfile || null;
 
   const loading =
-    (summaryQuery.isLoading && !summaryQuery.data) &&
-    (weightQuery.isLoading && !weightQuery.data);
+    summaryQuery.isLoading &&
+    !summaryQuery.data &&
+    weightQuery.isLoading &&
+    !weightQuery.data;
 
   const refreshing =
     summaryQuery.isRefetching ||
     weightQuery.isRefetching ||
+    measurementsQuery.isRefetching ||
+    photosQuery.isRefetching ||
     statsQuery.isRefetching ||
     historyQuery.isRefetching;
 
@@ -130,22 +201,29 @@ export default function ProgressScreen() {
     await Promise.all([
       summaryQuery.refetch(),
       weightQuery.refetch(),
+      measurementsQuery.refetch(),
+      photosQuery.refetch(),
       statsQuery.refetch(),
       historyQuery.refetch(),
       profileQuery.refetch(),
     ]);
-  }, [summaryQuery, weightQuery, statsQuery, historyQuery, profileQuery]);
+  }, [summaryQuery, weightQuery, measurementsQuery, photosQuery, statsQuery, historyQuery, profileQuery]);
 
+  // Handle Weight Modal
   const handleOpenWeightModal = () => {
-    const currentWeight = summary?.weightSummary?.currentKg || profile?.weightKg || '';
+    const currentWeight =
+      summary?.weight?.currentKg ||
+      summary?.weightSummary?.currentKg ||
+      profile?.weightKg ||
+      '';
     setWeightInput(currentWeight ? String(currentWeight) : '');
     setWeightModalVisible(true);
   };
 
   const handleSaveWeight = async () => {
     const numericWeight = parseFloat(weightInput.trim());
-    if (isNaN(numericWeight) || numericWeight < 30 || numericWeight > 300) {
-      Alert.alert('Invalid Weight', 'Please enter a valid weight between 30 kg and 300 kg.');
+    if (isNaN(numericWeight) || numericWeight < 20 || numericWeight > 400) {
+      Alert.alert('Invalid Weight', 'Please enter a valid weight between 20 kg and 400 kg.');
       return;
     }
 
@@ -154,8 +232,8 @@ export default function ProgressScreen() {
       await progressService.logWeight(numericWeight);
       setWeightModalVisible(false);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.progressWeight(90) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.progressSummary(90) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.progressWeight(selectedDays) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.progressSummary(selectedDays) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
         queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
       ]);
@@ -172,8 +250,8 @@ export default function ProgressScreen() {
     try {
       await progressService.deleteWeight(id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.progressWeight(90) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.progressSummary(90) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.progressWeight(selectedDays) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.progressSummary(selectedDays) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
         queryClient.invalidateQueries({ queryKey: queryKeys.profile }),
       ]);
@@ -182,22 +260,172 @@ export default function ProgressScreen() {
     }
   };
 
-  const weightSummary = summary?.weightSummary || {};
+  // Handle Body Measurements Modal
+  const handleOpenMeasurementsModal = () => {
+    const changes = measurementsData?.changes || {};
+    setChestInput(changes.chestCm?.latest ? String(changes.chestCm.latest) : '');
+    setWaistInput(changes.waistCm?.latest ? String(changes.waistCm.latest) : '');
+    setArmsInput(changes.armsCm?.latest ? String(changes.armsCm.latest) : '');
+    setThighsInput(changes.thighsCm?.latest ? String(changes.thighsCm.latest) : '');
+    setMeasurementsModalVisible(true);
+  };
+
+  const handleSaveMeasurements = async () => {
+    const payload = {};
+    if (chestInput.trim()) payload.chestCm = parseFloat(chestInput.trim());
+    if (waistInput.trim()) payload.waistCm = parseFloat(waistInput.trim());
+    if (armsInput.trim()) payload.armsCm = parseFloat(armsInput.trim());
+    if (thighsInput.trim()) payload.thighsCm = parseFloat(thighsInput.trim());
+
+    if (Object.keys(payload).length === 0) {
+      Alert.alert('Missing Input', 'Please enter at least one measurement (chest, waist, arms, or thighs).');
+      return;
+    }
+
+    setSubmittingMeasurements(true);
+    try {
+      await progressService.logMeasurements(payload);
+      setMeasurementsModalVisible(false);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.progressMeasurements(30) });
+      Alert.alert('Logged', 'Body measurements recorded successfully.');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to record measurements.');
+    } finally {
+      setSubmittingMeasurements(false);
+    }
+  };
+
+  const handleDeleteMeasurement = async (id) => {
+    if (!id) return;
+    try {
+      await progressService.deleteMeasurement(id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.progressMeasurements(30) });
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to remove measurement.');
+    }
+  };
+
+  const handleDeletePhoto = async (id) => {
+    if (!id) return;
+    Alert.alert(
+      'Delete Photo',
+      'Are you sure you want to delete this transformation photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await progressService.deletePhoto(id);
+              await queryClient.invalidateQueries({ queryKey: queryKeys.progressPhotos(30) });
+            } catch (err) {
+              Alert.alert('Error', err?.message || 'Failed to delete photo.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Metrics from summary / profile
+  const weightSummary = summary?.weight || summary?.weightSummary || {};
   const currentKg = weightSummary.currentKg ?? profile?.weightKg ?? null;
   const startingKg = weightSummary.startingKg ?? profile?.startingWeightKg ?? null;
   const targetKg = weightSummary.targetKg ?? profile?.targetWeightKg ?? null;
-  const changeKg = weightSummary.changeKg ?? (currentKg && startingKg ? Math.round((currentKg - startingKg) * 10) / 10 : null);
+  const changeKg =
+    weightSummary.changeKg ??
+    (currentKg && startingKg ? Math.round((currentKg - startingKg) * 10) / 10 : null);
   const percentToGoal = weightSummary.percentToGoal ?? null;
 
   // Real workout stats
-  const totalWorkouts = workoutStats?.totalWorkouts ?? workoutStats?.completedSessions ?? workoutHistory.length;
-  const totalMinutes = workoutStats?.totalDurationMinutes ?? workoutStats?.totalMinutes ?? Math.round((workoutStats?.totalDurationSeconds || 0) / 60);
-  const totalCalories = workoutStats?.totalCalories ?? workoutStats?.totalCaloriesBurned ?? workoutStats?.caloriesEstimate ?? Math.round(totalMinutes * 7.5);
+  const totalWorkouts =
+    workoutStats?.totalWorkouts ?? workoutStats?.completedSessions ?? workoutHistory.length;
+  const totalMinutes =
+    workoutStats?.totalDurationMinutes ??
+    workoutStats?.totalMinutes ??
+    Math.round((workoutStats?.totalDurationSeconds || 0) / 60);
+  const totalCalories =
+    workoutStats?.totalCalories ??
+    workoutStats?.totalCaloriesBurned ??
+    workoutStats?.caloriesEstimate ??
+    Math.round(totalMinutes * 7.5);
   const currentStreak = profile?.currentStreak ?? workoutStats?.currentStreak ?? 0;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <TopBar title="Fitness Progress" subtitle="Body weight, workouts & consistency" />
+      <TopBar title="Fitness Progress" subtitle="Body weight, tonnage & records" />
+
+      {/* Top Filter & Segmented Tabs Bar */}
+      <View
+        style={[
+          styles.topControlsWrap,
+          { backgroundColor: colors.surface, borderBottomColor: colors.outlineVariant },
+        ]}
+      >
+        {/* Timeframe Chips */}
+        <View style={styles.timeframeRow}>
+          {TIMEFRAMES.map((tf) => {
+            const isSelected = selectedDays === tf.days;
+            return (
+              <Pressable
+                key={`tf-${tf.days}`}
+                style={[
+                  styles.timeframeChip,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.surfaceVariant,
+                    borderColor: isSelected ? colors.primary : colors.outlineVariant,
+                  },
+                ]}
+                onPress={() => setSelectedDays(tf.days)}
+              >
+                <Text
+                  style={[
+                    styles.timeframeChipText,
+                    { color: isSelected ? colors.onPrimary : colors.onSurfaceVariant },
+                  ]}
+                >
+                  {tf.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Segmented Navigation Tabs */}
+        <View style={styles.tabsRow}>
+          {TABS.map((tab) => {
+            const isSelected = activeTab === tab.key;
+            const Icon = tab.icon;
+            return (
+              <Pressable
+                key={tab.key}
+                style={[
+                  styles.tabBtn,
+                  isSelected && [styles.tabBtnActive, { borderBottomColor: colors.primary }],
+                ]}
+                onPress={() => setActiveTab(tab.key)}
+              >
+                <Icon
+                  size={16}
+                  color={isSelected ? colors.primary : colors.onSurfaceVariant}
+                />
+                <Text
+                  style={[
+                    styles.tabBtnText,
+                    {
+                      color: isSelected ? colors.primary : colors.onSurfaceVariant,
+                      fontWeight: isSelected ? '700' : '500',
+                    },
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
 
       <ScrollView
         style={styles.flex}
@@ -213,271 +441,403 @@ export default function ProgressScreen() {
           />
         }
       >
-        {loading && !summary && workoutHistory.length === 0 ? (
+        {loading && !summary && weightHistory.length === 0 ? (
           <View style={styles.skeletonWrap}>
             <Skeleton height={180} radius={custom.radius.lg} style={styles.mbLg} />
-            <Skeleton height={120} radius={custom.radius.lg} style={styles.mbLg} />
+            <Skeleton height={200} radius={custom.radius.lg} style={styles.mbLg} />
             <Skeleton height={140} radius={custom.radius.lg} />
           </View>
         ) : (
           <>
-            {/* 1. Body Weight & Goal Progress Card */}
-            <AppCard variant="elevated" style={styles.weightCard}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.rowAlign}>
-                  <Scale size={18} color={colors.primary} />
-                  <Text style={[styles.cardHeaderTitle, { color: colors.onSurface }]}>
-                    Weight Progress
-                  </Text>
-                </View>
-
-                <Pressable
-                  style={[
-                    styles.logWeightBtn,
-                    { backgroundColor: colors.primaryContainer, borderColor: colors.primary },
-                  ]}
-                  onPress={handleOpenWeightModal}
-                >
-                  <Plus size={14} color={colors.onPrimaryContainer} />
-                  <Text style={[styles.logWeightBtnText, { color: colors.onPrimaryContainer }]}>
-                    Log Weight
-                  </Text>
-                </Pressable>
-              </View>
-
-              {currentKg !== null ? (
-                <>
-                  <View style={styles.weightMetricsRow}>
-                    <View style={styles.weightCol}>
-                      <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
-                        Current
-                      </Text>
-                      <Text style={[styles.weightLargeVal, { color: colors.onSurface }]}>
-                        {currentKg} <Text style={styles.weightUnit}>kg</Text>
+            {/* ─── TAB 1: WEIGHT ────────────────────────────────────────── */}
+            {activeTab === 'WEIGHT' && (
+              <>
+                {/* 1. Body Weight & Goal Progress Card */}
+                <AppCard variant="elevated" style={styles.weightCard}>
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.rowAlign}>
+                      <Scale size={18} color={colors.primary} />
+                      <Text style={[styles.cardHeaderTitle, { color: colors.onSurface }]}>
+                        Weight Overview
                       </Text>
                     </View>
 
-                    {startingKg !== null && (
-                      <View style={styles.weightCol}>
-                        <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
-                          Starting
-                        </Text>
-                        <Text style={[styles.weightMedVal, { color: colors.onSurface }]}>
-                          {startingKg} kg
-                        </Text>
-                      </View>
-                    )}
-
-                    {targetKg !== null && (
-                      <View style={styles.weightCol}>
-                        <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
-                          Target
-                        </Text>
-                        <Text style={[styles.weightMedVal, { color: colors.onSurface }]}>
-                          {targetKg} kg
-                        </Text>
-                      </View>
-                    )}
-
-                    {changeKg !== null && (
-                      <View style={styles.weightCol}>
-                        <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
-                          Net Change
-                        </Text>
-                        <Text
-                          style={[
-                            styles.weightMedVal,
-                            { color: changeKg <= 0 ? colors.primary : colors.secondary },
-                          ]}
-                        >
-                          {changeKg > 0 ? `+${changeKg}` : changeKg} kg
-                        </Text>
-                      </View>
-                    )}
+                    <Pressable
+                      style={[
+                        styles.logWeightBtn,
+                        { backgroundColor: colors.primaryContainer, borderColor: colors.primary },
+                      ]}
+                      onPress={handleOpenWeightModal}
+                    >
+                      <Plus size={14} color={colors.onPrimaryContainer} />
+                      <Text style={[styles.logWeightBtnText, { color: colors.onPrimaryContainer }]}>
+                        Log Weight
+                      </Text>
+                    </Pressable>
                   </View>
 
-                  {percentToGoal !== null && (
-                    <View style={styles.goalProgressWrap}>
-                      <View style={styles.goalProgressLabels}>
-                        <Text style={[styles.goalProgressTitle, { color: colors.onSurfaceVariant }]}>
-                          Goal Progress
-                        </Text>
-                        <Text style={[styles.goalProgressPct, { color: colors.onSurface }]}>
-                          {percentToGoal}% to target
-                        </Text>
+                  {currentKg !== null ? (
+                    <>
+                      <View style={styles.weightMetricsRow}>
+                        <View style={styles.weightCol}>
+                          <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                            Current
+                          </Text>
+                          <Text style={[styles.weightLargeVal, { color: colors.onSurface }]}>
+                            {currentKg} <Text style={styles.weightUnit}>kg</Text>
+                          </Text>
+                        </View>
+
+                        {startingKg !== null && (
+                          <View style={styles.weightCol}>
+                            <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                              Starting
+                            </Text>
+                            <Text style={[styles.weightMedVal, { color: colors.onSurface }]}>
+                              {startingKg} kg
+                            </Text>
+                          </View>
+                        )}
+
+                        {targetKg !== null && (
+                          <View style={styles.weightCol}>
+                            <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                              Target
+                            </Text>
+                            <Text style={[styles.weightMedVal, { color: colors.onSurface }]}>
+                              {targetKg} kg
+                            </Text>
+                          </View>
+                        )}
+
+                        {changeKg !== null && (
+                          <View style={styles.weightCol}>
+                            <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                              Net Change
+                            </Text>
+                            <Text
+                              style={[
+                                styles.weightMedVal,
+                                { color: changeKg <= 0 ? colors.primary : colors.secondary },
+                              ]}
+                            >
+                              {changeKg > 0 ? `+${changeKg}` : changeKg} kg
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      <ProgressBar
-                        progress={Math.min(Math.max(percentToGoal / 100, 0), 1)}
-                        color={colors.primary}
-                        style={styles.goalProgressBar}
-                      />
+
+                      {percentToGoal !== null && (
+                        <View style={styles.goalProgressWrap}>
+                          <View style={styles.goalProgressLabels}>
+                            <Text style={[styles.goalProgressTitle, { color: colors.onSurfaceVariant }]}>
+                              Goal Progress
+                            </Text>
+                            <Text style={[styles.goalProgressPct, { color: colors.onSurface }]}>
+                              {percentToGoal}% to target
+                            </Text>
+                          </View>
+                          <ProgressBar
+                            progress={Math.min(Math.max(percentToGoal / 100, 0), 1)}
+                            color={colors.primary}
+                            style={styles.goalProgressBar}
+                          />
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.noWeightWrap}>
+                      <Text style={[styles.noWeightText, { color: colors.onSurfaceVariant }]}>
+                        {'No weight entries recorded yet. Tap "Log Weight" to start tracking your body transformation.'}
+                      </Text>
                     </View>
                   )}
-                </>
-              ) : (
-                <View style={styles.noWeightWrap}>
-                  <Text style={[styles.noWeightText, { color: colors.onSurfaceVariant }]}>
-                    {'No weight entries recorded yet. Tap "Log Weight" to start tracking your body transformation.'}
-                  </Text>
-                </View>
-              )}
-            </AppCard>
-
-            {/* 2. Workout Consistency & Aggregate Statistics */}
-            <AppCard variant="outlined" style={styles.statsCard}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.rowAlign}>
-                  <Dumbbell size={18} color={colors.primary} />
-                  <Text style={[styles.cardHeaderTitle, { color: colors.onSurface }]}>
-                    Workout Stats & Consistency
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.statsGrid}>
-                <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
-                  <CheckCircle2 size={18} color={colors.primary} />
-                  <Text style={[styles.statNum, { color: colors.onSurface }]}>
-                    {totalWorkouts}
-                  </Text>
-                  <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
-                    Workouts Done
-                  </Text>
-                </View>
-
-                <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
-                  <Clock size={18} color={colors.primary} />
-                  <Text style={[styles.statNum, { color: colors.onSurface }]}>
-                    {totalMinutes}
-                  </Text>
-                  <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
-                    Total Minutes
-                  </Text>
-                </View>
-
-                <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
-                  <Flame size={18} color={colors.secondary} />
-                  <Text style={[styles.statNum, { color: colors.onSurface }]}>
-                    {totalCalories}
-                  </Text>
-                  <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
-                    kcal Burned
-                  </Text>
-                </View>
-
-                <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
-                  <Zap size={18} color={colors.secondary} />
-                  <Text style={[styles.statNum, { color: colors.onSurface }]}>
-                    {currentStreak}
-                  </Text>
-                  <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
-                    Day Streak
-                  </Text>
-                </View>
-              </View>
-            </AppCard>
-
-            {/* 3. Weight History Logs */}
-            <SectionHeader title={`Weight Log History (${weightHistory.length})`} />
-
-            {weightHistory.length > 0 ? (
-              weightHistory.map((item, idx) => (
-                <AppCard key={String(item._id?._id || item._id || item.id || idx)} variant="elevated" style={styles.historyCard}>
-                  <View style={styles.historyRow}>
-                    <View style={styles.rowAlign}>
-                      <View style={[styles.scaleIconWrap, { backgroundColor: colors.primaryContainer }]}>
-                        <Scale size={16} color={colors.onPrimaryContainer} />
-                      </View>
-                      <View>
-                        <Text style={[styles.historyWeightVal, { color: colors.onSurface }]}>
-                          {item.weightKg} kg
-                        </Text>
-                        <Text style={[styles.historyDate, { color: colors.onSurfaceVariant }]}>
-                          {item.dateKey || (item.loggedAt ? new Date(item.loggedAt).toLocaleDateString() : 'Recorded')}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {item._id && (
-                      <Pressable
-                        style={styles.trashBtn}
-                        onPress={() => handleDeleteWeight(item._id)}
-                        hitSlop={8}
-                      >
-                        <Trash2 size={16} color={colors.error} />
-                      </Pressable>
-                    )}
-                  </View>
                 </AppCard>
-              ))
-            ) : (
-              <EmptyState
-                icon="scale"
-                title="No Weight Records"
-                description="Keep track of your weekly weigh-ins to see your body recomposition trends over time."
-              />
+
+                {/* 2. Weight Trend Graph */}
+                <AppCard variant="elevated" style={styles.chartCard}>
+                  <WeightTrendChart
+                    data={weightHistory}
+                    targetWeight={targetKg}
+                    height={210}
+                  />
+                </AppCard>
+
+                {/* 3. Weight History Logs List */}
+                <SectionHeader title={`Weigh-in History (${weightHistory.length})`} />
+
+                {weightHistory.length > 0 ? (
+                  weightHistory.map((item, idx) => (
+                    <AppCard
+                      key={String(item._id || item.id || idx)}
+                      variant="outlined"
+                      style={styles.historyCard}
+                    >
+                      <View style={styles.historyRow}>
+                        <View style={styles.rowAlign}>
+                          <View style={[styles.scaleIconWrap, { backgroundColor: colors.primaryContainer }]}>
+                            <Scale size={16} color={colors.onPrimaryContainer} />
+                          </View>
+                          <View>
+                            <Text style={[styles.historyWeightVal, { color: colors.onSurface }]}>
+                              {item.weightKg} kg
+                            </Text>
+                            <Text style={[styles.historyDate, { color: colors.onSurfaceVariant }]}>
+                              {item.dateKey || 'Recorded'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {(item._id || item.id) && (
+                          <Pressable
+                            style={styles.trashBtn}
+                            onPress={() => handleDeleteWeight(item._id || item.id)}
+                            hitSlop={8}
+                          >
+                            <Trash2 size={16} color={colors.error} />
+                          </Pressable>
+                        )}
+                      </View>
+                    </AppCard>
+                  ))
+                ) : (
+                  <EmptyState
+                    icon="scale"
+                    title="No Weight Records"
+                    description="Keep track of your regular weigh-ins to plot your weight progression over time."
+                  />
+                )}
+              </>
             )}
 
-            {/* 4. Workout Completion Records */}
-            <SectionHeader
-              title={`Workout Records (${workoutHistory.length})`}
-              style={{ marginTop: 20 }}
-            />
-
-            {workoutHistory.length > 0 ? (
-              workoutHistory.map((session, idx) => {
-                const dateLabel = session.completedAt
-                  ? new Date(session.completedAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                    })
-                  : session.startedAt
-                  ? new Date(session.startedAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                    })
-                  : 'Recent';
-
-                const durationMins = Math.max(1, Math.round((session.durationSeconds || 1800) / 60));
-
-                return (
-                  <AppCard
-                    key={String(session._id?._id || session._id || session.id || idx)}
-                    variant="outlined"
-                    style={styles.sessionCard}
-                    onPress={() => router.push(`/workout/${session._id || session.id}?kind=session`)}
-                  >
-                    <View style={styles.sessionRow}>
-                      <View
-                        style={[
-                          styles.sessionIconWrap,
-                          { backgroundColor: colors.primaryContainer },
-                        ]}
-                      >
-                        <Dumbbell size={18} color={colors.onPrimaryContainer} />
-                      </View>
-                      <View style={styles.sessionMetaCol}>
-                        <Text style={[styles.sessionTitle, { color: colors.onSurface }]} numberOfLines={1}>
-                          {session.title || session.routineName || 'Completed Workout'}
-                        </Text>
-                        <Text style={[styles.sessionSub, { color: colors.onSurfaceVariant }]}>
-                          {dateLabel} • {durationMins} mins • {session.caloriesEstimate || Math.round(durationMins * 7)} kcal
-                        </Text>
-                      </View>
-
-                      <View style={[styles.pointsBadge, { backgroundColor: colors.surfaceVariant }]}>
-                        <Zap size={12} color={colors.secondary} />
-                        <Text style={[styles.pointsBadgeText, { color: colors.onSurface }]}>+5 pts</Text>
-                      </View>
+            {/* ─── TAB 2: VOLUME & WORKOUTS ──────────────────────────────── */}
+            {activeTab === 'VOLUME' && (
+              <>
+                {/* 1. Workout Consistency & Aggregate Statistics */}
+                <AppCard variant="outlined" style={styles.statsCard}>
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.rowAlign}>
+                      <Dumbbell size={18} color={colors.primary} />
+                      <Text style={[styles.cardHeaderTitle, { color: colors.onSurface }]}>
+                        Workout Summary
+                      </Text>
                     </View>
-                  </AppCard>
-                );
-              })
-            ) : (
-              <EmptyState
-                icon="dumbbell"
-                title="No Workout Records"
-                description="Workouts you finish in the Workout Session Player will automatically appear here."
+                  </View>
+
+                  <View style={styles.statsGrid}>
+                    <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
+                      <CheckCircle2 size={18} color={colors.primary} />
+                      <Text style={[styles.statNum, { color: colors.onSurface }]}>
+                        {totalWorkouts}
+                      </Text>
+                      <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
+                        Workouts
+                      </Text>
+                    </View>
+
+                    <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
+                      <Clock size={18} color={colors.primary} />
+                      <Text style={[styles.statNum, { color: colors.onSurface }]}>
+                        {totalMinutes}
+                      </Text>
+                      <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
+                        Minutes
+                      </Text>
+                    </View>
+
+                    <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
+                      <Flame size={18} color={colors.secondary} />
+                      <Text style={[styles.statNum, { color: colors.onSurface }]}>
+                        {totalCalories}
+                      </Text>
+                      <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
+                        kcal Burned
+                      </Text>
+                    </View>
+
+                    <View style={[styles.statTile, { backgroundColor: colors.surfaceVariant }]}>
+                      <Zap size={18} color={colors.secondary} />
+                      <Text style={[styles.statNum, { color: colors.onSurface }]}>
+                        {currentStreak}
+                      </Text>
+                      <Text style={[styles.statDesc, { color: colors.onSurfaceVariant }]}>
+                        Day Streak
+                      </Text>
+                    </View>
+                  </View>
+                </AppCard>
+
+                {/* 2. Weekly Training Volume Bar Chart */}
+                <AppCard variant="elevated" style={styles.chartCard}>
+                  <VolumeBarChart
+                    data={summary?.volume || []}
+                    height={200}
+                  />
+                </AppCard>
+
+                {/* 3. Workout Completion History */}
+                <SectionHeader
+                  title={`Completed Workouts (${workoutHistory.length})`}
+                  style={{ marginTop: 8 }}
+                />
+
+                {workoutHistory.length > 0 ? (
+                  workoutHistory.map((session, idx) => {
+                    const dateLabel = session.completedAt
+                      ? new Date(session.completedAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : session.startedAt
+                      ? new Date(session.startedAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : 'Recent';
+
+                    const durationMins = Math.max(
+                      1,
+                      Math.round((session.durationSeconds || 1800) / 60)
+                    );
+
+                    return (
+                      <AppCard
+                        key={String(session._id || session.id || idx)}
+                        variant="outlined"
+                        style={styles.sessionCard}
+                        onPress={() =>
+                          router.push(`/workout/${session._id || session.id}?kind=session`)
+                        }
+                      >
+                        <View style={styles.sessionRow}>
+                          <View
+                            style={[
+                              styles.sessionIconWrap,
+                              { backgroundColor: colors.primaryContainer },
+                            ]}
+                          >
+                            <Dumbbell size={18} color={colors.onPrimaryContainer} />
+                          </View>
+                          <View style={styles.sessionMetaCol}>
+                            <Text
+                              style={[styles.sessionTitle, { color: colors.onSurface }]}
+                              numberOfLines={1}
+                            >
+                              {session.title || session.routineName || 'Completed Workout'}
+                            </Text>
+                            <Text style={[styles.sessionSub, { color: colors.onSurfaceVariant }]}>
+                              {dateLabel} • {durationMins} mins •{' '}
+                              {session.caloriesEstimate || Math.round(durationMins * 7)} kcal
+                            </Text>
+                          </View>
+
+                          <View
+                            style={[
+                              styles.pointsBadge,
+                              { backgroundColor: colors.surfaceVariant },
+                            ]}
+                          >
+                            <Zap size={12} color={colors.secondary} />
+                            <Text
+                              style={[styles.pointsBadgeText, { color: colors.onSurface }]}
+                            >
+                              +5 pts
+                            </Text>
+                          </View>
+                        </View>
+                      </AppCard>
+                    );
+                  })
+                ) : (
+                  <EmptyState
+                    icon="dumbbell"
+                    title="No Workout Records"
+                    description="Workouts you finish in the Workout Session Player will automatically appear here."
+                  />
+                )}
+              </>
+            )}
+
+            {/* ─── TAB 3: PERSONAL BESTS (PRS) ──────────────────────────── */}
+            {activeTab === 'PRS' && (
+              <PersonalBestsCard personalBests={summary?.personalBests || []} />
+            )}
+
+            {/* ─── TAB 4: BODY MEASUREMENTS ─────────────────────────────── */}
+            {activeTab === 'BODY' && (
+              <>
+                <BodyMeasurementsCard
+                  measurementsData={measurementsData}
+                  onOpenLogModal={handleOpenMeasurementsModal}
+                />
+
+                <SectionHeader
+                  title={`Measurement Logs (${measurementsData?.entries?.length || 0})`}
+                  style={{ marginTop: 8 }}
+                />
+
+                {measurementsData?.entries?.length > 0 ? (
+                  measurementsData.entries.map((entry, idx) => (
+                    <AppCard
+                      key={String(entry._id || entry.id || idx)}
+                      variant="outlined"
+                      style={styles.historyCard}
+                    >
+                      <View style={styles.historyRow}>
+                        <View style={styles.rowAlign}>
+                          <View
+                            style={[
+                              styles.scaleIconWrap,
+                              { backgroundColor: colors.secondaryContainer },
+                            ]}
+                          >
+                            <Ruler size={16} color={colors.onSecondaryContainer} />
+                          </View>
+                          <View>
+                            <Text style={[styles.historyWeightVal, { color: colors.onSurface }]}>
+                              {entry.dateKey || 'Recorded'}
+                            </Text>
+                            <Text style={[styles.historyDate, { color: colors.onSurfaceVariant }]}>
+                              {[
+                                entry.chestCm ? `Chest: ${entry.chestCm}cm` : null,
+                                entry.waistCm ? `Waist: ${entry.waistCm}cm` : null,
+                                entry.armsCm ? `Arms: ${entry.armsCm}cm` : null,
+                                entry.thighsCm ? `Thighs: ${entry.thighsCm}cm` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' • ') || 'No metrics entered'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {(entry._id || entry.id) && (
+                          <Pressable
+                            style={styles.trashBtn}
+                            onPress={() => handleDeleteMeasurement(entry._id || entry.id)}
+                            hitSlop={8}
+                          >
+                            <Trash2 size={16} color={colors.error} />
+                          </Pressable>
+                        )}
+                      </View>
+                    </AppCard>
+                  ))
+                ) : (
+                  <EmptyState
+                    icon="ruler"
+                    title="No Measurements Recorded"
+                    description="Tap '+ Log' on the card above to track your chest, waist, arms, and thighs circumferences."
+                  />
+                )}
+              </>
+            )}
+
+            {/* ─── TAB 5: TRANSFORMATION PHOTOS ─────────────────────────── */}
+            {activeTab === 'PHOTOS' && (
+              <TransformationPhotosCard
+                photos={photos}
+                onOpenUploadModal={() => setPhotoModalVisible(true)}
+                onDeletePhoto={handleDeletePhoto}
               />
             )}
           </>
@@ -485,7 +845,12 @@ export default function ProgressScreen() {
       </ScrollView>
 
       {/* Log Weight Modal */}
-      <Modal visible={weightModalVisible} transparent animationType="slide" onRequestClose={() => setWeightModalVisible(false)}>
+      <Modal
+        visible={weightModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setWeightModalVisible(false)}
+      >
         <View style={styles.modalBackdrop}>
           <View
             style={[
@@ -506,14 +871,20 @@ export default function ProgressScreen() {
             </View>
 
             <Text style={[styles.modalSub, { color: colors.onSurfaceVariant }]}>
-              Enter your weight in kilograms. Regular weigh-ins help accurately track your body progress.
+              Enter your weight in kilograms. Regular weigh-ins accurately chart your progress curve.
             </Text>
 
-            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Weight (kg) *</Text>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>
+              Weight (kg) *
+            </Text>
             <TextInput
               style={[
                 styles.modalInput,
-                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant, color: colors.onSurface },
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: colors.outlineVariant,
+                  color: colors.onSurface,
+                },
               ]}
               placeholder="e.g., 68.5"
               placeholderTextColor={colors.onSurfaceVariant}
@@ -533,6 +904,144 @@ export default function ProgressScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Log Body Measurements Modal */}
+      <Modal
+        visible={measurementsModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMeasurementsModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.outlineVariant,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                Record Body Measurements
+              </Text>
+              <Pressable onPress={() => setMeasurementsModalVisible(false)} hitSlop={8}>
+                <X size={20} color={colors.onSurfaceVariant} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.modalSub, { color: colors.onSurfaceVariant }]}>
+              Enter your circumferences in centimeters. Enter at least one field.
+            </Text>
+
+            <View style={styles.measurementsGrid}>
+              <View style={styles.halfInputCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>
+                  Chest (cm)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    {
+                      backgroundColor: colors.surfaceVariant,
+                      borderColor: colors.outlineVariant,
+                      color: colors.onSurface,
+                    },
+                  ]}
+                  placeholder="e.g., 98"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={chestInput}
+                  onChangeText={setChestInput}
+                />
+              </View>
+
+              <View style={styles.halfInputCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>
+                  Waist (cm)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    {
+                      backgroundColor: colors.surfaceVariant,
+                      borderColor: colors.outlineVariant,
+                      color: colors.onSurface,
+                    },
+                  ]}
+                  placeholder="e.g., 82"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={waistInput}
+                  onChangeText={setWaistInput}
+                />
+              </View>
+
+              <View style={styles.halfInputCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>
+                  Arms (cm)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    {
+                      backgroundColor: colors.surfaceVariant,
+                      borderColor: colors.outlineVariant,
+                      color: colors.onSurface,
+                    },
+                  ]}
+                  placeholder="e.g., 36"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={armsInput}
+                  onChangeText={setArmsInput}
+                />
+              </View>
+
+              <View style={styles.halfInputCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>
+                  Thighs (cm)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    {
+                      backgroundColor: colors.surfaceVariant,
+                      borderColor: colors.outlineVariant,
+                      color: colors.onSurface,
+                    },
+                  ]}
+                  placeholder="e.g., 56"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                  value={thighsInput}
+                  onChangeText={setThighsInput}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalActionWrap}>
+              <AppButton
+                tone="primary"
+                label="Save Measurements"
+                loading={submittingMeasurements}
+                onPress={handleSaveMeasurements}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Upload Transformation Photo Modal */}
+      <UploadPhotoModal
+        visible={photoModalVisible}
+        onClose={() => setPhotoModalVisible(false)}
+        onPhotoUploaded={() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.progressPhotos(30) });
+        }}
+        defaultWeight={currentKg}
+      />
     </View>
   );
 }
@@ -544,9 +1053,49 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  scrollContent: {
+  topControlsWrap: {
     paddingHorizontal: 16,
     paddingTop: 8,
+    borderBottomWidth: 1,
+  },
+  timeframeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  timeframeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  timeframeChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabBtnActive: {
+    borderBottomWidth: 2,
+  },
+  tabBtnText: {
+    fontSize: 13,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 40,
   },
   skeletonWrap: {
@@ -556,7 +1105,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   weightCard: {
+    marginBottom: 14,
+  },
+  chartCard: {
     marginBottom: 16,
+    paddingHorizontal: 8,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -572,6 +1125,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
   },
   logWeightBtn: {
     flexDirection: 'row',
@@ -642,7 +1196,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   statsCard: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -652,13 +1206,13 @@ const styles = StyleSheet.create({
   statTile: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   statNum: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     marginTop: 4,
     marginBottom: 2,
@@ -684,7 +1238,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   historyWeightVal: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   historyDate: {
@@ -731,6 +1285,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  measurementsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  halfInputCol: {
+    width: '48%',
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
@@ -763,12 +1325,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   modalInput: {
-    height: 48,
+    height: 46,
     borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 12,
-    fontSize: 16,
-    marginBottom: 16,
+    fontSize: 15,
+    marginBottom: 12,
   },
   modalActionWrap: {
     marginTop: 4,

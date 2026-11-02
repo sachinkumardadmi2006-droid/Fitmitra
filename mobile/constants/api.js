@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-const DEV_MACHINE_LAN_IP = '10.51.225.53';
+const DEV_MACHINE_LAN_IP = '10.123.158.53';
 
 const getBaseUrl = () => {
   if (Platform.OS === 'web') {

@@ -157,10 +157,10 @@ export default function NutritionScreen() {
       return Array.isArray(res?.data)
         ? res.data
         : Array.isArray(res?.items)
-        ? res.items
-        : Array.isArray(res)
-        ? res
-        : [];
+          ? res.items
+          : Array.isArray(res)
+            ? res
+            : [];
     },
     staleTime: 60 * 1000,
   });
@@ -213,7 +213,7 @@ export default function NutritionScreen() {
   const targetProt = hasActivePlan ? Number(targets.protein || targets.proteinG || 0) : 0;
   const targetCarb = hasActivePlan ? Number(targets.carbs || targets.carbsG || 0) : 0;
   const targetF = hasActivePlan ? Number(targets.fat || targets.fatsG || 0) : 0;
-  const targetWat = hasActivePlan ? Number(targets.waterMl || 0) : 0;
+  const targetWat = hasActivePlan ? Number(targets.waterMl || 3000) : 0;
 
   const calProgress = targetCal > 0 ? Math.min(Math.max(currentCalories / targetCal, 0), 1) : 0;
   const protProgress = targetProt > 0 ? Math.min(Math.max(currentProtein / targetProt, 0), 1) : 0;
@@ -383,7 +383,7 @@ export default function NutritionScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <TopBar title="Diet & Nutrition" subtitle="Macros, meals & recipes" />
 
-      {/* Date Switcher Strip - Only shown when user has an active diet plan */}
+      {/* Date Switcher Strip - Only shown when user has an active diyet plan */}
       {hasActivePlan && (
         <View style={[styles.dateStrip, { backgroundColor: colors.surface, borderBottomColor: colors.outlineVariant }]}>
           <View style={styles.dateRow}>
@@ -457,7 +457,7 @@ export default function NutritionScreen() {
             <Skeleton height={120} radius={custom.radius.lg} />
           </View>
         ) : !hasActivePlan ? (
-          /* Before plan creation: ONLY show the AI Diet Plan creation card */
+          /* Before plan creation: show AI Diet Plan creation card & Hydration Card */
           <View style={styles.noPlanSection}>
             <AiDietPlanCard
               dietPlan={dietPlan}
@@ -469,6 +469,11 @@ export default function NutritionScreen() {
                 logsQuery.refetch();
                 recipesQuery.refetch();
               }}
+            />
+            <WaterTrackerCard
+              targetWater={targetWat}
+              isLocked={!hasActivePlan}
+              onPromptPlan={promptGeneratePlan}
             />
           </View>
         ) : (

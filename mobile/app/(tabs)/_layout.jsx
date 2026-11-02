@@ -84,26 +84,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <LayoutGrid size={size} color={color} />,
         }}
       />
-
-      {/* Hidden route aliases inside (tabs) group */}
-      <Tabs.Screen
-        name="store"
-        options={{
-          href: null, // Accessible via router.push('/store') or More hub
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null, // Accessible via router.push('/profile') or More hub
-        }}
-      />
-      <Tabs.Screen
-        name="programs"
-        options={{
-          href: null,
-        }}
-      />
     </Tabs>
   );
 }

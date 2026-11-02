@@ -59,6 +59,7 @@ export default function NotificationsScreen() {
     try {
       await notificationService.markAllAsRead();
       await queryClient.invalidateQueries({ queryKey: queryKeys.notifications(40) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.notificationUnreadCount });
     } catch (err) {
       console.warn('[Notifications] Mark all read error:', err?.message || err);
       notificationsQuery.refetch();
@@ -73,6 +74,7 @@ export default function NotificationsScreen() {
       try {
         await notificationService.markAsRead(notificationId);
         await queryClient.invalidateQueries({ queryKey: queryKeys.notifications(40) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.notificationUnreadCount });
       } catch (err) {
         console.warn('[Notifications] Mark single read error:', err?.message || err);
       }

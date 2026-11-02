@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { Dumbbell, Bell, ChevronLeft, ShoppingBag } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../hooks/useCart';
 import { notificationService } from '../../services/notificationService';
+import { queryKeys } from '../../constants/queryKeys';
 import { FontSize, BorderRadius } from '../../constants/theme';
 
 export const TopBar = ({
@@ -14,6 +16,8 @@ export const TopBar = ({
   subtitle,
   showBack = false,
   showCart = false,
+  showUnreadBadge = false,
+  unreadCount: propUnreadCount,
   rightAction,
   icon: TitleIcon,
 }) => {
@@ -22,25 +26,29 @@ export const TopBar = ({
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
   const { totalQuantity: cartCount } = useCart();
-  const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    let isMounted = true;
-    if (!isAuthenticated) return;
-
-    (async () => {
+  // ONLY query unread count if showUnreadBadge is explicitly true (i.e. Home page) and user is authenticated.
+  // Stored with 5 min staleTime to prevent repeated network requests on tab switches.
+  const { data: queryUnreadCount = 0 } = useQuery({
+    queryKey: queryKeys.notificationUnreadCount,
+    queryFn: async () => {
       try {
-        const res = await notificationService.getNotifications({ limit: 20 });
-        if (isMounted && res?.notifications) {
-          const count = res.notifications.filter((n) => !n.isRead).length;
-          setUnreadCount(count);
-        }
-      } catch (_) {}
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, [isAuthenticated]);
+        const res = await notificationService.getNotifications({ limit: 10 });
+        const items = res?.items || res?.notifications || (Array.isArray(res) ? res : []);
+        return res?.unreadCount ?? items.filter((n) => !n.readAt && !n.isRead).length;
+      } catch {
+        return 0;
+      }
+    },
+    enabled: Boolean(showUnreadBadge && isAuthenticated && propUnreadCount === undefined),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  const unreadCount =
+    propUnreadCount !== undefined ? propUnreadCount : showUnreadBadge ? queryUnreadCount : 0;
 
   return (
     <View

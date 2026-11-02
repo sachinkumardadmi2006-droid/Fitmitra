@@ -198,7 +198,9 @@ export default function SettingsScreen() {
                   value={notificationSettings.workoutReminders}
                   onValueChange={(val) => handleToggleSetting('workoutReminders', val)}
                   trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-                  thumbColor="#FFF"
+                  thumbColor="#FFFFFF"
+                  activeThumbColor="#FFFFFF"
+                  ios_backgroundColor={colors.outlineVariant}
                 />
               </View>
 
@@ -221,7 +223,9 @@ export default function SettingsScreen() {
                   value={notificationSettings.pointsAlerts}
                   onValueChange={(val) => handleToggleSetting('pointsAlerts', val)}
                   trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-                  thumbColor="#FFF"
+                  thumbColor="#FFFFFF"
+                  activeThumbColor="#FFFFFF"
+                  ios_backgroundColor={colors.outlineVariant}
                 />
               </View>
 
@@ -244,7 +248,9 @@ export default function SettingsScreen() {
                   value={notificationSettings.offersAndNews}
                   onValueChange={(val) => handleToggleSetting('offersAndNews', val)}
                   trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-                  thumbColor="#FFF"
+                  thumbColor="#FFFFFF"
+                  activeThumbColor="#FFFFFF"
+                  ios_backgroundColor={colors.outlineVariant}
                 />
               </View>
             </>
@@ -273,7 +279,9 @@ export default function SettingsScreen() {
               value={cameraPermission}
               onValueChange={setCameraPermission}
               trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-              thumbColor="#FFF"
+              thumbColor="#FFFFFF"
+              activeThumbColor="#FFFFFF"
+              ios_backgroundColor={colors.outlineVariant}
             />
           </View>
 
@@ -295,7 +303,9 @@ export default function SettingsScreen() {
               value={motionSensors}
               onValueChange={setMotionSensors}
               trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-              thumbColor="#FFF"
+              thumbColor="#FFFFFF"
+              activeThumbColor="#FFFFFF"
+              ios_backgroundColor={colors.outlineVariant}
             />
           </View>
         </AppCard>

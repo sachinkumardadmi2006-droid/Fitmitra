@@ -45,6 +45,8 @@ function ThemedStack() {
       <Stack.Screen name="store" />
       <Stack.Screen name="orders" />
       <Stack.Screen name="premium" />
+      <Stack.Screen name="challenges" />
+      <Stack.Screen name="challenge/[id]" />
       <Stack.Screen name="workout/[workoutId]" />
       <Stack.Screen name="workout/exercise/[exerciseId]" />
       <Stack.Screen name="recipe/[recipeId]" />
@@ -105,6 +107,8 @@ function RootNavigator() {
         segments[0] === 'orders' ||
         segments[0] === 'ai-coach' ||
         segments[0] === 'recipe' ||
+        segments[0] === 'challenges' ||
+        segments[0] === 'challenge' ||
         segments[0] === 'profile';
 
       if (inProtectedGroup || isAtRoot) {

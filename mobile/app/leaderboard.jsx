@@ -5,9 +5,11 @@ import {
   ScrollView,
   StyleSheet,
   RefreshControl,
+  Pressable,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Trophy, Medal, Zap, Flame } from 'lucide-react-native';
+import { Trophy, Medal, Zap, Flame, ChevronRight } from 'lucide-react-native';
 import { leaderboardService } from '../services/leaderboardService';
 import { queryKeys } from '../constants/queryKeys';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -17,6 +19,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { Skeleton } from '../components/ui/Skeleton';
 
 export default function LeaderboardScreen() {
+  const router = useRouter();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
 
@@ -105,6 +108,32 @@ export default function LeaderboardScreen() {
             </View>
           </AppCard>
         )}
+
+        {/* Challenges Shortcut Banner */}
+        <Pressable
+          style={[
+            styles.challengeBanner,
+            {
+              backgroundColor: colors.secondaryContainer,
+              borderColor: colors.secondary,
+            },
+          ]}
+          onPress={() => router.push('/challenges')}
+          hitSlop={4}
+        >
+          <View style={styles.challengeBannerLeft}>
+            <Trophy size={20} color={colors.secondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.challengeBannerTitle, { color: colors.onSecondaryContainer }]}>
+                Join Fitness Challenges
+              </Text>
+              <Text style={[styles.challengeBannerSub, { color: colors.onSecondaryContainer }]}>
+                Earn bonus points, extend streaks & climb the rankings
+              </Text>
+            </View>
+          </View>
+          <ChevronRight size={18} color={colors.onSecondaryContainer} />
+        </Pressable>
 
         {/* Loading Skeletons */}
         {loading && leaderboard.length === 0 ? (
@@ -223,7 +252,31 @@ const styles = StyleSheet.create({
   },
   myRankCard: {
     padding: 16,
+    marginBottom: 14,
+  },
+  challengeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
     marginBottom: 20,
+  },
+  challengeBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  challengeBannerTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  challengeBannerSub: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   myRankRow: {
     flexDirection: 'row',

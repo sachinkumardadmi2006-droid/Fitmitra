@@ -6,26 +6,66 @@ export const progressService = {
    * @param {number} days 30 | 90 | 180 | 365
    */
   async getProgressSummary(days = 90) {
-    return api.get('/progress/summary', { days });
+    const res = await api.get('/progress/summary', { days });
+    const data = res?.data || res || {};
+    const weight = data.weight || {
+      startingKg: null,
+      currentKg: null,
+      targetKg: null,
+      changeKg: null,
+      percentToGoal: null,
+    };
+    return {
+      weight,
+      // Backward compatibility alias:
+      weightSummary: weight,
+      volume: Array.isArray(data.volume) ? data.volume : [],
+      personalBests: Array.isArray(data.personalBests) ? data.personalBests : [],
+    };
   },
 
   /**
-   * Fetch weight history entries
+   * Fetch weight history entries and targets
    * @param {number} days 30 | 90 | 180 | 365
    */
   async getWeightHistory(days = 90) {
-    return api.get('/progress/weight', { days });
+    const res = await api.get('/progress/weight', { days });
+    const data = res?.data || res || {};
+    const rawList = Array.isArray(data.entries)
+      ? data.entries
+      : Array.isArray(data.history)
+      ? data.history
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const entries = rawList.map((item) => ({
+      id: String(item._id || item.id || ''),
+      _id: String(item._id || item.id || ''),
+      dateKey: item.dateKey || (item.loggedAt ? new Date(item.loggedAt).toISOString().split('T')[0] : ''),
+      weightKg: Number(item.weightKg || 0),
+    }));
+
+    return {
+      entries,
+      // Backward compatibility alias for any consumer expecting `history`:
+      history: entries,
+      startingWeightKg: data.startingWeightKg ?? null,
+      currentWeightKg: data.currentWeightKg ?? null,
+      targetWeightKg: data.targetWeightKg ?? null,
+    };
   },
 
   /**
    * Log a new weight entry
-   * @param {number} weightKg weight in kilograms (30 - 300)
+   * @param {number} weightKg weight in kilograms (20 - 400)
    * @param {string} [dateKey] Optional YYYY-MM-DD date key
    */
   async logWeight(weightKg, dateKey) {
     const payload = { weightKg: Number(weightKg) };
     if (dateKey) payload.dateKey = dateKey;
-    return api.post('/progress/weight', payload);
+    const res = await api.post('/progress/weight', payload);
+    return res?.data || res;
   },
 
   /**
@@ -36,19 +76,27 @@ export const progressService = {
   },
 
   /**
-   * Fetch body measurements history
+   * Fetch body measurements history & changes
    * @param {object|number} [options] { limit: number } or number limit
    */
   async getMeasurements(options = 30) {
     const limit = typeof options === 'number' ? options : options?.limit || 30;
-    return api.get('/progress/measurements', { limit });
+    const res = await api.get('/progress/measurements', { limit });
+    const data = res?.data || res || {};
+    const entries = Array.isArray(data.entries) ? data.entries : Array.isArray(data) ? data : [];
+    return {
+      entries,
+      changes: data.changes || {},
+    };
   },
 
   /**
    * Log body measurements (chest, waist, arms, thighs)
+   * @param {object} measurementsData { dateKey?: string, chestCm?: number, waistCm?: number, armsCm?: number, thighsCm?: number }
    */
   async logMeasurements(measurementsData) {
-    return api.post('/progress/measurements', measurementsData);
+    const res = await api.post('/progress/measurements', measurementsData);
+    return res?.data || res;
   },
 
   /**
@@ -66,7 +114,8 @@ export const progressService = {
     const contentType = payload.contentType || 'image/jpeg';
     const body = { contentType };
     if (payload.dateKey) body.dateKey = payload.dateKey;
-    return api.post('/progress/photos/upload-url', body);
+    const res = await api.post('/progress/photos/upload-url', body);
+    return res?.data || res;
   },
 
   /**
@@ -98,7 +147,8 @@ export const progressService = {
    * @param {object} payload { photoKey: string, weightKg?: number, note?: string }
    */
   async confirmPhoto(payload) {
-    return api.post('/progress/photos/confirm', payload);
+    const res = await api.post('/progress/photos/confirm', payload);
+    return res?.data || res;
   },
 
   /**
@@ -106,7 +156,12 @@ export const progressService = {
    * @param {object} params { limit?: number, cursor?: string }
    */
   async getPhotos(params = {}) {
-    return api.get('/progress/photos', params);
+    const res = await api.get('/progress/photos', params);
+    const data = res?.data || res || {};
+    return {
+      photos: Array.isArray(data.photos) ? data.photos : Array.isArray(data) ? data : [],
+      nextCursor: data.nextCursor ?? null,
+    };
   },
 
   /**

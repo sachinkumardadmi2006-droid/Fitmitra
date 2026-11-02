@@ -54,10 +54,18 @@ export const queryKeys = {
   // Progress
   progressSummary: (days = 90) => ['progress', 'summary', Number(days)],
   progressWeight: (days = 90) => ['progress', 'weight', Number(days)],
+  progressMeasurements: (limit = 30) => ['progress', 'measurements', Number(limit)],
+  progressPhotos: (limit = 30) => ['progress', 'photos', Number(limit)],
 
   // Notifications & Leaderboard
   notifications: (limit = 40) => ['notifications', 'list', Number(limit)],
+  notificationUnreadCount: ['notifications', 'unreadCount'],
   leaderboard: ['leaderboard'],
+
+  // Challenges
+  challenges: (type = 'ALL', page = 1) => ['challenges', 'list', String(type), Number(page)],
+  challengesActive: ['challenges', 'active'],
+  challengeDetail: (id) => ['challenges', 'detail', String(id)],
 
   // AI Coach
   aiUsage: ['ai', 'usage'],

@@ -16,8 +16,6 @@ import {
   RotateCcw,
   CheckCircle2,
   Utensils,
-  Plus,
-  Droplets,
   Sparkles,
   TrendingUp,
   Bot,
@@ -30,7 +28,6 @@ import {
 import { ProgressBar } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { dashboardService } from '../../services/dashboardService';
-import { nutritionService } from '../../services/nutritionService';
 import { normalizeTodayWorkout, getWeekConsistency } from '../../services/workoutService';
 import { queryKeys } from '../../constants/queryKeys';
 import { useAuth } from '../../context/AuthContext';
@@ -42,6 +39,7 @@ import SectionHeader from '../../components/ui/SectionHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmailVerificationBanner } from '../../components/auth';
+import HomeCarousel from '../../components/home/HomeCarousel';
 
 const CACHE_KEY_DASHBOARD = 'fitmitra_cache_dashboard';
 
@@ -58,7 +56,6 @@ export default function HomeDashboard() {
     user?.email?.split('@')[0] ||
     'Athlete';
 
-  const [loggingWater, setLoggingWater] = useState(false);
 
   // 1. Single Authoritative Consolidated Dashboard Query
   const dashboardQuery = useQuery({
@@ -86,17 +83,6 @@ export default function HomeDashboard() {
   const nutritionTargets =
     dashboardData?.nutrition?.targets ||
     { calories: 2200, protein: 140, carbs: 240, fat: 65 };
-  const waterMl = Number(
-    dashboardData?.water?.totalMl ??
-    dashboardData?.water?.waterMl ??
-    0
-  );
-  const targetWater = Number(
-    dashboardData?.water?.targetMl ??
-    dashboardData?.water?.waterTargetMl ??
-    nutritionTargets?.waterMl ??
-    3000
-  );
   const recentWorkouts = dashboardData?.recentWorkouts || [];
   const pastWeekWorkoutsCount = Number(dashboardData?.pastWeekWorkoutsCount ?? 0);
 
@@ -108,22 +94,9 @@ export default function HomeDashboard() {
   const isOffline = dashboardQuery.isError && !dashboardQuery.data;
 
   const onRefresh = useCallback(async () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.notificationUnreadCount });
     await dashboardQuery.refetch();
-  }, [dashboardQuery]);
-
-  const handleAddWater = async () => {
-    if (loggingWater) return;
-    setLoggingWater(true);
-    const added = 250;
-    try {
-      await nutritionService.logWater(added);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
-    } catch (e) {
-      console.warn('[Home] Failed to log water:', e?.message || e);
-    } finally {
-      setLoggingWater(false);
-    }
-  };
+  }, [dashboardQuery, queryClient]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -153,7 +126,6 @@ export default function HomeDashboard() {
 
   const calProgress = Math.min(Math.max(currentCalories / targetCalories, 0), 1);
   const proteinProgress = Math.min(Math.max(currentProtein / targetProtein, 0), 1);
-  const waterProgress = Math.min(Math.max(waterMl / targetWater, 0), 1);
 
   // Weekly consistency dots
   const consistencyDots = getWeekConsistency(
@@ -164,7 +136,7 @@ export default function HomeDashboard() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <TopBar />
+      <TopBar showUnreadBadge />
 
       <ScrollView
         style={styles.flex}
@@ -272,6 +244,9 @@ export default function HomeDashboard() {
           </View>
         ) : (
           <>
+            {/* Feature Carousel Banner */}
+            <HomeCarousel />
+
             {/* 2. Today's Workout Hero Card */}
             <AppCard
               variant="elevated"
@@ -545,9 +520,9 @@ export default function HomeDashboard() {
               </Pressable>
             </View>
 
-            {/* 5. Daily Nutrition & Hydration Snapshot */}
+            {/* 5. Daily Nutrition Snapshot */}
             <SectionHeader
-              title="Daily Nutrition & Hydration"
+              title="Daily Nutrition"
               actionLabel="View Diet"
               onAction={() => router.push('/(tabs)/nutrition')}
             />
@@ -623,49 +598,6 @@ export default function HomeDashboard() {
                       style={styles.macroBar}
                     />
                   </View>
-                </View>
-              </AppCard>
-
-              {/* Hydration Card */}
-              <AppCard variant="elevated" style={styles.hydrationCard}>
-                <View style={styles.hydrationHeader}>
-                  <View style={styles.rowAlign}>
-                    <Droplets size={18} color={colors.primary} />
-                    <Text style={[styles.snapshotTitle, { color: colors.onSurface }]}>
-                      Hydration
-                    </Text>
-                  </View>
-                  <Text style={[styles.waterValText, { color: colors.onSurface }]}>
-                    {waterMl} <Text style={styles.waterTargetSub}>/ {targetWater} ml</Text>
-                  </Text>
-                </View>
-
-                <ProgressBar
-                  progress={waterProgress}
-                  color={colors.primary}
-                  style={styles.waterProgressBar}
-                />
-
-                <View style={styles.waterActionRow}>
-                  <Text style={[styles.waterPct, { color: colors.onSurfaceVariant }]}>
-                    {Math.round(waterProgress * 100)}% of daily target
-                  </Text>
-                  <Pressable
-                    style={[
-                      styles.addWaterBtn,
-                      {
-                        backgroundColor: colors.primaryContainer,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                    onPress={handleAddWater}
-                    disabled={loggingWater}
-                  >
-                    <Plus size={14} color={colors.onPrimaryContainer} />
-                    <Text style={[styles.addWaterBtnText, { color: colors.onPrimaryContainer }]}>
-                      +250 ml
-                    </Text>
-                  </Pressable>
                 </View>
               </AppCard>
             </View>
@@ -1020,49 +952,6 @@ const styles = StyleSheet.create({
   macroBar: {
     height: 4,
     borderRadius: 2,
-  },
-  hydrationCard: {
-    marginBottom: 0,
-  },
-  hydrationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  waterValText: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  waterTargetSub: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  waterProgressBar: {
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  waterActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  waterPct: {
-    fontSize: 12,
-  },
-  addWaterBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  addWaterBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   recentSessionCard: {
     marginBottom: 8,

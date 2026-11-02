@@ -33,12 +33,12 @@ export function buildNavigationTheme(theme) {
   return {
     dark: isDark,
     colors: {
-      primary: theme?.custom?.primaryStrong || theme?.colors?.primary || '#B7FF00',
-      background: theme?.colors?.background || (isDark ? '#0A0C10' : '#F6F8FA'),
-      card: theme?.colors?.surface || (isDark ? '#10131A' : '#FFFFFF'),
-      text: theme?.colors?.onSurface || (isDark ? '#FFFFFF' : '#111111'),
-      border: theme?.colors?.outlineVariant || (isDark ? '#252B36' : '#E5E7EB'),
-      notification: theme?.colors?.error || '#FF5C69',
+      primary: theme?.custom?.primaryStrong || theme?.colors?.primary || (isDark ? '#d97757' : '#c96442'),
+      background: theme?.colors?.background || (isDark ? '#262624' : '#faf9f5'),
+      card: theme?.colors?.surface || (isDark ? '#262624' : '#faf9f5'),
+      text: theme?.colors?.onSurface || (isDark ? '#faf9f5' : '#141413'),
+      border: theme?.colors?.outlineVariant || (isDark ? '#3e3e38' : '#dad9d4'),
+      notification: theme?.colors?.error || (isDark ? '#ef4444' : '#ba1a1a'),
     },
   };
 }
