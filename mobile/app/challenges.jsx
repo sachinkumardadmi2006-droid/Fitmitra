@@ -144,11 +144,13 @@ export default function ChallengesScreen() {
         showBack
         onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/more'))}
         rightElement={
-          <View
+          <Pressable
+            onPress={() => router.push('/points')}
             style={[
               styles.pointsPill,
               { backgroundColor: colors.secondaryContainer },
             ]}
+            accessibilityLabel="View Mitra Points"
           >
             <Zap size={12} color={colors.secondary} fill={colors.secondary} />
             <Text
@@ -159,7 +161,7 @@ export default function ChallengesScreen() {
             >
               {points || 0} pts
             </Text>
-          </View>
+          </Pressable>
         }
       />
 

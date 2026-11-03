@@ -41,10 +41,10 @@ export const TopBar = ({
       }
     },
     enabled: Boolean(showUnreadBadge && isAuthenticated && propUnreadCount === undefined),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const unreadCount =

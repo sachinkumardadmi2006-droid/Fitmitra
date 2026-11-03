@@ -23,17 +23,43 @@ import {
   Info,
   X,
   User,
+  Clock,
+  Moon,
+  Dumbbell,
+  UtensilsCrossed,
+  Trophy,
+  Flame,
+  Zap,
+  Package,
+  Crown,
+  Tag,
+  Globe,
+  RefreshCw,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { queryKeys } from '../constants/queryKeys';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { profileService } from '../services/profileService';
+import { notificationService } from '../services/notificationService';
 import AppHeader from '../components/ui/AppHeader';
 import AppCard from '../components/ui/AppCard';
 import AppButton from '../components/ui/AppButton';
 import ThemeSelector from '../components/ui/ThemeSelector';
 import { EmailVerificationBanner } from '../components/auth';
+
+const NOTIF_CATEGORIES = [
+  { key: 'workout', label: 'Workouts', desc: 'Daily workout training reminders', Icon: Dumbbell },
+  { key: 'nutrition', label: 'Nutrition', desc: 'Breakfast, lunch & dinner logging alerts', Icon: UtensilsCrossed },
+  { key: 'challenges', label: 'Challenges', desc: 'New challenges & 24h expiration reminders', Icon: Trophy },
+  { key: 'streak', label: 'Daily Streak', desc: 'At-risk evening alerts & milestones', Icon: Flame },
+  { key: 'points', label: 'FitCoins & Points', desc: 'Points awarded & rewards updates', Icon: Zap },
+  { key: 'orders', label: 'Orders & Deliveries', desc: 'Purchases, tracking & order confirmations', Icon: Package },
+  { key: 'subscription', label: 'Subscriptions', desc: 'Membership status & plan renewals', Icon: Crown },
+  { key: 'promotions', label: 'Offers & Updates', desc: 'Store discounts & community announcements', Icon: Tag },
+  { key: 'system', label: 'System & Security', desc: 'Security updates & account alerts', Icon: ShieldCheck },
+];
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -42,45 +68,145 @@ export default function SettingsScreen() {
   const { colors } = theme;
   const { logout, user } = useAuth();
 
-  const {
-    data: settingsData,
-    isLoading: loadingSettings,
-  } = useQuery({
-    queryKey: queryKeys.settings,
-    queryFn: async () => {
-      const res = await profileService.getSettings();
-      return res || {};
-    },
-  });
-
-  const notificationSettings = {
-    workoutReminders: settingsData?.workoutReminders ?? true,
-    pointsAlerts: settingsData?.pointsAlerts ?? true,
-    offersAndNews: settingsData?.offersAndNews ?? true,
-  };
-
-  const updateSettingsMutation = useMutation({
-    mutationFn: (patch) => profileService.updateSettings(patch),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(queryKeys.settings, (old) => ({ ...(old || {}), ...(updated || {}) }));
-    },
-    onError: (err) => {
-      console.warn('[Settings] Failed to update notification setting:', err?.message || err);
-      Alert.alert('Update Failed', 'Could not save notification preferences to server. Please try again.');
-    },
-  });
-
   // Local device preference indicators
   const [cameraPermission, setCameraPermission] = useState(true);
   const [motionSensors, setMotionSensors] = useState(true);
 
+  // Granular notification preferences query & mutation
+  const {
+    data: notifPrefsData,
+    isLoading: loadingNotifPrefs,
+  } = useQuery({
+    queryKey: ['notificationPreferences'],
+    queryFn: async () => {
+      const res = await notificationService.getNotificationPreferences();
+      return res || {};
+    },
+  });
+
+  const updateNotifPrefsMutation = useMutation({
+    mutationFn: (patch) => notificationService.updateNotificationPreferences(patch),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['notificationPreferences'], (old) => ({
+        ...(old || {}),
+        ...(updated || {}),
+      }));
+    },
+    onError: (err) => {
+      console.warn('[Settings] Failed to update preferences:', err?.message || err);
+      Alert.alert('Update Failed', 'Could not save notification preferences. Please try again.');
+    },
+  });
+
+  const [pickerConfig, setPickerConfig] = useState({
+    visible: false,
+    field: null,
+    date: new Date(),
+  });
+
+  const openTimePicker = (field, currentTimeStr) => {
+    if (Platform.OS === 'web') {
+      const val = typeof window !== 'undefined' ? window.prompt('Enter time (HH:mm in 24h format):', currentTimeStr || '08:00') : null;
+      if (val && /^([01]\d|2[0-3]):([0-5]\d)$/.test(val.trim())) {
+        const timeStr = val.trim();
+        if (field === 'quietStart') {
+          updateNotifPrefsMutation.mutate({
+            quietHours: { ...(notifPrefsData?.quietHours || {}), start: timeStr },
+          });
+        } else if (field === 'quietEnd') {
+          updateNotifPrefsMutation.mutate({
+            quietHours: { ...(notifPrefsData?.quietHours || {}), end: timeStr },
+          });
+        } else {
+          updateNotifPrefsMutation.mutate({
+            notificationSchedule: { ...(notifPrefsData?.notificationSchedule || {}), [field]: timeStr },
+          });
+        }
+      }
+      return;
+    }
+    const d = new Date();
+    if (currentTimeStr) {
+      const [h, m] = currentTimeStr.split(':').map(Number);
+      d.setHours(h || 0, m || 0, 0, 0);
+    }
+    setPickerConfig({
+      visible: true,
+      field,
+      date: d,
+    });
+  };
+
+  const onTimeChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setPickerConfig((prev) => ({ ...prev, visible: false }));
+    }
+    if (event.type === 'dismissed' || !selectedDate) return;
+
+    const h = String(selectedDate.getHours()).padStart(2, '0');
+    const m = String(selectedDate.getMinutes()).padStart(2, '0');
+    const timeStr = `${h}:${m}`;
+
+    if (pickerConfig.field === 'quietStart') {
+      updateNotifPrefsMutation.mutate({
+        quietHours: {
+          ...(notifPrefsData?.quietHours || {}),
+          start: timeStr,
+        },
+      });
+    } else if (pickerConfig.field === 'quietEnd') {
+      updateNotifPrefsMutation.mutate({
+        quietHours: {
+          ...(notifPrefsData?.quietHours || {}),
+          end: timeStr,
+        },
+      });
+    } else if (pickerConfig.field) {
+      updateNotifPrefsMutation.mutate({
+        notificationSchedule: {
+          ...(notifPrefsData?.notificationSchedule || {}),
+          [pickerConfig.field]: timeStr,
+        },
+      });
+    }
+  };
+
+  const handleToggleChannel = (categoryKey, channelKey, value) => {
+    const currentMatrix = notifPrefsData?.notificationPreferences || {};
+    const catPrefs = currentMatrix[categoryKey] || { inApp: true, push: true };
+    const updatedMatrix = {
+      ...currentMatrix,
+      [categoryKey]: {
+        ...catPrefs,
+        [channelKey]: value,
+      },
+    };
+    updateNotifPrefsMutation.mutate({
+      notificationPreferences: updatedMatrix,
+    });
+  };
+
+  const handleToggleQuietHours = (value) => {
+    const current = notifPrefsData?.quietHours || { start: '22:00', end: '06:00' };
+    updateNotifPrefsMutation.mutate({
+      quietHours: {
+        ...current,
+        enabled: value,
+      },
+    });
+  };
+
+  const handleSyncTimezone = async () => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) {
+      updateNotifPrefsMutation.mutate({ timezone: tz });
+      Alert.alert('Timezone Synced', `Notification timezone set to: ${tz}`);
+    }
+  };
+
   // Informational modals
   const [modalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', body: '' });
-
-  const handleToggleSetting = async (key, value) => {
-    updateSettingsMutation.mutate({ [key]: value });
-  };
 
   const showInfoModal = (title, body) => {
     setModalContent({ title, body });
@@ -166,13 +292,13 @@ export default function SettingsScreen() {
           <ThemeSelector />
         </AppCard>
 
-        {/* Section 3: Real Notification Preferences */}
+        {/* Section 3: Notification Preferences & Timezone */}
         <Text style={[styles.sectionHeading, { color: colors.onSurfaceVariant }]}>
-          NOTIFICATION PREFERENCES
+          NOTIFICATION TIMING & QUIET HOURS
         </Text>
 
         <AppCard variant="elevated" padded={false} style={styles.card}>
-          {loadingSettings ? (
+          {loadingNotifPrefs ? (
             <View style={styles.loadingPadding}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>
@@ -181,47 +307,46 @@ export default function SettingsScreen() {
             </View>
           ) : (
             <>
-              {/* Workout Reminders */}
+              {/* Timezone Row */}
               <View style={styles.settingRow}>
-                <View style={[styles.iconWrap, { backgroundColor: colors.secondaryContainer }]}>
-                  <Bell size={20} color={colors.secondary} />
+                <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+                  <Globe size={20} color={colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
-                    Workout Reminders
+                    Timezone
                   </Text>
                   <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
-                    Daily schedule alerts & training nudges
+                    {notifPrefsData?.timezone || 'UTC'}
                   </Text>
                 </View>
-                <Switch
-                  value={notificationSettings.workoutReminders}
-                  onValueChange={(val) => handleToggleSetting('workoutReminders', val)}
-                  trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-                  thumbColor="#FFFFFF"
-                  activeThumbColor="#FFFFFF"
-                  ios_backgroundColor={colors.outlineVariant}
-                />
+                <Pressable
+                  style={[styles.syncPill, { backgroundColor: colors.primaryContainer }]}
+                  onPress={handleSyncTimezone}
+                >
+                  <RefreshCw size={13} color={colors.primary} />
+                  <Text style={[styles.syncPillText, { color: colors.primary }]}>Sync</Text>
+                </Pressable>
               </View>
 
               <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
 
-              {/* Points & Streak Alerts */}
+              {/* Quiet Hours Switch */}
               <View style={styles.settingRow}>
-                <View style={[styles.iconWrap, { backgroundColor: theme.colors.secondaryContainer }]}>
-                  <Activity size={20} color={theme.custom.accentText} />
+                <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+                  <Moon size={20} color={colors.secondary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
-                    Points & Streak Alerts
+                    Quiet Hours
                   </Text>
                   <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
-                    Leaderboard milestones & daily streak notifications
+                    Mute push alerts during rest hours
                   </Text>
                 </View>
                 <Switch
-                  value={notificationSettings.pointsAlerts}
-                  onValueChange={(val) => handleToggleSetting('pointsAlerts', val)}
+                  value={notifPrefsData?.quietHours?.enabled ?? false}
+                  onValueChange={handleToggleQuietHours}
                   trackColor={{ false: colors.outlineVariant, true: colors.primary }}
                   thumbColor="#FFFFFF"
                   activeThumbColor="#FFFFFF"
@@ -229,32 +354,215 @@ export default function SettingsScreen() {
                 />
               </View>
 
-              <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+              {/* Quiet Hours Time Slots */}
+              {notifPrefsData?.quietHours?.enabled ? (
+                <>
+                  <View style={styles.quietHoursTimesRow}>
+                    <View style={styles.quietTimeBlock}>
+                      <Text style={[styles.quietTimeLabel, { color: colors.onSurfaceVariant }]}>Starts at</Text>
+                      <Pressable
+                        style={[styles.timePill, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceVariant }]}
+                        onPress={() => openTimePicker('quietStart', notifPrefsData?.quietHours?.start || '22:00')}
+                      >
+                        <Clock size={14} color={colors.primary} />
+                        <Text style={[styles.timePillText, { color: colors.onSurface }]}>
+                          {notifPrefsData?.quietHours?.start || '22:00'}
+                        </Text>
+                      </Pressable>
+                    </View>
 
-              {/* Offers & News */}
-              <View style={styles.settingRow}>
-                <View style={[styles.iconWrap, { backgroundColor: colors.primaryContainer }]}>
-                  <ShieldCheck size={20} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
-                    Supplements & App Updates
+                    <Text style={{ color: colors.onSurfaceVariant, fontWeight: '700' }}>to</Text>
+
+                    <View style={styles.quietTimeBlock}>
+                      <Text style={[styles.quietTimeLabel, { color: colors.onSurfaceVariant }]}>Ends at</Text>
+                      <Pressable
+                        style={[styles.timePill, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceVariant }]}
+                        onPress={() => openTimePicker('quietEnd', notifPrefsData?.quietHours?.end || '06:00')}
+                      >
+                        <Clock size={14} color={colors.primary} />
+                        <Text style={[styles.timePillText, { color: colors.onSurface }]}>
+                          {notifPrefsData?.quietHours?.end || '06:00'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                  <Text style={[styles.helperNotice, { color: colors.onSurfaceVariant }]}>
+                    Orders, security and subscription push alerts always bypass quiet hours.
                   </Text>
-                  <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
-                    Store discounts, Pro feature drops & community news
-                  </Text>
-                </View>
-                <Switch
-                  value={notificationSettings.offersAndNews}
-                  onValueChange={(val) => handleToggleSetting('offersAndNews', val)}
-                  trackColor={{ false: colors.outlineVariant, true: colors.primary }}
-                  thumbColor="#FFFFFF"
-                  activeThumbColor="#FFFFFF"
-                  ios_backgroundColor={colors.outlineVariant}
-                />
-              </View>
+                </>
+              ) : null}
             </>
           )}
+        </AppCard>
+
+        {/* Section 3b: Daily Reminders Schedule */}
+        <Text style={[styles.sectionHeading, { color: colors.onSurfaceVariant }]}>
+          DAILY REMINDER SCHEDULE
+        </Text>
+
+        <AppCard variant="elevated" padded={false} style={styles.card}>
+          {/* Workout Time */}
+          <View style={styles.settingRow}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+              <Dumbbell size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
+                Workout Reminder
+              </Text>
+              <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
+                Preferred daily training time
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.timePill, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceVariant }]}
+              onPress={() => openTimePicker('workoutTime', notifPrefsData?.notificationSchedule?.workoutTime || '08:00')}
+            >
+              <Clock size={14} color={colors.primary} />
+              <Text style={[styles.timePillText, { color: colors.onSurface }]}>
+                {notifPrefsData?.notificationSchedule?.workoutTime || '08:00'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+
+          {/* Breakfast Time */}
+          <View style={styles.settingRow}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+              <UtensilsCrossed size={20} color={colors.secondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
+                Breakfast Reminder
+              </Text>
+              <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
+                Morning meal logging nudge
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.timePill, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceVariant }]}
+              onPress={() => openTimePicker('breakfastTime', notifPrefsData?.notificationSchedule?.breakfastTime || '08:30')}
+            >
+              <Clock size={14} color={colors.secondary} />
+              <Text style={[styles.timePillText, { color: colors.onSurface }]}>
+                {notifPrefsData?.notificationSchedule?.breakfastTime || '08:30'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+
+          {/* Lunch Time */}
+          <View style={styles.settingRow}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+              <UtensilsCrossed size={20} color={colors.secondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
+                Lunch Reminder
+              </Text>
+              <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
+                Afternoon meal logging nudge
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.timePill, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceVariant }]}
+              onPress={() => openTimePicker('lunchTime', notifPrefsData?.notificationSchedule?.lunchTime || '13:00')}
+            >
+              <Clock size={14} color={colors.secondary} />
+              <Text style={[styles.timePillText, { color: colors.onSurface }]}>
+                {notifPrefsData?.notificationSchedule?.lunchTime || '13:00'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+
+          {/* Dinner Time */}
+          <View style={styles.settingRow}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+              <UtensilsCrossed size={20} color={colors.secondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
+                Dinner Reminder
+              </Text>
+              <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
+                Evening meal logging nudge
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.timePill, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceVariant }]}
+              onPress={() => openTimePicker('dinnerTime', notifPrefsData?.notificationSchedule?.dinnerTime || '20:00')}
+            >
+              <Clock size={14} color={colors.secondary} />
+              <Text style={[styles.timePillText, { color: colors.onSurface }]}>
+                {notifPrefsData?.notificationSchedule?.dinnerTime || '20:00'}
+              </Text>
+            </Pressable>
+          </View>
+        </AppCard>
+
+        {/* Section 3c: Notification Channels Matrix */}
+        <Text style={[styles.sectionHeading, { color: colors.onSurfaceVariant }]}>
+          NOTIFICATION CHANNELS BY CATEGORY
+        </Text>
+
+        <AppCard variant="elevated" padded={false} style={styles.card}>
+          {NOTIF_CATEGORIES.map((cat, index) => {
+            const matrix = notifPrefsData?.notificationPreferences || {};
+            const catPref = matrix[cat.key] || {
+              inApp: true,
+              push: cat.key === 'promotions' ? false : true,
+            };
+            return (
+              <React.Fragment key={cat.key}>
+                {index > 0 ? (
+                  <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+                ) : null}
+                <View style={styles.matrixRow}>
+                  <View style={[styles.iconWrap, { backgroundColor: colors.surfaceVariant }]}>
+                    <cat.Icon size={18} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={[styles.settingTitle, { color: colors.onSurface }]}>
+                      {cat.label}
+                    </Text>
+                    <Text style={[styles.settingSub, { color: colors.onSurfaceVariant }]}>
+                      {cat.desc}
+                    </Text>
+                  </View>
+                  <View style={styles.channelSwitchesWrap}>
+                    <View style={styles.channelCol}>
+                      <Text style={[styles.channelLabel, { color: colors.onSurfaceVariant }]}>
+                        In-App
+                      </Text>
+                      <Switch
+                        value={catPref.inApp ?? true}
+                        onValueChange={(val) => handleToggleChannel(cat.key, 'inApp', val)}
+                        trackColor={{ false: colors.outlineVariant, true: colors.primary }}
+                        thumbColor="#FFFFFF"
+                        activeThumbColor="#FFFFFF"
+                      />
+                    </View>
+                    <View style={styles.channelCol}>
+                      <Text style={[styles.channelLabel, { color: colors.onSurfaceVariant }]}>
+                        Push
+                      </Text>
+                      <Switch
+                        value={catPref.push ?? (cat.key === 'promotions' ? false : true)}
+                        onValueChange={(val) => handleToggleChannel(cat.key, 'push', val)}
+                        trackColor={{ false: colors.outlineVariant, true: colors.primary }}
+                        thumbColor="#FFFFFF"
+                        activeThumbColor="#FFFFFF"
+                      />
+                    </View>
+                  </View>
+                </View>
+              </React.Fragment>
+            );
+          })}
         </AppCard>
 
         {/* Section 4: Device & Sensor Permissions */}
@@ -404,6 +712,17 @@ export default function SettingsScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* DateTimePicker for time picking on iOS/Android */}
+      {pickerConfig.visible && Platform.OS !== 'web' && (
+        <DateTimePicker
+          value={pickerConfig.date}
+          mode="time"
+          is24Hour={true}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onTimeChange}
+        />
+      )}
+
       {/* Info Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -491,6 +810,72 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     marginHorizontal: 16,
+  },
+  timePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  timePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  syncPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  syncPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quietHoursTimesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  quietTimeBlock: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  quietTimeLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  matrixRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  channelSwitchesWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  channelCol: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  channelLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  helperNotice: {
+    fontSize: 11,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    lineHeight: 16,
   },
   loadingPadding: {
     padding: 24,

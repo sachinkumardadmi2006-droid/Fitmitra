@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "970835827861",
+    "project_id": "fitmitra-85183",
+    "storage_bucket": "fitmitra-85183.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:970835827861:android:522a4255dab62fb6988f9c",
+        "android_client_info": {
+          "package_name": "fitmitra.in"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "970835827861-cgcpmcis2ict1h6fh3d10nqlsj05ap2q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCn550BObygrtaT7FvpVfyDD4SQ_ST9ts"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "970835827861-cgcpmcis2ict1h6fh3d10nqlsj05ap2q.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

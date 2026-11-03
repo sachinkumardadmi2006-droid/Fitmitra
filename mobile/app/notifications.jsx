@@ -18,7 +18,12 @@ import {
   CheckCheck,
   Clock,
   ChevronRight,
+  UtensilsCrossed,
+  Trophy,
+  Flame,
+  Tag,
 } from 'lucide-react-native';
+import { handleNotificationDeepLink } from '../utils/notificationDeepLink';
 import { notificationService } from '../services/notificationService';
 import { queryKeys } from '../constants/queryKeys';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -82,18 +87,14 @@ export default function NotificationsScreen() {
 
     // Context-aware deep linking
     const data = item.data || {};
-    if (data.orderId || item.type === 'ORDER_UPDATE' || item.type === 'ORDER_CONFIRMED') {
-      router.push('/orders');
-    } else if (data.workoutId) {
-      const targetKind = data.kind || (data.workoutId === 'today' ? 'today' : 'session');
-      router.push(`/workout/${data.workoutId}?kind=${targetKind}`);
-    } else if (item.type === 'WORKOUT_REMINDER') {
-      router.push('/workouts');
-    } else if (item.type === 'SUBSCRIPTION_UPDATE' || item.type === 'SUBSCRIPTION_ACTIVATED') {
-      router.push('/premium');
-    } else if (item.type === 'POINTS_EARNED') {
-      router.push('/leaderboard');
-    }
+    handleNotificationDeepLink(
+      {
+        type: item.type,
+        targetId: data.targetId || data.challengeId || data.workoutId,
+        ...data,
+      },
+      router
+    );
   };
 
   const getNotificationIcon = (type) => {
@@ -109,9 +110,39 @@ export default function NotificationsScreen() {
           icon: <Dumbbell size={20} color={colors.secondary} />,
           bgColor: colors.secondaryContainer,
         };
+      case 'NUTRITION_REMINDER':
+        return {
+          icon: <UtensilsCrossed size={20} color="#22C55E" />,
+          bgColor: 'rgba(34, 197, 94, 0.15)',
+        };
+      case 'CHALLENGE_EXPIRING':
+        return {
+          icon: <Trophy size={20} color="#F59E0B" />,
+          bgColor: 'rgba(245, 158, 11, 0.15)',
+        };
+      case 'CHALLENGE_NEW':
+        return {
+          icon: <Trophy size={20} color="#8B5CF6" />,
+          bgColor: 'rgba(139, 92, 246, 0.15)',
+        };
+      case 'STREAK_AT_RISK':
+        return {
+          icon: <Flame size={20} color="#EF4444" />,
+          bgColor: 'rgba(239, 68, 68, 0.15)',
+        };
+      case 'STREAK_MILESTONE':
+        return {
+          icon: <Flame size={20} color="#F97316" />,
+          bgColor: 'rgba(249, 115, 22, 0.15)',
+        };
+      case 'PROMOTION':
+        return {
+          icon: <Tag size={20} color="#06B6D4" />,
+          bgColor: 'rgba(6, 182, 212, 0.15)',
+        };
       case 'POINTS_EARNED':
         return {
-          icon: <Zap size={20} color={theme.custom.accentText} />,
+          icon: <Zap size={20} color={theme.custom?.accentText || colors.secondary} />,
           bgColor: theme.colors.secondaryContainer,
         };
       case 'SUBSCRIPTION_UPDATE':

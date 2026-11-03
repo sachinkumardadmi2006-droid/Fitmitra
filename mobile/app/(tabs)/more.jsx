@@ -208,11 +208,13 @@ export default function MoreHub() {
                     {profile.goal}
                   </Text>
                 </View>
-                <View
+                <Pressable
+                  onPress={() => router.push('/points')}
                   style={[
                     styles.pointsPill,
                     { backgroundColor: colors.secondaryContainer },
                   ]}
+                  accessibilityLabel="View Mitra Points"
                 >
                   <Zap size={11} color={colors.secondary} fill={colors.secondary} />
                   <Text
@@ -223,7 +225,7 @@ export default function MoreHub() {
                   >
                     {profile.points} pts
                   </Text>
-                </View>
+                </Pressable>
               </View>
             </View>
 

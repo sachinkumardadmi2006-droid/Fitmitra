@@ -201,7 +201,8 @@ export default function HomeDashboard() {
               </Text>
             </View>
 
-            <View
+            <Pressable
+              onPress={() => router.push('/points')}
               style={[
                 styles.badgePill,
                 {
@@ -209,12 +210,13 @@ export default function HomeDashboard() {
                   borderColor: colors.primary,
                 },
               ]}
+              accessibilityLabel="View Mitra Points"
             >
               <Zap size={15} color={colors.primary} fill={colors.primary} />
               <Text style={[styles.badgeText, { color: colors.onPrimaryContainer, fontWeight: '800' }]}>
                 {points}
               </Text>
-            </View>
+            </Pressable>
 
             <Pressable
               onPress={() => router.push('/(tabs)/more')}

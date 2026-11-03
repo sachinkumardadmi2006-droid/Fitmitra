@@ -17,7 +17,12 @@
         "backgroundColor": "#F8F9FA"
       },
       "package": "fitmitra.in",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "googleServicesFile": "./google-services.json",
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#6366F1"
+      }
     },
     "plugins": [
       "expo-router",
@@ -27,7 +32,15 @@
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
       "expo-font",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6366F1"
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

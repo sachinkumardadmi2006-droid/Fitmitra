@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -9,6 +9,29 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../services/queryClient';
 import { LoadingScreen, SnackbarProvider } from '../components/ui';
 import PaymentCheckoutModal from '../components/payment/PaymentCheckoutModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../constants/queryKeys';
+import { handleNotificationDeepLink } from '../utils/notificationDeepLink';
+import { createAndroidNotificationChannels } from '../utils/notificationChannels';
+import {
+  notificationService,
+  requestPushPermissionAndRegisterToken,
+  subscribeToTokenRefresh,
+} from '../services/notificationService';
+
+// Configure foreground notification presentation handler
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+}
 
 LogBox.ignoreLogs([
   'Cannot connect to Expo CLI',
@@ -38,6 +61,7 @@ function ThemedStack() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="notifications" />
       <Stack.Screen name="leaderboard" />
+      <Stack.Screen name="points" />
       <Stack.Screen name="profile" />
       <Stack.Screen name="edit-profile" />
       <Stack.Screen name="settings" />
@@ -77,6 +101,105 @@ function RootNavigator() {
   const router = useRouter();
   const segments = useSegments();
   const { isDark } = useTheme();
+  const queryClient = useQueryClient();
+
+  // Create Android notification channels on component mount
+  useEffect(() => {
+    createAndroidNotificationChannels();
+  }, []);
+
+  // Request permissions and register native FCM token when user logs in
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      requestPushPermissionAndRegisterToken();
+    }
+  }, [isAuthenticated, user]);
+
+  // Subscribe to FCM token refresh
+  useEffect(() => {
+    const unsub = subscribeToTokenRefresh();
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, []);
+
+  // Handle cold-start notification tap (app launched from killed state via notification)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response?.notification?.request?.content?.data) {
+        handleNotificationDeepLink(
+          response.notification.request.content.data,
+          router
+        );
+      }
+    });
+  }, [router]);
+
+  // Foreground notification arrival: invalidate unread count badge immediately
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = Notifications.addNotificationReceivedListener(() => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.notificationUnreadCount,
+      });
+    });
+    return () => sub.remove();
+  }, [queryClient]);
+
+  // Background/Foreground notification tapped by user
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (response?.notification?.request?.content?.data) {
+        handleNotificationDeepLink(
+          response.notification.request.content.data,
+          router
+        );
+      }
+    });
+    return () => sub.remove();
+  }, [router]);
+
+  // Refresh device lastSeenAt timestamp on app launch (throttled to once per day)
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const updateLastSeenThrottled = async () => {
+      try {
+        const key = 'last_seen_synced_at';
+        const lastSync = await AsyncStorage.getItem(key);
+        const today = new Date().toISOString().slice(0, 10);
+        if (lastSync !== today) {
+          await notificationService.updateLastSeen();
+          await AsyncStorage.setItem(key, today);
+        }
+      } catch {
+        // silent fallback
+      }
+    };
+    updateLastSeenThrottled();
+  }, [isAuthenticated, user]);
+
+  // Timezone sync on login (throttled to once per day)
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const syncTimezone = async () => {
+      try {
+        const lastSync = await AsyncStorage.getItem('tz_synced_at');
+        const today = new Date().toISOString().slice(0, 10);
+        if (lastSync !== today) {
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (tz) {
+            await notificationService.updateTimezone(tz);
+            await AsyncStorage.setItem('tz_synced_at', today);
+          }
+        }
+      } catch {
+        // silent fallback
+      }
+    };
+    syncTimezone();
+  }, [isAuthenticated, user]);
 
   // Authentication Gate: token -> emailVerified -> isOnboarded -> main tabs
   useEffect(() => {
@@ -102,6 +225,7 @@ function RootNavigator() {
         segments[0] === 'premium' ||
         segments[0] === 'notifications' ||
         segments[0] === 'leaderboard' ||
+        segments[0] === 'points' ||
         segments[0] === 'settings' ||
         segments[0] === 'store' ||
         segments[0] === 'orders' ||

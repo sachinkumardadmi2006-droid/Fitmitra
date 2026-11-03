@@ -61,6 +61,7 @@ export const queryKeys = {
   notifications: (limit = 40) => ['notifications', 'list', Number(limit)],
   notificationUnreadCount: ['notifications', 'unreadCount'],
   leaderboard: ['leaderboard'],
+  pointsHistory: ['points', 'history'],
 
   // Challenges
   challenges: (type = 'ALL', page = 1) => ['challenges', 'list', String(type), Number(page)],

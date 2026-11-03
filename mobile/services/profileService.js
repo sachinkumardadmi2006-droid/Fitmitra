@@ -37,5 +37,12 @@ export const profileService = {
   async updateSettings(settings) {
     return api.patch('/profiles/me/settings', settings);
   },
+
+  /**
+   * Fetch authenticated user's points history ledger
+   */
+  async getPointsHistory(params = {}) {
+    return api.get('/profiles/points/history', params);
+  },
 };
 
