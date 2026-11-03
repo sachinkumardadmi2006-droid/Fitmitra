@@ -10,6 +10,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,7 +24,10 @@ import {
   Dumbbell,
   Utensils,
   IndianRupee,
+  Camera,
+  Trash2,
 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppTheme } from '../theme/ThemeContext';
 import { spacing, radius } from '../theme/tokens';
@@ -78,6 +82,8 @@ export default function EditProfileScreen() {
   const [saving, setSaving] = useState(false);
 
   // Form states
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [name, setName] = useState('');
   const [gender, setGender] = useState('MALE');
   const [age, setAge] = useState('');
@@ -101,6 +107,20 @@ export default function EditProfileScreen() {
       const localUser = await authService.getLocalUser();
       if (localUser) {
         setName(localUser.displayName || localUser.name || '');
+        if (localUser.photoUrl) {
+          setPhotoUrl(localUser.photoUrl);
+        }
+      }
+
+      // Also fetch live user to ensure fresh avatar
+      try {
+        const meRes = await api.get('/users/me');
+        const liveUser = meRes?.data?.user || meRes?.user;
+        if (liveUser?.photoUrl) {
+          setPhotoUrl(liveUser.photoUrl);
+        }
+      } catch (meErr) {
+        // Fallback to local
       }
 
       const p = await profileService.getProfile().catch(() => null);
@@ -136,6 +156,123 @@ export default function EditProfileScreen() {
       ignore = true;
     };
   }, [loadProfileData]);
+
+  // Handle picking & uploading photo to Cloudflare R2
+  const handlePickImage = async (useCamera = false) => {
+    try {
+      let permissionResult;
+      if (useCamera) {
+        permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      } else {
+        permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      }
+
+      if (!permissionResult.granted) {
+        Alert.alert(
+          'Permission Required',
+          `Please grant ${useCamera ? 'camera' : 'photo library'} permissions to update your profile photo.`
+        );
+        return;
+      }
+
+      const options = {
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      };
+
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setUploadingPhoto(true);
+
+      const mimeType = asset.mimeType || (asset.uri?.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+
+      // Upload directly to Cloudflare R2 via storage controller
+      const uploadRes = await api.post('/storage/upload', {
+        folder: 'avatars',
+        prefix: 'avatars',
+        fileBase64: asset.base64,
+        mimeType,
+        fileName: 'avatar.jpg',
+      });
+
+      const uploadedUrl =
+        uploadRes?.data?.url ||
+        uploadRes?.data?.publicUrl ||
+        uploadRes?.url ||
+        uploadRes?.publicUrl;
+
+      if (uploadedUrl) {
+        setPhotoUrl(uploadedUrl);
+
+        // Sync with backend immediately
+        await api.post('/auth/sync', { photoUrl: uploadedUrl });
+
+        const currentLocal = await authService.getLocalUser();
+        if (currentLocal) {
+          await authService.saveLocalUser({
+            ...currentLocal,
+            photoUrl: uploadedUrl,
+          });
+        }
+
+        await refreshProfile?.();
+        emitDbUpdate();
+        Alert.alert('Success', 'Profile photo uploaded successfully!');
+      } else {
+        throw new Error('Upload completed but URL was not returned.');
+      }
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      Alert.alert('Upload Error', err?.response?.data?.message || err?.message || 'Could not upload photo.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handlePhotoActionSheet = () => {
+    Alert.alert(
+      'Profile Photo',
+      'Choose an option to update your profile image:',
+      [
+        { text: 'Choose from Gallery', onPress: () => handlePickImage(false) },
+        { text: 'Take a Photo', onPress: () => handlePickImage(true) },
+        ...(photoUrl
+          ? [
+              {
+                text: 'Remove Photo',
+                style: 'destructive',
+                onPress: async () => {
+                  setPhotoUrl('');
+                  try {
+                    await api.post('/auth/sync', { photoUrl: '' });
+                    const currentLocal = await authService.getLocalUser();
+                    if (currentLocal) {
+                      await authService.saveLocalUser({
+                        ...currentLocal,
+                        photoUrl: null,
+                      });
+                    }
+                    await refreshProfile?.();
+                    emitDbUpdate();
+                  } catch (e) {
+                    console.warn('Remove avatar error:', e);
+                  }
+                },
+              },
+            ]
+          : []),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   // Handle Save
   const handleSave = async () => {
@@ -188,11 +325,14 @@ export default function EditProfileScreen() {
 
       await profileService.updateProfile(profilePayload);
 
-      // 2. Synchronize user's displayName to users collection (POST /auth/sync)
+      // 2. Synchronize user's displayName & photoUrl to users collection (POST /auth/sync)
       try {
-        await api.post('/auth/sync', { displayName: trimmedName });
+        await api.post('/auth/sync', {
+          displayName: trimmedName,
+          photoUrl: photoUrl || null,
+        });
       } catch (syncErr) {
-        console.warn('User displayName sync error:', syncErr?.message || syncErr);
+        console.warn('User displayName/photoUrl sync error:', syncErr?.message || syncErr);
       }
 
       // 3. Update local user cache
@@ -201,6 +341,7 @@ export default function EditProfileScreen() {
         ...localUser,
         name: trimmedName,
         displayName: trimmedName,
+        photoUrl: photoUrl || null,
         age: ageNum,
         height: heightNum,
         weight: weightNum,
@@ -313,6 +454,70 @@ export default function EditProfileScreen() {
               <User size={18} color={theme.custom.primaryStrong} />
               <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
                 Personal Details
+              </Text>
+            </View>
+
+            {/* Profile Avatar Upload */}
+            <View style={styles.avatarSection}>
+              <Pressable
+                style={styles.avatarContainer}
+                onPress={handlePhotoActionSheet}
+                disabled={uploadingPhoto}
+                accessibilityRole="button"
+                accessibilityLabel="Upload profile picture"
+              >
+                {photoUrl ? (
+                  <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatarFallback,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.avatarFallbackText,
+                        { color: theme.colors.onPrimaryContainer },
+                      ]}
+                    >
+                      {name?.[0]?.toUpperCase() || 'U'}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Camera / Edit Badge */}
+                <View
+                  style={[
+                    styles.cameraBadge,
+                    { backgroundColor: theme.custom.primaryStrong },
+                  ]}
+                >
+                  {uploadingPhoto ? (
+                    <ActivityIndicator size={14} color="#FFFFFF" />
+                  ) : (
+                    <Camera size={15} color="#FFFFFF" />
+                  )}
+                </View>
+              </Pressable>
+
+              <Pressable onPress={handlePhotoActionSheet} disabled={uploadingPhoto}>
+                <Text
+                  style={[
+                    styles.changePhotoText,
+                    { color: theme.custom.primaryStrong },
+                  ]}
+                >
+                  {uploadingPhoto ? 'Uploading to Cloudflare...' : 'Change Profile Photo'}
+                </Text>
+              </Pressable>
+              <Text
+                style={[
+                  styles.photoHintText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Tap to pick from gallery or take a picture
               </Text>
             </View>
 
@@ -906,5 +1111,57 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+
+  /* Avatar Upload Styles */
+  avatarSection: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    marginTop: 4,
+  },
+  avatarContainer: {
+    position: 'relative',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    marginBottom: 8,
+  },
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  avatarFallback: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarFallbackText: {
+    fontSize: 34,
+    fontWeight: '800',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+  },
+  changePhotoText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  photoHintText: {
+    fontSize: 11.5,
   },
 });

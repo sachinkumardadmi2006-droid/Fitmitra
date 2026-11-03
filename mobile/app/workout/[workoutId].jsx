@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
@@ -608,6 +609,7 @@ export default function WorkoutDetailAndPlayerScreen() {
   const router = useRouter();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
   const [workout, setWorkout] = useState(null);
@@ -1214,6 +1216,7 @@ export default function WorkoutDetailAndPlayerScreen() {
             {
               backgroundColor: colors.surface,
               borderBottomColor: colors.outlineVariant,
+              paddingTop: insets.top > 0 ? insets.top + 6 : 10,
             },
           ]}
         >
@@ -1623,7 +1626,7 @@ export default function WorkoutDetailAndPlayerScreen() {
 
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={styles.detailScrollContent}
+        contentContainerStyle={[styles.detailScrollContent, { paddingBottom: 90 + (insets.bottom > 0 ? insets.bottom : 16) }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero Card */}
@@ -1815,6 +1818,7 @@ export default function WorkoutDetailAndPlayerScreen() {
           {
             backgroundColor: colors.surface,
             borderTopColor: colors.outlineVariant,
+            paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20,
           },
         ]}
       >

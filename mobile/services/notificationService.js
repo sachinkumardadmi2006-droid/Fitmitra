@@ -1,16 +1,27 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { api } from './api';
+import { getNotificationsModule, isExpoGo } from '../utils/notifications';
 
 /**
  * Request notification permissions and register native FCM push token with backend.
  * Android: Native FCM device token via expo-notifications.
  * iOS: TODO — deferred. Returns null early without crashing.
+ * Expo Go: Safely bypassed (native FCM push requires a development build: npx expo run:android).
  */
 export async function requestPushPermissionAndRegisterToken() {
   if (Platform.OS !== 'android') {
     // Web has no native FCM support; iOS push is deferred for future phase.
+    return null;
+  }
+
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    if (isExpoGo()) {
+      console.log(
+        '[Push] Running in Expo Go: Native FCM push registration skipped (requires development build: npx expo run:android). In-app notifications will continue to work normally.'
+      );
+    }
     return null;
   }
 
@@ -61,6 +72,11 @@ export function subscribeToTokenRefresh() {
     return () => {};
   }
 
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    return () => {};
+  }
+
   try {
     const subscription = Notifications.addPushTokenListener(async ({ data: newToken }) => {
       if (!newToken) return;
@@ -76,7 +92,11 @@ export function subscribeToTokenRefresh() {
       }
     });
 
-    return () => subscription.remove();
+    return () => {
+      if (subscription && typeof subscription.remove === 'function') {
+        subscription.remove();
+      }
+    };
   } catch (err) {
     console.warn('[Push] Error attaching push token listener:', err);
     return () => {};

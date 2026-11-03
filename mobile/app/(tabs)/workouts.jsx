@@ -327,11 +327,7 @@ export default function WorkoutsScreen() {
               label="View Program Details"
               icon="arrow-right"
               style={{ alignSelf: 'flex-start', marginTop: 4 }}
-              onPress={() =>
-                router.push(
-                  `/workout/${currentProgram.program.id || currentProgram.program._id}?kind=program`
-                )
-              }
+              onPress={() => router.push('/workout-plan-detail')}
             />
           </AppCard>
         )}

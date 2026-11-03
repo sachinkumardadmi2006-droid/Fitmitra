@@ -155,9 +155,9 @@ export default function PointsScreen() {
   const totals = nutritionLog?.totals || nutritionLog?.dailyTotals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const targetReached = Boolean(
     nutritionLog?.targetReached ||
-      (targets.calories > 0 &&
-        totals.calories >= targets.calories * 0.95 &&
-        (targets.protein <= 0 || totals.protein >= targets.protein * 0.9))
+    (targets.calories > 0 &&
+      totals.calories >= targets.calories * 0.95 &&
+      (targets.protein <= 0 || totals.protein >= targets.protein * 0.9))
   );
 
   const historyItems = pointsHistoryQuery.data || [];
@@ -512,9 +512,9 @@ export default function PointsScreen() {
 
               const dateStr = item.createdAt
                 ? new Date(item.createdAt).toLocaleDateString('en-IN', {
-                    month: 'short',
-                    day: 'numeric',
-                  })
+                  month: 'short',
+                  day: 'numeric',
+                })
                 : 'Recent';
 
               return (

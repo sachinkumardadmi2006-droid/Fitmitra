@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import {
@@ -80,6 +81,7 @@ export default function ExerciseDetailScreen() {
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
+  const insets = useSafeAreaInsets();
   const { exerciseId, index: rawIndex, total: rawTotal, isCompleted: rawIsCompleted } = useLocalSearchParams();
 
   const [completing, setCompleting] = useState(false);
@@ -222,7 +224,17 @@ export default function ExerciseDetailScreen() {
 
   if (todayQuery.isLoading && !currentExercise) {
     return (
-      <View style={[styles.root, styles.center, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.root,
+          styles.center,
+          {
+            backgroundColor: colors.background,
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>
           Loading exercise details...
@@ -233,7 +245,18 @@ export default function ExerciseDetailScreen() {
 
   if (!currentExercise) {
     return (
-      <View style={[styles.root, styles.center, { backgroundColor: colors.background, padding: 24 }]}>
+      <View
+        style={[
+          styles.root,
+          styles.center,
+          {
+            backgroundColor: colors.background,
+            padding: 24,
+            paddingTop: insets.top + 24,
+            paddingBottom: insets.bottom + 24,
+          },
+        ]}
+      >
         <Dumbbell size={48} color={colors.onSurfaceVariant} />
         <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>
           Exercise Not Found
@@ -256,7 +279,15 @@ export default function ExerciseDetailScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       {/* Top Header */}
-      <View style={[styles.topHeader, { borderBottomColor: colors.outlineVariant }]}>
+      <View
+        style={[
+          styles.topHeader,
+          {
+            paddingTop: insets.top > 0 ? insets.top + 8 : 14,
+            borderBottomColor: colors.outlineVariant,
+          },
+        ]}
+      >
         <Pressable style={styles.headerBackBtn} onPress={() => router.back()} hitSlop={10}>
           <ArrowLeft size={22} color={colors.onSurface} />
         </Pressable>
@@ -426,7 +457,7 @@ export default function ExerciseDetailScreen() {
           </View>
         )}
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 110 + (insets.bottom > 0 ? insets.bottom : 20) }} />
       </ScrollView>
 
       {/* Fixed Bottom Action Buttons */}
@@ -436,6 +467,7 @@ export default function ExerciseDetailScreen() {
           {
             backgroundColor: colors.surface,
             borderTopColor: colors.outlineVariant,
+            paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 20,
           },
         ]}
       >
@@ -489,8 +521,8 @@ export default function ExerciseDetailScreen() {
           onPress={handleNextExercise}
           disabled={completing}
         >
-          <Text style={[styles.nextBtnText, { color: colors.onSurface }]}>
-            {isLastExercise ? (isWorkoutCompleted ? 'Back to Workouts' : 'Finish') : 'Next'}
+          <Text style={[styles.nextBtnText, { color: colors.onSurface }]} numberOfLines={1}>
+            {isLastExercise ? (isWorkoutCompleted ? 'Done' : 'Finish') : 'Next'}
           </Text>
           <ChevronRight size={18} color={colors.onSurface} style={{ marginLeft: 2 }} />
         </Pressable>
@@ -753,11 +785,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 15,
+    paddingHorizontal: 12,
     borderRadius: 14,
     borderWidth: 1,
   },
   nextBtnText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
 });

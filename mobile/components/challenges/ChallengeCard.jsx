@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -49,6 +49,25 @@ export function ChallengeCard({
 
   const pointsReward = challenge.reward?.points ?? 0;
 
+  // Dynamic aspect ratio calculation so image renders with full natural width & height
+  const [imageRatio, setImageRatio] = useState(16 / 9);
+
+  useEffect(() => {
+    if (challenge?.thumbnailUrl) {
+      Image.getSize(
+        challenge.thumbnailUrl,
+        (width, height) => {
+          if (width && height && height > 0) {
+            setImageRatio(width / height);
+          }
+        },
+        () => {
+          setImageRatio(16 / 9);
+        }
+      );
+    }
+  }, [challenge?.thumbnailUrl]);
+
   // Format date range (e.g., Ends: 2026-11-20)
   const endDateFormatted = challenge.endDateKey || 'Active';
 
@@ -69,11 +88,17 @@ export function ChallengeCard({
     >
       {/* Top Banner / Image Area */}
       {challenge.thumbnailUrl ? (
-        <View style={styles.imageContainer}>
+        <View style={[styles.imageContainer, { aspectRatio: imageRatio }]}>
           <Image
             source={{ uri: challenge.thumbnailUrl }}
             style={styles.thumbnail}
             resizeMode="cover"
+            onLoad={(e) => {
+              const { width, height } = e?.nativeEvent?.source || {};
+              if (width && height && height > 0) {
+                setImageRatio(width / height);
+              }
+            }}
           />
           {/* Overlay Points Badge */}
           {pointsReward > 0 && (
@@ -261,8 +286,10 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-    height: 130,
+    aspectRatio: 16 / 9,
     position: 'relative',
+    backgroundColor: '#1E293B',
+    overflow: 'hidden',
   },
   thumbnail: {
     width: '100%',

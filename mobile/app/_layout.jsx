@@ -10,7 +10,7 @@ import { queryClient } from '../services/queryClient';
 import { LoadingScreen, SnackbarProvider } from '../components/ui';
 import PaymentCheckoutModal from '../components/payment/PaymentCheckoutModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
+import { getNotificationsModule } from '../utils/notifications';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../constants/queryKeys';
 import { handleNotificationDeepLink } from '../utils/notificationDeepLink';
@@ -21,17 +21,7 @@ import {
   subscribeToTokenRefresh,
 } from '../services/notificationService';
 
-// Configure foreground notification presentation handler
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
 
-}
 
 LogBox.ignoreLogs([
   'Cannot connect to Expo CLI',
@@ -103,8 +93,22 @@ function RootNavigator() {
   const { isDark } = useTheme();
   const queryClient = useQueryClient();
 
-  // Create Android notification channels on component mount
+  // Initialize foreground notification handler and Android channels
   useEffect(() => {
+    const Notifications = getNotificationsModule();
+    if (Notifications) {
+      try {
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+          }),
+        });
+      } catch (err) {
+        console.warn('[Push] Error configuring notification handler:', err);
+      }
+    }
     createAndroidNotificationChannels();
   }, []);
 
@@ -126,39 +130,63 @@ function RootNavigator() {
   // Handle cold-start notification tap (app launched from killed state via notification)
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (response?.notification?.request?.content?.data) {
-        handleNotificationDeepLink(
-          response.notification.request.content.data,
-          router
-        );
-      }
-    });
+    const Notifications = getNotificationsModule();
+    if (!Notifications) return;
+    try {
+      Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          if (response?.notification?.request?.content?.data) {
+            handleNotificationDeepLink(
+              response.notification.request.content.data,
+              router
+            );
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // silent fallback
+    }
   }, [router]);
 
   // Foreground notification arrival: invalidate unread count badge immediately
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const sub = Notifications.addNotificationReceivedListener(() => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.notificationUnreadCount,
+    const Notifications = getNotificationsModule();
+    if (!Notifications) return;
+    try {
+      const sub = Notifications.addNotificationReceivedListener(() => {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.notificationUnreadCount,
+        });
       });
-    });
-    return () => sub.remove();
+      return () => {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+      };
+    } catch {
+      // silent fallback
+    }
   }, [queryClient]);
 
   // Background/Foreground notification tapped by user
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      if (response?.notification?.request?.content?.data) {
-        handleNotificationDeepLink(
-          response.notification.request.content.data,
-          router
-        );
-      }
-    });
-    return () => sub.remove();
+    const Notifications = getNotificationsModule();
+    if (!Notifications) return;
+    try {
+      const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+        if (response?.notification?.request?.content?.data) {
+          handleNotificationDeepLink(
+            response.notification.request.content.data,
+            router
+          );
+        }
+      });
+      return () => {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+      };
+    } catch {
+      // silent fallback
+    }
   }, [router]);
 
   // Refresh device lastSeenAt timestamp on app launch (throttled to once per day)

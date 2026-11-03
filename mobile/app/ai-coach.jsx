@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,29 +8,21 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  Modal,
-  Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Sparkles,
   Send,
   Bot,
   User,
-  Trash2,
-  X,
   ChevronDown,
   ChevronUp,
   Brain,
 } from 'lucide-react-native';
-import { Chip } from 'react-native-paper';
 import { aiService } from '../services/aiService';
-import { queryKeys } from '../constants/queryKeys';
 import { useAppTheme } from '../theme/ThemeContext';
 import AppHeader from '../components/ui/AppHeader';
-import AppButton from '../components/ui/AppButton';
 
 let nextMsgCounter = 0;
 function generateMessageId(role) {
@@ -45,17 +37,11 @@ const QUICK_PROMPTS = [
   'Optimal post-workout hydration & electrolytes',
 ];
 
-const MEMORY_CATEGORIES = [
-  { key: 'FITNESS_PREFERENCE', label: 'Fitness' },
-  { key: 'WORKOUT_PREFERENCE', label: 'Workouts' },
-  { key: 'PREFERENCE', label: 'General' },
-];
-
 export default function AiCoachScreen() {
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
-  const { colors, custom } = theme;
+  const { colors } = theme;
   const scrollViewRef = useRef(null);
 
   const [input, setInput] = useState('');
@@ -74,42 +60,6 @@ export default function AiCoachScreen() {
 
   // Expanded reasoning traces
   const [expandedReasoning, setExpandedReasoning] = useState({});
-
-  // Memories Modal State
-  const [memoriesModalVisible, setMemoriesModalVisible] = useState(false);
-  const [memories, setMemories] = useState([]);
-  const [loadingMemories, setLoadingMemories] = useState(false);
-
-  // Add Memory form
-  const [addMemoryCategory, setAddMemoryCategory] = useState('FITNESS_PREFERENCE');
-  const [memoryKey, setMemoryKey] = useState('');
-  const [memoryValue, setMemoryValue] = useState('');
-  const [savingMemory, setSavingMemory] = useState(false);
-
-  // React Query for usage & quota
-  const usageQuery = useQuery({
-    queryKey: queryKeys.aiUsage,
-    queryFn: async () => {
-      const res = await aiService.getUsage();
-      return res?.data || res || null;
-    },
-    staleTime: 60 * 1000,
-  });
-  const usage = usageQuery.data || null;
-
-  // Fetch memories
-  const loadMemories = useCallback(async () => {
-    try {
-      setLoadingMemories(true);
-      const res = await aiService.getMemories();
-      const list = res?.data?.memories || res?.memories || [];
-      setMemories(list);
-    } catch (err) {
-      console.warn('[AI Coach] Memories fetch error:', err.message);
-    } finally {
-      setLoadingMemories(false);
-    }
-  }, []);
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -143,13 +93,16 @@ export default function AiCoachScreen() {
       const botMsg = {
         id: generateMessageId('assistant'),
         role: 'assistant',
-        content: chatData?.response || chatData?.message || chatData?.reply || 'Analyzed your request. Keep training consistently!',
+        content:
+          chatData?.response ||
+          chatData?.message ||
+          chatData?.reply ||
+          'Analyzed your request. Keep training consistently!',
         reasoning: chatData?.reasoning || chatData?.metadata?.reasoning || null,
         sources: chatData?.sources || [],
       };
 
       setMessages((prev) => [...prev, botMsg]);
-      queryClient.invalidateQueries({ queryKey: queryKeys.aiUsage });
     } catch (err) {
       const errMsg = {
         id: generateMessageId('error'),
@@ -164,17 +117,6 @@ export default function AiCoachScreen() {
     }
   };
 
-  const handleClearChat = () => {
-    setConversationId(null);
-    setMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content: 'Conversation cleared! How can I help with your training or diet today?',
-      },
-    ]);
-  };
-
   const toggleReasoning = (msgId) => {
     setExpandedReasoning((prev) => ({
       ...prev,
@@ -182,95 +124,16 @@ export default function AiCoachScreen() {
     }));
   };
 
-  const handleOpenMemories = () => {
-    loadMemories();
-    setMemoriesModalVisible(true);
-  };
-
-  const handleSaveMemory = async () => {
-    if (!memoryKey.trim() || !memoryValue.trim()) {
-      Alert.alert('Required Fields', 'Please enter both a topic name and your preference.');
-      return;
-    }
-
-    try {
-      setSavingMemory(true);
-      await aiService.saveMemory({
-        category: addMemoryCategory,
-        key: memoryKey.trim(),
-        value: memoryValue.trim(),
-      });
-      setMemoryKey('');
-      setMemoryValue('');
-      loadMemories();
-    } catch (err) {
-      Alert.alert('Save Failed', err.message || 'Could not save memory.');
-    } finally {
-      setSavingMemory(false);
-    }
-  };
-
-  const handleDeleteMemory = async (id) => {
-    try {
-      await aiService.deleteMemory(id);
-      loadMemories();
-    } catch (err) {
-      Alert.alert('Delete Failed', err.message || 'Could not delete memory.');
-    }
-  };
-
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* AppHeader with Back action, Title & Right Action Pills */}
+      {/* AppHeader with Back action, Title & Subtitle only - clean, no extra icons */}
       <AppHeader
         title="AI Fitness Coach"
-        onBack={() => router.back()}
-        actions={[
-          {
-            icon: 'brain',
-            accessibilityLabel: 'AI Memories',
-            onPress: handleOpenMemories,
-          },
-          {
-            icon: 'trash-can-outline',
-            accessibilityLabel: 'Clear Chat',
-            onPress: handleClearChat,
-          },
-        ]}
+        subtitle="Personalized training & nutrition guidance"
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/more'))}
       />
 
-      {/* Quota Banner */}
-      {usage && (
-        <View
-          style={[
-            styles.usageBanner,
-            {
-              backgroundColor: colors.surfaceVariant,
-              borderBottomColor: colors.outlineVariant,
-            },
-          ]}
-        >
-          <View style={styles.usageRow}>
-            <View style={styles.rowAlign}>
-              <Sparkles size={14} color={colors.primary} />
-              <Text style={[styles.usageText, { color: colors.onSurface }]}>
-                {usage.isPro
-                  ? 'PRO Member • High Quota'
-                  : `Daily Messages: ${usage.used} / ${usage.limit}`}
-              </Text>
-            </View>
-
-            <Pressable onPress={handleOpenMemories} style={styles.memoryPillBtn}>
-              <Brain size={13} color={custom.primaryStrong} />
-              <Text style={[styles.memoryPillText, { color: custom.primaryStrong }]}>
-                Coach Memories
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      {/* Main Chat Messages List */}
+      {/* Main Chat Messages List with KeyboardAvoidingView */}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -329,7 +192,7 @@ export default function AiCoachScreen() {
                     {msg.content}
                   </Text>
 
-                  {/* Optional DeepSeek Reasoning Trace */}
+                  {/* Optional Reasoning Trace */}
                   {msg.reasoning && (
                     <View style={styles.reasoningContainer}>
                       <Pressable
@@ -340,7 +203,12 @@ export default function AiCoachScreen() {
                         onPress={() => toggleReasoning(msg.id)}
                       >
                         <Brain size={12} color={colors.onSurfaceVariant} />
-                        <Text style={[styles.reasoningToggleText, { color: colors.onSurfaceVariant }]}>
+                        <Text
+                          style={[
+                            styles.reasoningToggleText,
+                            { color: colors.onSurfaceVariant },
+                          ]}
+                        >
                           {isExpanded ? 'Hide AI Thought Process' : 'View AI Thought Process'}
                         </Text>
                         {isExpanded ? (
@@ -357,7 +225,12 @@ export default function AiCoachScreen() {
                             { backgroundColor: colors.surfaceVariant },
                           ]}
                         >
-                          <Text style={[styles.reasoningText, { color: colors.onSurfaceVariant }]}>
+                          <Text
+                            style={[
+                              styles.reasoningText,
+                              { color: colors.onSurfaceVariant },
+                            ]}
+                          >
                             {msg.reasoning}
                           </Text>
                         </View>
@@ -433,13 +306,14 @@ export default function AiCoachScreen() {
           )}
         </ScrollView>
 
-        {/* Input Bar */}
+        {/* Input Bar with safe area padding for navigation bar */}
         <View
           style={[
             styles.inputContainer,
             {
               backgroundColor: colors.surface,
               borderTopColor: colors.outlineVariant,
+              paddingBottom: Math.max(12, insets.bottom + 10),
             },
           ]}
         >
@@ -458,6 +332,7 @@ export default function AiCoachScreen() {
             onChangeText={setInput}
             multiline
             maxLength={1000}
+            returnKeyType="send"
             onSubmitEditing={() => handleSend()}
           />
 
@@ -466,7 +341,8 @@ export default function AiCoachScreen() {
             style={[
               styles.sendBtn,
               {
-                backgroundColor: input.trim() && !loading ? colors.primary : colors.surfaceVariant,
+                backgroundColor:
+                  input.trim() && !loading ? colors.primary : colors.surfaceVariant,
               },
             ]}
             onPress={() => handleSend()}
@@ -478,152 +354,6 @@ export default function AiCoachScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
-
-      {/* AI Memories & Preferences Modal */}
-      <Modal
-        visible={memoriesModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMemoriesModalVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.outlineVariant,
-              },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <View style={styles.rowAlign}>
-                <Brain size={20} color={colors.primary} />
-                <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
-                  Coach Memories
-                </Text>
-              </View>
-              <Pressable onPress={() => setMemoriesModalVisible(false)} hitSlop={8}>
-                <X size={20} color={colors.onSurfaceVariant} />
-              </Pressable>
-            </View>
-
-            <Text style={[styles.modalSub, { color: colors.onSurfaceVariant }]}>
-              These saved preferences help your AI Coach provide personalized advice without re-asking questions.
-            </Text>
-
-            {/* Add Memory Section */}
-            <View
-              style={[
-                styles.addMemoryBox,
-                { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-              ]}
-            >
-              <Text style={[styles.addMemoryTitle, { color: colors.onSurface }]}>
-                Add Saved Preference
-              </Text>
-
-              <View style={styles.memoryCategoryRow}>
-                {MEMORY_CATEGORIES.map((cat) => {
-                  const isSel = addMemoryCategory === cat.key;
-                  return (
-                    <Chip
-                      key={cat.key}
-                      selected={isSel}
-                      onPress={() => setAddMemoryCategory(cat.key)}
-                      style={[
-                        styles.memChip,
-                        isSel
-                          ? { backgroundColor: colors.primaryContainer }
-                          : { backgroundColor: colors.surface },
-                      ]}
-                      textStyle={{
-                        fontSize: 11,
-                        color: isSel ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-                        fontWeight: isSel ? '700' : '500',
-                      }}
-                    >
-                      {cat.label}
-                    </Chip>
-                  );
-                })}
-              </View>
-
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { backgroundColor: colors.surface, borderColor: colors.outlineVariant, color: colors.onSurface },
-                ]}
-                placeholder="Topic (e.g., knee_injury, diet_style)"
-                placeholderTextColor={colors.onSurfaceVariant}
-                value={memoryKey}
-                onChangeText={setMemoryKey}
-              />
-
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { backgroundColor: colors.surface, borderColor: colors.outlineVariant, color: colors.onSurface },
-                ]}
-                placeholder="Details (e.g., Avoid heavy squats, High protein vegetarian)"
-                placeholderTextColor={colors.onSurfaceVariant}
-                value={memoryValue}
-                onChangeText={setMemoryValue}
-              />
-
-              <AppButton
-                tone="primary"
-                label="Save Preference"
-                loading={savingMemory}
-                onPress={handleSaveMemory}
-                style={{ marginTop: 4 }}
-              />
-            </View>
-
-            {/* Memories List */}
-            <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
-              {loadingMemories ? (
-                <ActivityIndicator
-                  size="small"
-                  color={colors.primary}
-                  style={{ marginVertical: 20 }}
-                />
-              ) : memories.length > 0 ? (
-                memories.map((mem, memIdx) => (
-                  <View
-                    key={String(mem._id?._id || mem._id || mem.id || memIdx)}
-                    style={[
-                      styles.memoryItemRow,
-                      { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.memoryItemKey, { color: colors.onSurface }]}>
-                        {mem.key}
-                      </Text>
-                      <Text style={[styles.memoryItemVal, { color: colors.onSurfaceVariant }]}>
-                        {mem.value}
-                      </Text>
-                    </View>
-
-                    <Pressable
-                      onPress={() => handleDeleteMemory(mem._id || mem.id)}
-                      hitSlop={8}
-                      style={styles.trashBtn}
-                    >
-                      <Trash2 size={16} color={colors.error} />
-                    </Pressable>
-                  </View>
-                ))
-              ) : (
-                <Text style={[styles.noMemoriesText, { color: colors.onSurfaceVariant }]}>
-                  No saved preferences yet. Add dietary restrictions or fitness preferences above.
-                </Text>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -635,32 +365,9 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  usageBanner: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  usageRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  usageText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  memoryPillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  memoryPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 14,
     paddingBottom: 24,
   },
   msgRow: {
@@ -755,7 +462,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
@@ -776,88 +483,5 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rowAlign: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderWidth: 1,
-    padding: 20,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  modalSub: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  addMemoryBox: {
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 14,
-  },
-  addMemoryTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  memoryCategoryRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 10,
-  },
-  memChip: {
-    borderRadius: 12,
-  },
-  modalInput: {
-    height: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  memoryItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  memoryItemKey: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  memoryItemVal: {
-    fontSize: 12,
-  },
-  trashBtn: {
-    padding: 6,
-  },
-  noMemoriesText: {
-    fontSize: 13,
-    textAlign: 'center',
-    paddingVertical: 16,
   },
 });

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Trophy,
   Zap,
@@ -28,8 +29,12 @@ import {
 import AppHeader from '../components/ui/AppHeader';
 import EmptyState from '../components/ui/EmptyState';
 import { Skeleton } from '../components/ui/Skeleton';
-import { ChallengeCard } from '../components/challenges/ChallengeCard';
-import { ActiveChallengeCard } from '../components/challenges/ActiveChallengeCard';
+import {
+  ChallengeCard,
+  ActiveChallengeCard,
+  AcceptedChallengeHero,
+  SubmitProofModal,
+} from '../components/challenges';
 
 const TYPE_FILTERS = [
   { key: 'ALL', label: 'All Challenges' },
@@ -39,6 +44,7 @@ const TYPE_FILTERS = [
 
 export default function ChallengesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
@@ -46,6 +52,11 @@ export default function ChallengesScreen() {
 
   const [activeTab, setActiveTab] = useState('EXPLORE'); // 'EXPLORE' | 'MY_CHALLENGES'
   const [selectedType, setSelectedType] = useState('ALL');
+  const [activeChallengeIndex, setActiveChallengeIndex] = useState(0);
+
+  // Proof submission modal state
+  const [proofModalVisible, setProofModalVisible] = useState(false);
+  const [selectedProofChallenge, setSelectedProofChallenge] = useState(null);
 
   // 1. All Published Challenges Query
   const challengesQuery = useQuery({
@@ -133,6 +144,11 @@ export default function ChallengesScreen() {
     if (challengeId) {
       router.push(`/challenge/${challengeId}`);
     }
+  };
+
+  const handleOpenProofModal = (challenge) => {
+    setSelectedProofChallenge(challenge);
+    setProofModalVisible(true);
   };
 
   return (
@@ -280,7 +296,10 @@ export default function ChallengesScreen() {
       {/* Main List Content */}
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(40, insets.bottom + 24) },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -299,37 +318,101 @@ export default function ChallengesScreen() {
               <Skeleton height={200} radius={custom.radius.lg} style={styles.mbLg} />
               <Skeleton height={200} radius={custom.radius.lg} style={styles.mbLg} />
             </View>
-          ) : challenges.length > 0 ? (
-            challenges.map((c) => (
-              <ChallengeCard
-                key={String(c._id || c.id)}
-                challenge={c}
-                onPress={() => handleCardPress(c)}
-                onJoinPress={() => handleJoinChallenge(c)}
-                isJoining={joinMutation.isPending && joinMutation.variables === c._id}
-              />
-            ))
           ) : (
-            <EmptyState
-              icon="trophy-outline"
-              title="No Challenges Available"
-              description="New streak and form verification challenges will appear here shortly."
-            />
+            <>
+              {/* ACCEPTED / IN-PROGRESS CHALLENGE HERO CARD AT TOP */}
+              {activeChallenges.length > 0 && (
+                <View style={styles.acceptedSection}>
+                  <View style={styles.acceptedSectionHeader}>
+                    <View style={styles.acceptedHeaderLeft}>
+                      <View style={styles.livePulseDot} />
+                      <Text style={[styles.acceptedHeaderTitle, { color: colors.onSurface }]}>
+                        Your Active Challenge{activeChallenges.length > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    {activeChallenges.length > 1 && (
+                      <View style={styles.switcherPills}>
+                        {activeChallenges.map((_, idx) => (
+                          <Pressable
+                            key={`active-dot-${idx}`}
+                            style={[
+                              styles.switcherDot,
+                              activeChallengeIndex === idx
+                                ? { backgroundColor: colors.primary, width: 18 }
+                                : { backgroundColor: colors.outlineVariant },
+                            ]}
+                            onPress={() => setActiveChallengeIndex(idx)}
+                            hitSlop={6}
+                          />
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  <AcceptedChallengeHero
+                    userChallenge={
+                      activeChallenges[activeChallengeIndex] || activeChallenges[0]
+                    }
+                    onPress={(challengeId) => router.push(`/challenge/${challengeId}`)}
+                    onSubmitProofPress={(challenge) => handleOpenProofModal(challenge)}
+                    onContinueWorkoutPress={() => router.push('/(tabs)/workouts')}
+                  />
+
+                  {challenges.length > 0 && (
+                    <View style={styles.exploreHeaderRow}>
+                      <Text
+                        style={[styles.exploreHeaderTitle, { color: colors.onSurface }]}
+                      >
+                        Explore All Challenges
+                      </Text>
+                      <Text
+                        style={[
+                          styles.exploreHeaderCount,
+                          { color: colors.onSurfaceVariant },
+                        ]}
+                      >
+                        {challenges.length} available
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Published Challenges List */}
+              {challenges.length > 0 ? (
+                challenges.map((c) => (
+                  <ChallengeCard
+                    key={String(c._id || c.id)}
+                    challenge={c}
+                    onPress={() => handleCardPress(c)}
+                    onJoinPress={() => handleJoinChallenge(c)}
+                    isJoining={joinMutation.isPending && joinMutation.variables === c._id}
+                  />
+                ))
+              ) : (
+                <EmptyState
+                  icon="trophy-outline"
+                  title="No Challenges Available"
+                  description="New streak and form verification challenges will appear here shortly."
+                />
+              )}
+            </>
           )
         ) : (
           /* My Challenges Tab */
           loading && activeChallenges.length === 0 ? (
             <View style={styles.skeletonWrap}>
-              <Skeleton height={140} radius={custom.radius.lg} style={styles.mbLg} />
-              <Skeleton height={140} radius={custom.radius.lg} style={styles.mbLg} />
+              <Skeleton height={180} radius={custom.radius.lg} style={styles.mbLg} />
+              <Skeleton height={180} radius={custom.radius.lg} style={styles.mbLg} />
             </View>
           ) : activeChallenges.length > 0 ? (
             activeChallenges.map((uc) => (
-              <ActiveChallengeCard
+              <AcceptedChallengeHero
                 key={String(uc._id || uc.id)}
                 userChallenge={uc}
-                onPress={() => handleActiveCardPress(uc)}
-                onSubmitProofPress={() => handleActiveCardPress(uc)}
+                onPress={(challengeId) => router.push(`/challenge/${challengeId}`)}
+                onSubmitProofPress={(challenge) => handleOpenProofModal(challenge)}
+                onContinueWorkoutPress={() => router.push('/(tabs)/workouts')}
               />
             ))
           ) : (
@@ -343,6 +426,28 @@ export default function ChallengesScreen() {
           )
         )}
       </ScrollView>
+
+      {/* Proof Submission Modal */}
+      <SubmitProofModal
+        visible={proofModalVisible}
+        challenge={selectedProofChallenge}
+        onClose={() => {
+          setProofModalVisible(false);
+          setSelectedProofChallenge(null);
+        }}
+        onProofSubmitted={() => {
+          setProofModalVisible(false);
+          setSelectedProofChallenge(null);
+          queryClient.invalidateQueries({ queryKey: ['challenges'] });
+          queryClient.invalidateQueries({ queryKey: queryKeys.challengesActive });
+          queryClient.invalidateQueries({ queryKey: queryKeys.profile });
+          refreshProfile?.();
+          Alert.alert(
+            'Proof Submitted! 🎉',
+            'Your proof has been submitted for coach review. Reward points will be credited upon approval.'
+          );
+        }}
+      />
     </View>
   );
 }
@@ -418,5 +523,58 @@ const styles = StyleSheet.create({
   mbLg: {
     marginBottom: 16,
   },
-});
 
+  /* ACCEPTED CHALLENGES TOP SECTION */
+  acceptedSection: {
+    marginBottom: 10,
+  },
+  acceptedSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  acceptedHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  livePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  acceptedHeaderTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  switcherPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  switcherDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  exploreHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  exploreHeaderTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+  },
+  exploreHeaderCount: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+});

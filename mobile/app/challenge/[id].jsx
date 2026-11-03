@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Trophy,
   Zap,
@@ -46,12 +47,30 @@ import { SubmitProofModal } from '../../components/challenges/SubmitProofModal';
 export default function ChallengeDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
   const { colors, custom } = theme;
   const { points, refreshProfile } = useAuth();
 
   const [proofModalVisible, setProofModalVisible] = useState(false);
+  const [imageRatio, setImageRatio] = useState(null);
+
+  useEffect(() => {
+    if (challenge?.thumbnailUrl) {
+      Image.getSize(
+        challenge.thumbnailUrl,
+        (width, height) => {
+          if (width && height && height > 0) {
+            setImageRatio(width / height);
+          }
+        },
+        () => {
+          // Fallback will be handled directly by onLoad event on <Image />
+        }
+      );
+    }
+  }, [challenge?.thumbnailUrl]);
 
   // Challenge Detail Query
   const detailQuery = useQuery({
@@ -169,7 +188,10 @@ export default function ChallengeDetailScreen() {
 
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(120, insets.bottom + 95) },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -183,11 +205,22 @@ export default function ChallengeDetailScreen() {
       >
         {/* Hero Image or Placeholder Banner */}
         {challenge.thumbnailUrl ? (
-          <View style={styles.heroImageWrap}>
+          <View
+            style={[
+              styles.heroImageWrap,
+              imageRatio ? { aspectRatio: imageRatio } : { minHeight: 220, maxHeight: 380 },
+            ]}
+          >
             <Image
               source={{ uri: challenge.thumbnailUrl }}
               style={styles.heroImage}
-              resizeMode="cover"
+              resizeMode="contain"
+              onLoad={(e) => {
+                const { width, height } = e?.nativeEvent?.source || {};
+                if (width && height && height > 0) {
+                  setImageRatio(width / height);
+                }
+              }}
             />
             {pointsReward > 0 && (
               <View style={[styles.heroPointsPill, { backgroundColor: 'rgba(0,0,0,0.75)' }]}>
@@ -402,13 +435,14 @@ export default function ChallengeDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating Action Button Bar */}
+      {/* Floating Action Button Bar with Navigation Bar Safe Area Padding */}
       <View
         style={[
           styles.floatingBar,
           {
             backgroundColor: colors.surface,
             borderTopColor: colors.outlineVariant,
+            paddingBottom: Math.max(14, insets.bottom + 12),
           },
         ]}
       >
@@ -486,8 +520,11 @@ const styles = StyleSheet.create({
   },
   heroImageWrap: {
     width: '100%',
-    height: 190,
     position: 'relative',
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   heroImage: {
     width: '100%',

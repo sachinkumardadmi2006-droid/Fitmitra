@@ -9,6 +9,7 @@ import {
   Alert,
   RefreshControl,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -262,9 +263,13 @@ export default function ProfileScreen() {
           ]}
         >
           <View style={[styles.avatarCircle, { backgroundColor: theme.colors.tertiaryContainer }]}>
-            <Text style={[styles.avatarLetter, { color: theme.colors.onTertiaryContainer }]}>
-              {userInitial}
-            </Text>
+            {user?.photoUrl ? (
+              <Image source={{ uri: user.photoUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={[styles.avatarLetter, { color: theme.colors.onTertiaryContainer }]}>
+                {userInitial}
+              </Text>
+            )}
           </View>
 
           <View style={{ flex: 1 }}>
@@ -695,6 +700,12 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   avatarLetter: {
     fontSize: 24,
