@@ -10,6 +10,8 @@ import {
   Alert,
   RefreshControl,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -843,7 +845,10 @@ export default function NutritionScreen() {
 
       {/* 7. Custom Meal Log Modal */}
       <Modal visible={logModalVisible} transparent animationType="slide" onRequestClose={() => setLogModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        >
           <View
             style={[
               styles.modalCard,
@@ -972,7 +977,7 @@ export default function NutritionScreen() {
               />
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

@@ -111,7 +111,7 @@ export default function Login() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 32,
+    paddingBottom: 48,
   },
   card: {
     flexGrow: 1,

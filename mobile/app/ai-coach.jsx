@@ -7,6 +7,7 @@ import {
   TextInput,
   Pressable,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -47,6 +48,28 @@ export default function AiCoachScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Messages list
   const [messages, setMessages] = useState([
@@ -136,7 +159,7 @@ export default function AiCoachScreen() {
       {/* Main Chat Messages List with KeyboardAvoidingView */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
@@ -313,7 +336,7 @@ export default function AiCoachScreen() {
             {
               backgroundColor: colors.surface,
               borderTopColor: colors.outlineVariant,
-              paddingBottom: Math.max(12, insets.bottom + 10),
+              paddingBottom: isKeyboardVisible ? 10 : Math.max(12, insets.bottom + 10),
             },
           ]}
         >
@@ -333,6 +356,11 @@ export default function AiCoachScreen() {
             multiline
             maxLength={1000}
             returnKeyType="send"
+            onFocus={() => {
+              setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+              }, 150);
+            }}
             onSubmitEditing={() => handleSend()}
           />
 

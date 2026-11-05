@@ -470,9 +470,22 @@ export const getWeekConsistency = (serverDateKey, recentWorkouts = [], hasComple
     const dayKey = curDate.toISOString().split('T')[0];
 
     const isMatchCompleted =
-      (recentWorkouts || []).some(
-        (w) => w.dateKey === dayKey && (w.status === 'COMPLETED' || w.status === 'completed')
-      ) || (dayKey === dateStr && hasCompletedToday);
+      (recentWorkouts || []).some((w) => {
+        if (!w) return false;
+        const itemDate = (
+          w.dateKey ||
+          (w.completedAt ? new Date(w.completedAt).toISOString().split('T')[0] : '') ||
+          (w.startedAt ? new Date(w.startedAt).toISOString().split('T')[0] : '') ||
+          (w.createdAt ? new Date(w.createdAt).toISOString().split('T')[0] : '') ||
+          ''
+        ).slice(0, 10);
+        const isCompleted =
+          !w.status ||
+          w.status === 'COMPLETED' ||
+          w.status === 'completed' ||
+          Boolean(w.completedAt);
+        return itemDate === dayKey && isCompleted;
+      }) || (dayKey === dateStr && hasCompletedToday);
 
     return {
       label: item.label,

@@ -6,6 +6,7 @@ export { nutritionService } from './nutritionService';
 export { storeService } from './storeService';
 export { aiService } from './aiService';
 export { subscriptionService } from './subscriptionService';
+export { manualPaymentService } from './manualPaymentService';
 export { progressService } from './progressService';
 export { profileService } from './profileService';
 export { notificationService } from './notificationService';

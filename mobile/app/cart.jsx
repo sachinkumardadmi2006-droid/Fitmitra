@@ -24,6 +24,7 @@ import {
   Plus,
   Minus,
   CreditCard,
+  QrCode,
   Zap,
   ShoppingBag,
   AlertCircle,
@@ -37,6 +38,7 @@ import { useAppConfig } from '../hooks/useAppConfig';
 import { useTranslation } from '../utils/i18n';
 import { storeService } from '../services/storeService';
 import { openCheckout, mapCashOrderToCheckout } from '../services/paymentCheckout';
+import ManualPaymentModal from '../components/payment/ManualPaymentModal';
 import { queryKeys } from '../constants/queryKeys';
 import AppHeader from '../components/ui/AppHeader';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
@@ -77,10 +79,25 @@ export default function CartScreen() {
     MAX_QTY_PER_ITEM,
   } = useCart();
 
-  // Payment method: 'CASH' | 'POINTS'
-  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  // Payment method: 'UPI_QR' | 'CASH' | 'POINTS'
+  const [paymentMethod, setPaymentMethod] = useState('UPI_QR');
+  const [manualPaymentModalVisible, setManualPaymentModalVisible] = useState(false);
+  const [manualPaymentOrderContext, setManualPaymentOrderContext] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [pollStatus, setPollStatus] = useState('');
+
+  const handleManualPaymentSuccess = async () => {
+    setManualPaymentModalVisible(false);
+    await clearCart();
+    idempotencyKeyRef.current = Crypto.randomUUID();
+    pendingOrderIdRef.current = null;
+    await invalidateSuccessQueries();
+    Alert.alert(
+      'Payment Submitted for Verification!',
+      'Your payment proof (UTR & Screenshot) has been submitted successfully. Our team will verify and dispatch your order shortly.',
+      [{ text: 'View Orders', onPress: () => router.replace('/orders') }]
+    );
+  };
 
   // Delivery Address Form State
   const [address, setAddress] = useState({
@@ -459,6 +476,18 @@ export default function CartScreen() {
         throw new Error('Server order creation did not return valid payment credentials.');
       }
 
+      // If UPI QR Code payment: launch manual payment verification modal
+      if (paymentMethod === 'UPI_QR') {
+        pendingOrderIdRef.current = orderDoc._id;
+        setManualPaymentOrderContext({
+          storeOrderId: orderDoc._id,
+          amountInPaise: orderDoc.totalAmountInPaise,
+        });
+        setManualPaymentModalVisible(true);
+        setSubmitting(false);
+        return;
+      }
+
       pendingOrderIdRef.current = orderDoc._id;
 
       // Open Razorpay Checkout WebView
@@ -566,7 +595,7 @@ export default function CartScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
     >
       {/* Top Header */}
       <AppHeader
@@ -728,6 +757,37 @@ export default function CartScreen() {
           <Text style={[styles.cardTitle, { color: colors.onSurface }]}>Payment Method</Text>
 
           <View style={styles.methodSelector}>
+            {/* UPI QR Scanner Option */}
+            <Pressable
+              disabled={!isOrderingAvailable}
+              style={[
+                styles.methodOption,
+                {
+                  backgroundColor:
+                    paymentMethod === 'UPI_QR' ? colors.primaryContainer : colors.surfaceVariant,
+                  borderColor: paymentMethod === 'UPI_QR' ? colors.primary : colors.outlineVariant,
+                },
+                !isOrderingAvailable && { opacity: 0.5 },
+              ]}
+              onPress={() => isOrderingAvailable && setPaymentMethod('UPI_QR')}
+            >
+              <QrCode
+                size={18}
+                color={paymentMethod === 'UPI_QR' ? colors.onPrimaryContainer : colors.onSurfaceVariant}
+              />
+              <Text
+                style={[
+                  styles.methodLabel,
+                  {
+                    color: paymentMethod === 'UPI_QR' ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                    fontWeight: paymentMethod === 'UPI_QR' ? '800' : '600',
+                  },
+                ]}
+              >
+                UPI QR Scanner (₹{Math.round(totalCashPaise / 100)})
+              </Text>
+            </Pressable>
+
             {/* Cash via Razorpay Option */}
             <Pressable
               disabled={!isOrderingAvailable}
@@ -755,7 +815,7 @@ export default function CartScreen() {
                   },
                 ]}
               >
-                Cash (₹{Math.round(totalCashPaise / 100)})
+                Cards / NetBanking (₹{Math.round(totalCashPaise / 100)})
               </Text>
             </Pressable>
 
@@ -1025,9 +1085,9 @@ export default function CartScreen() {
               Items Subtotal ({totalQuantity} units)
             </Text>
             <Text style={[styles.summaryValue, { color: colors.onSurface }]}>
-              {paymentMethod === 'CASH'
-                ? `₹${Math.round(totalCashPaise / 100)}`
-                : `${totalPointsRequired} pts`}
+              {paymentMethod === 'POINTS'
+                ? `${totalPointsRequired} pts`
+                : `₹${Math.round(totalCashPaise / 100)}`}
             </Text>
           </View>
 
@@ -1046,9 +1106,9 @@ export default function CartScreen() {
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryTotalLabel, { color: colors.onSurface }]}>Total</Text>
             <Text style={[styles.summaryTotalValue, { color: custom.primaryStrong }]}>
-              {paymentMethod === 'CASH'
-                ? `₹${Math.round(totalCashPaise / 100)}`
-                : `${totalPointsRequired} Points`}
+              {paymentMethod === 'POINTS'
+                ? `${totalPointsRequired} Points`
+                : `₹${Math.round(totalCashPaise / 100)}`}
             </Text>
           </View>
         </View>
@@ -1076,9 +1136,9 @@ export default function CartScreen() {
             Total Payable
           </Text>
           <Text style={[styles.bottomBarTotalValue, { color: custom.primaryStrong }]}>
-            {paymentMethod === 'CASH'
-              ? `₹${Math.round(totalCashPaise / 100)}`
-              : `${totalPointsRequired} pts`}
+            {paymentMethod === 'POINTS'
+              ? `${totalPointsRequired} pts`
+              : `₹${Math.round(totalCashPaise / 100)}`}
           </Text>
         </View>
 
@@ -1103,6 +1163,13 @@ export default function CartScreen() {
           )}
         </Pressable>
       </View>
+
+      <ManualPaymentModal
+        visible={manualPaymentModalVisible}
+        orderContext={manualPaymentOrderContext}
+        onClose={() => setManualPaymentModalVisible(false)}
+        onSuccess={handleManualPaymentSuccess}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -1231,17 +1298,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   methodSelector: {
-    flexDirection: 'row',
     gap: 10,
     marginBottom: spacing.xs,
   },
   methodOption: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: spacing.sm,
     paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: radius.md,
     borderWidth: 1,
   },

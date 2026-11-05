@@ -9,6 +9,8 @@ import {
   Modal,
   Alert,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -851,7 +853,10 @@ export default function ProgressScreen() {
         animationType="slide"
         onRequestClose={() => setWeightModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        >
           <View
             style={[
               styles.modalCard,
@@ -902,7 +907,7 @@ export default function ProgressScreen() {
               />
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Log Body Measurements Modal */}
@@ -912,7 +917,10 @@ export default function ProgressScreen() {
         animationType="slide"
         onRequestClose={() => setMeasurementsModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        >
           <View
             style={[
               styles.modalCard,
@@ -1030,7 +1038,7 @@ export default function ProgressScreen() {
               />
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Upload Transformation Photo Modal */}

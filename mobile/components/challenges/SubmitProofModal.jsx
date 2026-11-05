@@ -10,6 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   X,
@@ -173,7 +175,10 @@ export function SubmitProofModal({
       transparent
       onRequestClose={onClose}
     >
-      <View style={[styles.backdrop, { backgroundColor: colors.backdrop }]}>
+      <KeyboardAvoidingView
+        style={[styles.backdrop, { backgroundColor: colors.backdrop }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
         <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -367,7 +372,7 @@ export function SubmitProofModal({
             </View>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

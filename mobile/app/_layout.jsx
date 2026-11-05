@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
 import { LogBox, Platform } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';

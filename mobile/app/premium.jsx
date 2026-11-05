@@ -17,9 +17,12 @@ import {
   Crown,
   CheckCircle2,
   Zap,
+  QrCode,
+  CreditCard,
 } from 'lucide-react-native';
 import { subscriptionService } from '../services/subscriptionService';
 import { openCheckout } from '../services/paymentCheckout';
+import ManualPaymentModal from '../components/payment/ManualPaymentModal';
 import { queryKeys } from '../constants/queryKeys';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -39,7 +42,29 @@ export default function PremiumScreen() {
 
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [paymentOption, setPaymentOption] = useState('UPI_QR');
+  const [manualModalVisible, setManualModalVisible] = useState(false);
+  const [manualOrderContext, setManualOrderContext] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const handleManualPaymentSuccess = async () => {
+    setManualModalVisible(false);
+    await invalidateSuccessQueries();
+    Alert.alert(
+      'Payment Submitted for Verification!',
+      'Your payment proof (UTR & Screenshot) has been submitted successfully. Our team will verify and activate your PRO subscription shortly.',
+      [
+        {
+          text: returnTo ? 'Continue to Onboarding' : 'Continue',
+          onPress: () => {
+            if (returnTo) {
+              router.replace(returnTo);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // 1. Subscription Plans Query
   const plansQuery = useQuery({
@@ -149,6 +174,15 @@ export default function PremiumScreen() {
       }
 
       if (createData?.type === 'PAYMENT_REQUIRED') {
+        if (paymentOption === 'UPI_QR') {
+          setManualOrderContext({
+            subscriptionPlanId: planId,
+            amountInPaise: plan.priceInPaise,
+          });
+          setManualModalVisible(true);
+          return;
+        }
+
         // Step b.2: POST /payments/create-order { subscriptionPlanId: plan._id }
         const paymentOrderRes = await subscriptionService.createPaymentOrder({
           subscriptionPlanId: planId,
@@ -459,6 +493,104 @@ export default function PremiumScreen() {
                 : `Plan pricing: ₹${Math.round((selectedPlan?.priceInPaise || 0) / 100)} per ${selectedPlan?.billingPeriod?.toLowerCase() || 'month'}.`}
             </Text>
 
+            {(!selectedPlan?.trialDays || selectedPlan?.trialDays <= 0) && (
+              <View style={styles.paymentOptionsContainer}>
+                <Text style={[styles.paymentOrderLabel, { color: colors.onSurfaceVariant }]}>
+                  Payment Method:
+                </Text>
+
+                <Pressable
+                  style={[
+                    styles.paymentOptionCard,
+                    {
+                      backgroundColor:
+                        paymentOption === 'UPI_QR' ? colors.primaryContainer : colors.surfaceVariant,
+                      borderColor: paymentOption === 'UPI_QR' ? colors.primary : colors.outlineVariant,
+                    },
+                  ]}
+                  onPress={() => setPaymentOption('UPI_QR')}
+                >
+                  <QrCode
+                    size={20}
+                    color={paymentOption === 'UPI_QR' ? colors.onPrimaryContainer : colors.onSurfaceVariant}
+                  />
+                  <View style={styles.paymentOptionTextWrap}>
+                    <Text
+                      style={[
+                        styles.paymentOptionTitle,
+                        {
+                          color:
+                            paymentOption === 'UPI_QR'
+                              ? colors.onPrimaryContainer
+                              : colors.onSurface,
+                        },
+                      ]}
+                    >
+                      UPI QR Scanner (Recommended)
+                    </Text>
+                    <Text
+                      style={[
+                        styles.paymentOptionSubtitle,
+                        {
+                          color:
+                            paymentOption === 'UPI_QR'
+                              ? colors.onPrimaryContainer
+                              : colors.onSurfaceVariant,
+                        },
+                      ]}
+                    >
+                      Pay via GPay, PhonePe, Paytm & upload proof
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.paymentOptionCard,
+                    {
+                      backgroundColor:
+                        paymentOption === 'CARD' ? colors.primaryContainer : colors.surfaceVariant,
+                      borderColor: paymentOption === 'CARD' ? colors.primary : colors.outlineVariant,
+                    },
+                  ]}
+                  onPress={() => setPaymentOption('CARD')}
+                >
+                  <CreditCard
+                    size={20}
+                    color={paymentOption === 'CARD' ? colors.onPrimaryContainer : colors.onSurfaceVariant}
+                  />
+                  <View style={styles.paymentOptionTextWrap}>
+                    <Text
+                      style={[
+                        styles.paymentOptionTitle,
+                        {
+                          color:
+                            paymentOption === 'CARD'
+                              ? colors.onPrimaryContainer
+                              : colors.onSurface,
+                        },
+                      ]}
+                    >
+                      Cards / NetBanking / Razorpay
+                    </Text>
+                    <Text
+                      style={[
+                        styles.paymentOptionSubtitle,
+                        {
+                          color:
+                            paymentOption === 'CARD'
+                              ? colors.onPrimaryContainer
+                              : colors.onSurfaceVariant,
+                        },
+                      ]}
+                    >
+                      Instant debit/credit card or net banking
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            )}
+
             <View style={styles.modalActionWrap}>
               <AppButton
                 tone="primary"
@@ -474,6 +606,13 @@ export default function PremiumScreen() {
           </View>
         </View>
       </Modal>
+
+      <ManualPaymentModal
+        visible={manualModalVisible}
+        orderContext={manualOrderContext}
+        onClose={() => setManualModalVisible(false)}
+        onSuccess={handleManualPaymentSuccess}
+      />
     </View>
   );
 }
@@ -682,5 +821,29 @@ const styles = StyleSheet.create({
   },
   modalActionWrap: {
     marginBottom: 16,
+  },
+  paymentOptionsContainer: {
+    gap: 10,
+    marginBottom: 18,
+  },
+  paymentOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  paymentOptionTextWrap: {
+    flex: 1,
+  },
+  paymentOptionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  paymentOptionSubtitle: {
+    fontSize: 11,
   },
 });

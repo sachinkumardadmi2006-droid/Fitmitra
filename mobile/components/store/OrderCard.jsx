@@ -28,6 +28,13 @@ export function OrderCard({
 
   const getStatusBadge = () => {
     switch (order.status) {
+      case 'AWAITING_VERIFICATION':
+        return {
+          bg: '#FEF3C7',
+          fg: '#B45309',
+          border: '#F59E0B',
+          label: 'Verification Pending',
+        };
       case 'PENDING_PAYMENT':
         if (!isYoungerThan60Min) {
           return {

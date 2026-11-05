@@ -128,8 +128,15 @@ export default function HomeDashboard() {
   const proteinProgress = Math.min(Math.max(currentProtein / targetProtein, 0), 1);
 
   // Weekly consistency dots
+  const serverDateKey =
+    todayWorkout?.dateKey ||
+    dashboardData?.todayWorkout?.dateKey ||
+    dashboardData?.nutrition?.date ||
+    dashboardData?.water?.dateKey ||
+    new Date().toISOString().split('T')[0];
+
   const consistencyDots = getWeekConsistency(
-    todayWorkout?.dateKey,
+    serverDateKey,
     recentWorkouts,
     isWorkoutCompleted
   );
@@ -612,7 +619,7 @@ export default function HomeDashboard() {
             />
 
             {recentWorkouts.length > 0 ? (
-              recentWorkouts.map((session, idx) => {
+              recentWorkouts.slice(0, 3).map((session, idx) => {
                 const dateLabel = session.completedAt
                   ? new Date(session.completedAt).toLocaleDateString(undefined, {
                       month: 'short',

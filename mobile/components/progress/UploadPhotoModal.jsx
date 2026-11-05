@@ -9,6 +9,8 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { X, Camera, Image as ImageIcon, UploadCloud } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -127,7 +129,10 @@ export default function UploadPhotoModal({
       animationType="slide"
       onRequestClose={handleClose}
     >
-      <View style={styles.modalBackdrop}>
+      <KeyboardAvoidingView
+        style={styles.modalBackdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
         <View
           style={[
             styles.modalCard,
@@ -237,7 +242,7 @@ export default function UploadPhotoModal({
             />
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

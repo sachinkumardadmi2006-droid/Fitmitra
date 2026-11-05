@@ -11,11 +11,7 @@ export function isExpoGo() {
     if (Constants.appOwnership === 'expo') {
       return true;
     }
-    // Fallback check for execution environment
-    if (
-      Constants.executionEnvironment === ExecutionEnvironment?.StoreClient &&
-      Constants.appOwnership === 'expo'
-    ) {
+    if (Constants.executionEnvironment === ExecutionEnvironment?.StoreClient) {
       return true;
     }
   } catch {
