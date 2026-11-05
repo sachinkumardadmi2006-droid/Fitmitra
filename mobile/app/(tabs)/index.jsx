@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -63,7 +63,7 @@ export default function HomeDashboard() {
     queryFn: async () => {
       const res = await dashboardService.getDashboard();
       if (res) {
-        AsyncStorage.setItem(CACHE_KEY_DASHBOARD, JSON.stringify(res)).catch(() => {});
+        AsyncStorage.setItem(CACHE_KEY_DASHBOARD, JSON.stringify(res)).catch(() => { });
       }
       return res || null;
     },
@@ -317,18 +317,18 @@ export default function HomeDashboard() {
                 {!hasProgram
                   ? 'Choose Your Workout Plan'
                   : isRestDay
-                  ? 'Take Time to Recover'
-                  : todayWorkout?.workout?.title || 'Daily Training Routine'}
+                    ? 'Take Time to Recover'
+                    : todayWorkout?.workout?.title || 'Daily Training Routine'}
               </Text>
 
               <Text style={[styles.workoutSub, { color: colors.onSurfaceVariant }]}>
                 {!hasProgram
                   ? 'Select a structured training program tailored to your fitness goal to unlock customized daily workout routines.'
                   : isRestDay
-                  ? 'Active recovery builds stronger muscle tissue. Stay hydrated and stretch gently.'
-                  : todayWorkout?.workout?.programName
-                  ? `Program: ${todayWorkout.workout.programName}`
-                  : 'Complete today’s exercises to maintain your streak & earn reward points.'}
+                    ? 'Active recovery builds stronger muscle tissue. Stay hydrated and stretch gently.'
+                    : todayWorkout?.workout?.programName
+                      ? `Program: ${todayWorkout.workout.programName}`
+                      : 'Complete today’s exercises to maintain your streak & earn reward points.'}
               </Text>
 
               {/* Meta metrics row */}
@@ -419,12 +419,12 @@ export default function HomeDashboard() {
                         d.isCompleted
                           ? { backgroundColor: colors.primary, borderColor: colors.primary }
                           : d.isToday
-                          ? {
+                            ? {
                               backgroundColor: colors.surfaceVariant,
                               borderColor: colors.primary,
                               borderWidth: 2,
                             }
-                          : {
+                            : {
                               backgroundColor: colors.surfaceVariant,
                               borderColor: colors.outlineVariant,
                             },
@@ -622,15 +622,15 @@ export default function HomeDashboard() {
               recentWorkouts.slice(0, 3).map((session, idx) => {
                 const dateLabel = session.completedAt
                   ? new Date(session.completedAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                    })
+                    month: 'short',
+                    day: 'numeric',
+                  })
                   : session.startedAt
-                  ? new Date(session.startedAt).toLocaleDateString(undefined, {
+                    ? new Date(session.startedAt).toLocaleDateString(undefined, {
                       month: 'short',
                       day: 'numeric',
                     })
-                  : 'Recent';
+                    : 'Recent';
 
                 const durationMins = Math.max(
                   1,

@@ -10,8 +10,9 @@ import {
   Keyboard,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles,
   Send,
@@ -20,9 +21,13 @@ import {
   ChevronDown,
   ChevronUp,
   Brain,
+  ChefHat,
+  CheckCircle2,
+  RefreshCw,
 } from 'lucide-react-native';
 import { aiService } from '../services/aiService';
 import { useAppTheme } from '../theme/ThemeContext';
+import { queryKeys } from '../constants/queryKeys';
 import AppHeader from '../components/ui/AppHeader';
 
 let nextMsgCounter = 0;
@@ -38,17 +43,56 @@ const QUICK_PROMPTS = [
   'Optimal post-workout hydration & electrolytes',
 ];
 
+function extractRecipeLinks(content) {
+  if (!content || typeof content !== 'string') return [];
+  const regex = /\[([^\]]+)\]\(\/recipe\/([a-zA-Z0-9_-]+)\)/g;
+  const links = [];
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    links.push({
+      label: match[1],
+      recipeId: match[2],
+    });
+  }
+  return links;
+}
+
+function hasQuickConfirmation(content) {
+  if (!content || typeof content !== 'string') return false;
+  return (
+    content.includes('Yes, Update Plan') ||
+    content.includes('[✅ Yes, Update Plan]') ||
+    content.includes('Suggest Another') ||
+    content.includes('Would you like me to replace your current') ||
+    content.includes('replace your current')
+  );
+}
+
 export default function AiCoachScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
-  const { colors } = theme;
+  const { colors, custom } = theme;
   const scrollViewRef = useRef(null);
+  const hasAutoSentRef = useRef(false);
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  // Auto-handle initialPrompt from navigation (e.g. from diet-plan-detail)
+  useEffect(() => {
+    if (params?.initialPrompt && !hasAutoSentRef.current) {
+      hasAutoSentRef.current = true;
+      const initialText = String(params.initialPrompt);
+      setTimeout(() => {
+        handleSend(initialText);
+      }, 400);
+    }
+  }, [params?.initialPrompt]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -113,19 +157,37 @@ export default function AiCoachScreen() {
         setConversationId(chatData.conversationId);
       }
 
+      const botReply =
+        chatData?.response ||
+        chatData?.message ||
+        chatData?.reply ||
+        'Analyzed your request. Keep training consistently!';
+
       const botMsg = {
         id: generateMessageId('assistant'),
         role: 'assistant',
-        content:
-          chatData?.response ||
-          chatData?.message ||
-          chatData?.reply ||
-          'Analyzed your request. Keep training consistently!',
+        content: botReply,
         reasoning: chatData?.reasoning || chatData?.metadata?.reasoning || null,
         sources: chatData?.sources || [],
       };
 
       setMessages((prev) => [...prev, botMsg]);
+
+      // Cache invalidation if diet plan was updated by AI Coach Write Tool
+      const lowerReply = botReply.toLowerCase();
+      if (
+        lowerReply.includes('updated your active diet plan') ||
+        lowerReply.includes('updated your diet plan') ||
+        lowerReply.includes('updated your active plan') ||
+        lowerReply.includes('diet plan is updated') ||
+        lowerReply.includes('diet plan has been updated') ||
+        lowerReply.includes('active diet plan is updated')
+      ) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.dietPlan });
+        queryClient.invalidateQueries({ queryKey: queryKeys.nutritionTargets });
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
+        queryClient.invalidateQueries({ queryKey: ['nutrition'] });
+      }
     } catch (err) {
       const errMsg = {
         id: generateMessageId('error'),
@@ -172,6 +234,8 @@ export default function AiCoachScreen() {
           {messages.map((msg, mIdx) => {
             const isUser = msg.role === 'user';
             const isExpanded = Boolean(expandedReasoning[msg.id]);
+            const recipeLinks = !isUser ? extractRecipeLinks(msg.content) : [];
+            const showConfirmation = !isUser && hasQuickConfirmation(msg.content);
 
             return (
               <View
@@ -214,6 +278,67 @@ export default function AiCoachScreen() {
                   >
                     {msg.content}
                   </Text>
+
+                  {/* Interactive In-App Recipe Link Buttons */}
+                  {!isUser && recipeLinks.length > 0 && (
+                    <View style={styles.interactiveButtonsRow}>
+                      {recipeLinks.map((link, lIdx) => (
+                        <Pressable
+                          key={lIdx}
+                          style={[styles.interactiveRecipeBtn, { backgroundColor: '#FF9F43' }]}
+                          onPress={() => router.push(`/recipe/${link.recipeId}`)}
+                        >
+                          <ChefHat size={13} color="#FFFFFF" />
+                          <Text style={styles.interactiveBtnText}>
+                            {link.label || 'View Recipe & Video'} 👨‍🍳
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Interactive Quick-Reply Confirmation Buttons */}
+                  {!isUser && showConfirmation && (
+                    <View style={styles.interactiveButtonsRow}>
+                      <Pressable
+                        style={[
+                          styles.interactiveConfirmBtn,
+                          { backgroundColor: custom.primaryStrong || colors.primary },
+                        ]}
+                        onPress={() =>
+                          handleSend('Yes, please update my active diet plan with this meal.')
+                        }
+                      >
+                        <CheckCircle2 size={13} color="#FFFFFF" />
+                        <Text style={styles.interactiveBtnText}>
+                          ✅ Yes, Update Plan
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={[
+                          styles.interactiveSuggestBtn,
+                          {
+                            backgroundColor: colors.surfaceVariant,
+                            borderColor: colors.outlineVariant,
+                          },
+                        ]}
+                        onPress={() =>
+                          handleSend('Please suggest another alternative with equal protein.')
+                        }
+                      >
+                        <RefreshCw size={13} color={colors.onSurface} />
+                        <Text
+                          style={[
+                            styles.interactiveSuggestBtnText,
+                            { color: colors.onSurface },
+                          ]}
+                        >
+                          🔄 Suggest Another
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
 
                   {/* Optional Reasoning Trace */}
                   {msg.reasoning && (
@@ -434,6 +559,49 @@ const styles = StyleSheet.create({
   msgContent: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  interactiveButtonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.2)',
+  },
+  interactiveRecipeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  interactiveConfirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  interactiveSuggestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  interactiveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  interactiveSuggestBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   typingText: {
     fontSize: 13,

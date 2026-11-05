@@ -65,6 +65,7 @@ function ThemedStack() {
       <Stack.Screen name="workout/[workoutId]" />
       <Stack.Screen name="workout/exercise/[exerciseId]" />
       <Stack.Screen name="recipe/[recipeId]" />
+      <Stack.Screen name="diet-plan-detail" />
       <Stack.Screen name="+not-found" />
     </Stack>
   );

@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import { Sparkles, CheckCircle2, ChevronDown, ChevronUp, FileText, ArrowRight, ShieldCheck } from 'lucide-react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import {
+  Sparkles,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  ArrowRight,
+  ShieldCheck,
+  Utensils,
+  ChefHat,
+} from 'lucide-react-native';
+
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -8,6 +19,17 @@ import { nutritionService } from '../../services/nutritionService';
 import { queryKeys } from '../../constants/queryKeys';
 import AppCard from '../ui/AppCard';
 import DietPlanProfileConfirmModal from './DietPlanProfileConfirmModal';
+
+const MEAL_ICONS = {
+  BREAKFAST: '🍳',
+  MORNING_SNACK: '🍎',
+  LUNCH: '🍛',
+  EVENING_SNACK: '☕',
+  DINNER: '🥗',
+  PRE_WORKOUT: '⚡',
+  POST_WORKOUT: '💪',
+  SNACK: '🥪',
+};
 
 export default function AiDietPlanCard({ dietPlan, isLoading, profileSummary, onPlanGenerated, style }) {
   const router = useRouter();
@@ -244,6 +266,67 @@ export default function AiDietPlanCard({ dietPlan, isLoading, profileSummary, on
         </View>
       </View>
 
+      {/* Daily Meal Schedule Preview */}
+      {Array.isArray(dietPlan.meals) && dietPlan.meals.length > 0 ? (
+        <View style={styles.mealsPreviewSection}>
+          <View style={styles.mealsPreviewHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Utensils size={14} color={colors.primary} />
+              <Text style={[styles.mealsPreviewTitle, { color: colors.onSurface }]}>
+                Today's Meal Blueprint ({dietPlan.meals.length})
+              </Text>
+            </View>
+            <Pressable onPress={() => router.push('/diet-plan-detail')} hitSlop={6}>
+              <Text style={[styles.mealsPreviewLink, { color: colors.primary }]}>
+                See All →
+              </Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.mealsScrollContainer}
+          >
+            {dietPlan.meals.map((meal, mIdx) => (
+              <Pressable
+                key={`${meal.mealType}_${mIdx}`}
+                style={[
+                  styles.mealPreviewCard,
+                  { backgroundColor: colors.surfaceVariant, borderColor: colors.outlineVariant },
+                ]}
+                onPress={() => router.push('/diet-plan-detail')}
+              >
+                <View style={styles.mealPreviewTop}>
+                  <Text style={styles.mealPreviewEmoji}>
+                    {MEAL_ICONS[meal.mealType] || '🍽️'}
+                  </Text>
+                  {meal.recommendedTime ? (
+                    <Text style={[styles.mealPreviewTime, { color: colors.onSurfaceVariant }]}>
+                      {meal.recommendedTime}
+                    </Text>
+                  ) : null}
+                  {(meal.recipeId || meal.recipeRoute) ? (
+                    <ChefHat size={12} color="var(--primary, #35D07F)" />
+                  ) : null}
+                </View>
+
+                <Text
+                  style={[styles.mealPreviewName, { color: colors.onSurface }]}
+                  numberOfLines={1}
+                >
+                  {meal.name}
+                </Text>
+
+                <Text style={[styles.mealPreviewMacros, { color: colors.onSurfaceVariant }]}>
+                  {meal.totalCalories} kcal • {meal.totalProtein}g P
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       {/* Expandable Advice Preview */}
       {adviceList.length > 0 && (
         <View style={[styles.adviceContainer, { backgroundColor: colors.surfaceVariant }]}>
@@ -435,6 +518,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     flex: 1,
+  },
+  mealsPreviewSection: {
+    marginTop: 12,
+    gap: 8,
+  },
+  mealsPreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  mealsPreviewTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  mealsPreviewLink: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  mealsScrollContainer: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  mealPreviewCard: {
+    width: 140,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+  },
+  mealPreviewTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mealPreviewEmoji: {
+    fontSize: 14,
+  },
+  mealPreviewTime: {
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  mealPreviewName: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mealPreviewMacros: {
+    fontSize: 10.5,
+    fontWeight: '500',
   },
   viewPlanBtn: {
     marginTop: 14,

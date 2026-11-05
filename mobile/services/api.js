@@ -121,7 +121,12 @@ const request = async (path, options = {}) => {
   }
 
   const controller = new AbortController();
-  const timeoutMs = options.timeout || 10000;
+  const isAiOrLongRunning =
+    path.includes('/diet-plan/generate') ||
+    path.startsWith('/ai/') ||
+    path.includes('/chat');
+  const defaultTimeout = isAiOrLongRunning ? 45000 : 15000;
+  const timeoutMs = options.timeout || defaultTimeout;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   if (options.signal) {

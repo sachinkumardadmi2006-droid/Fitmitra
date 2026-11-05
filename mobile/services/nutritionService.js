@@ -176,7 +176,11 @@ export const nutritionService = {
    * @param {string} reason
    */
   async generateDietPlan(reason) {
-    const res = await api.post('/nutrition/diet-plan/generate', reason ? { reason } : {});
+    const res = await api.post(
+      '/nutrition/diet-plan/generate',
+      reason ? { reason } : {},
+      { timeout: 45000 }
+    );
     return res?.data || res;
   },
 
